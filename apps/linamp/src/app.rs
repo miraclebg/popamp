@@ -5,6 +5,7 @@ use crate::dialogs::{self, DialogResult};
 use crate::font::Font;
 use crate::menu::{self, Layout, MenuItem};
 use crate::model::{AddMode, AppEvent, Model, UiReq, WinKind};
+use crate::platform::{self, Platform, WindowRole};
 use crate::render::present_scaled;
 use crate::ui::{Input, Out};
 use crate::ui_eq::EqWin;
@@ -21,7 +22,6 @@ use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
-use winit::platform::x11::{WindowAttributesExtX11, WindowType as XWindowType};
 use winit::window::{Window, WindowId, WindowLevel};
 
 const KINDS: [WinKind; 3] = [WinKind::Main, WinKind::Eq, WinKind::Pl];
@@ -87,14 +87,13 @@ pub struct App {
     popup_focus_check: Option<Instant>,
     /// `LINAMP_SNAPSHOT=<dir>`: write each window as PNG after a few frames and exit.
     snapshot: Option<(std::path::PathBuf, u32)>,
-    x11: Option<x11rb::rust_connection::RustConnection>,
+    platform: Platform,
     mpris: Option<crate::mpris::Mpris>,
 }
 
 impl App {
     pub fn new(model: Model, start_minimized: bool, mpris: Option<crate::mpris::Mpris>) -> App {
         let font = Font::load(&model.skin.pl.font);
-        let x11 = x11rb::connect(None).map(|(c, _)| c).map_err(|e| log::warn!("no X11 connection for window shapes: {e}")).ok();
         App {
             model,
             font,
@@ -115,7 +114,7 @@ impl App {
             start_minimized,
             popup_focus_check: None,
             snapshot: std::env::var_os("LINAMP_SNAPSHOT").map(|d| (std::path::PathBuf::from(d), 0)),
-            x11,
+            platform: Platform::connect(),
             mpris,
         }
     }
@@ -197,18 +196,13 @@ impl App {
                 WinKind::Eq => "Linamp Equalizer",
                 WinKind::Pl => "Linamp Playlist Editor",
             };
-            let mut attrs = Window::default_attributes()
+            let role = if k == WinKind::Main { WindowRole::Main } else { WindowRole::Docked };
+            let mut attrs = platform::attributes(role)
                 .with_title(title)
-                .with_decorations(false)
-                .with_resizable(false)
                 .with_inner_size(PhysicalSize::new((w * scale) as u32, (h * scale) as u32))
                 .with_position(PhysicalPosition::new(pos.0, pos.1))
                 .with_visible(false)
-                .with_name("linamp", "Linamp")
                 .with_window_icon(window_icon());
-            if k != WinKind::Main {
-                attrs = attrs.with_x11_window_type(vec![XWindowType::Utility]);
-            }
             if self.model.settings().aot {
                 attrs = attrs.with_window_level(WindowLevel::AlwaysOnTop);
             }
@@ -323,10 +317,9 @@ impl App {
         self.update_shapes();
     }
 
-    /// Applies `region.txt` window shapes via the X Shape extension.
+    /// Applies `region.txt` window shapes.
     fn update_shapes(&mut self) {
         let scale = self.scale();
-        let Some(conn) = &self.x11 else { return };
         let regions = &self.model.skin.regions;
         let s = &self.model.config.settings;
         let skin_ptr = &self.model.skin as *const _ as usize;
@@ -343,10 +336,8 @@ impl App {
                 continue;
             }
             w.shape_sig = Some(sig);
-            if let Some(xid) = x11_window_id(&w.window) {
-                if let Err(e) = crate::shape::apply(conn, xid, polys.map(|v| v.as_slice()), w.size, scale) {
-                    log::debug!("shape: {e}");
-                }
+            if let Err(e) = self.platform.set_shape(&w.window, polys.map(|v| v.as_slice()), w.size, scale) {
+                log::debug!("shape: {e}");
             }
         }
     }
@@ -413,14 +404,9 @@ impl App {
                 y = (my + mh - layout.h).max(my);
             }
         }
-        let attrs = Window::default_attributes()
-            .with_decorations(false)
-            .with_resizable(false)
+        let attrs = platform::attributes(WindowRole::Popup)
             .with_inner_size(PhysicalSize::new(layout.w as u32, layout.h as u32))
-            .with_position(PhysicalPosition::new(x, y))
-            .with_override_redirect(true)
-            .with_x11_window_type(vec![XWindowType::PopupMenu])
-            .with_name("linamp", "Linamp");
+            .with_position(PhysicalPosition::new(x, y));
         let Ok(window) = el.create_window(attrs).map(Arc::new) else { return };
         let Ok(ctx) = softbuffer::Context::new(window.clone()) else { return };
         let Ok(surface) = Surface::new(&ctx, window.clone()) else { return };
@@ -1040,15 +1026,6 @@ fn window_icon() -> Option<winit::window::Icon> {
     let img = image::load_from_memory(PNG).ok()?.to_rgba8();
     let (w, h) = img.dimensions();
     winit::window::Icon::from_rgba(img.into_raw(), w, h).ok()
-}
-
-fn x11_window_id(w: &Window) -> Option<u32> {
-    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
-    match w.window_handle().ok()?.as_raw() {
-        RawWindowHandle::Xlib(h) => Some(h.window as u32),
-        RawWindowHandle::Xcb(h) => Some(h.window.get()),
-        _ => None,
-    }
 }
 
 impl ApplicationHandler<AppEvent> for App {
