@@ -3,6 +3,7 @@
 use crate::cli::Remote;
 use crate::dialogs::{DialogKind, DialogResult, Request};
 use crate::menu::{MenuAction, MenuItem};
+use crate::panels::PanelKind;
 use crate::vis::Vis;
 use linamp_audio::youtube;
 use linamp_audio::{Engine, EngineCmd, EngineEvent, EqSettings, PlayState, ReplayGainSettings, StreamInfo};
@@ -60,6 +61,8 @@ pub enum WinKind {
 #[derive(Debug)]
 pub enum UiReq {
     Dialog(DialogKind, Request),
+    /// Open (or raise) one of Linamp's own dialog windows.
+    Panel(PanelKind),
     Menu(Vec<MenuItem>),
     /// Window visibility/size/scale changed; re-layout and redraw.
     Layout,
@@ -784,11 +787,6 @@ impl Model {
                     initial: String::new(),
                 }
             }
-            DialogKind::JumpToFile => Request::List {
-                title: "Jump to file".into(),
-                column: "Title".into(),
-                rows: self.playlist.entries().iter().enumerate().map(|(i, e)| format!("{}. {}", i + 1, e.display)).collect(),
-            },
             DialogKind::EditEntry { id } => {
                 let loc =
                     self.playlist.index_of_id(*id).and_then(|i| self.playlist.entry(i)).map(|e| e.location.clone()).unwrap_or_default();
@@ -828,7 +826,8 @@ impl Model {
             DialogKind::InstallSkin => {
                 Request::Files { title: "Install skin".into(), multiple: false, filter: vec!["*.wsz".into(), "*.zip".into()], start }
             }
-            DialogKind::Info => Request::Info { title: "File info".into(), text: self.file_info_text() },
+            // A message carries its own text: see `C::About`.
+            DialogKind::Info => return,
             DialogKind::ConfirmPhysicalRemove { paths } => Request::Question {
                 title: "Delete files".into(),
                 text: format!(
@@ -841,10 +840,12 @@ impl Model {
         self.ui.push(UiReq::Dialog(kind, req));
     }
 
-    fn file_info_text(&self) -> String {
+    /// Name/value rows describing the selected (or else the playing) entry.
+    pub fn file_info_fields(&self) -> Vec<(String, String)> {
         let idx = self.playlist.selected_indices().first().copied().or(self.playlist.current());
-        let Some(e) = idx.and_then(|i| self.playlist.entry(i)) else { return "No file selected.".into() };
-        let mut lines = vec![format!("Location: {}", e.location)];
+        let Some(e) = idx.and_then(|i| self.playlist.entry(i)) else { return vec![("".into(), "No file selected.".into())] };
+        let mut rows = vec![("Location".to_string(), e.location.clone())];
+        let mut push = |k: &str, v: String| rows.push((k.to_string(), v));
         if let Some(m) = &e.meta {
             let fields = [
                 ("Title", &m.title),
@@ -861,28 +862,30 @@ impl Model {
             ];
             for (k, v) in fields {
                 if let Some(v) = v {
-                    lines.push(format!("{k}: {v}"));
+                    push(k, v.clone());
                 }
             }
             if let Some(l) = m.length_ms {
-                lines.push(format!("Length: {}", format_duration_ms(l)));
+                push("Length", format_duration_ms(l));
             }
             if let (Some(r), Some(c)) = (m.sample_rate, m.channels) {
-                lines.push(format!("Format: {r} Hz, {c} channel(s){}", m.bitrate_kbps.map(|b| format!(", {b} kbps")).unwrap_or_default()));
+                push("Format", format!("{r} Hz, {c} channel(s){}", m.bitrate_kbps.map(|b| format!(", {b} kbps")).unwrap_or_default()));
             }
             if let Some(g) = m.replaygain_track_gain {
-                lines.push(format!("ReplayGain (track): {g:+.2} dB"));
+                push("ReplayGain", format!("{g:+.2} dB (track)"));
             }
+        } else if let Some(t) = &e.file_title {
+            push("Title", t.clone());
         }
         if self.status.playing_id == Some(e.id) {
             if let Some(n) = &self.status.stream_name {
-                lines.push(format!("Station: {n}"));
+                push("Station", n.clone());
             }
             if let Some(t) = &self.status.stream_title {
-                lines.push(format!("Now playing: {t}"));
+                push("Now playing", t.clone());
             }
         }
-        lines.join("\n")
+        rows
     }
 
     pub fn on_dialog(&mut self, r: DialogResult) {
@@ -923,11 +926,6 @@ impl Model {
             DialogKind::JumpToTime => {
                 if let Some(ms) = first.as_deref().and_then(crate::dialogs::parse_time) {
                     self.seek_to(ms);
-                }
-            }
-            DialogKind::JumpToFile => {
-                if let Some(i) = first.and_then(|s| s.trim().parse::<usize>().ok()) {
-                    self.play_index(i);
                 }
             }
             DialogKind::EditEntry { id } => {
@@ -1109,8 +1107,8 @@ impl Model {
             C::PlaylistOpen => self.request_dialog(DialogKind::LoadPlaylist),
             C::PlaylistSave => self.request_dialog(DialogKind::SavePlaylist),
             C::JumpToTime => self.request_dialog(DialogKind::JumpToTime),
-            C::JumpToFile => self.request_dialog(DialogKind::JumpToFile),
-            C::FileInfo => self.request_dialog(DialogKind::Info),
+            C::JumpToFile => self.ui.push(UiReq::Panel(PanelKind::JumpToFile)),
+            C::FileInfo => self.ui.push(UiReq::Panel(PanelKind::FileInfo)),
             C::PlGenerateHtml => self.request_dialog(DialogKind::SaveHtml),
             C::EqLoadDefault => {
                 let p = self.settings().eq_default();
@@ -1282,7 +1280,8 @@ impl Model {
             }
             C::ToggleMainWindow => self.ui.push(UiReq::Raise),
             C::Minimize => self.ui.push(UiReq::Minimize),
-            C::Preferences | C::SelectVisPlugin => {
+            C::Preferences => self.ui.push(UiReq::Panel(PanelKind::Preferences)),
+            C::SelectVisPlugin => {
                 self.ui.push(UiReq::Menu(self.options_menu()));
             }
             C::ToggleVis => self.exec(C::CycleVisMode),

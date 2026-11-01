@@ -5,12 +5,14 @@ use crate::dialogs::{self, DialogResult};
 use crate::font::Font;
 use crate::menu::{self, Layout, MenuItem};
 use crate::model::{AddMode, AppEvent, Model, UiReq, WinKind};
+use crate::panels::{Panel, PanelKind};
 use crate::platform::{self, Platform, WindowRole};
 use crate::render::present_scaled;
 use crate::ui::{Input, Out};
 use crate::ui_eq::EqWin;
 use crate::ui_main::MainWin;
 use crate::ui_pl::{Nav, PlWin};
+use crate::widgets::{self, Event};
 use linamp_audio::PlayState;
 use linamp_core::Command;
 use linamp_skin::Bitmap;
@@ -23,7 +25,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
-use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
+use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::{CursorIcon, CustomCursor, Window, WindowId, WindowLevel};
 
 const KINDS: [WinKind; 3] = [WinKind::Main, WinKind::Eq, WinKind::Pl];
@@ -78,6 +80,16 @@ struct Tooltip {
     shown: Option<(Arc<Window>, Surface)>,
 }
 
+/// One of Linamp's own dialogs (see `panels.rs`) in its window.
+struct PanelWindow {
+    window: Arc<Window>,
+    surface: Surface,
+    panel: Panel,
+    frame: Bitmap,
+    cursor: (i32, i32),
+    last_click: Option<(Instant, (i32, i32))>,
+}
+
 enum Drag {
     Move { group: Vec<(WinKind, (i32, i32))>, start: (i32, i32) },
     Resize { start_size: (i32, i32), start: (i32, i32) },
@@ -91,6 +103,7 @@ pub struct App {
     plw: PlWin,
     wins: [Option<SkinWindow>; 3],
     popups: Vec<Popup>,
+    panels: Vec<PanelWindow>,
     tip: Option<Tooltip>,
     /// The skin's cursors, made into window-system cursors.
     cursors: HashMap<CursorKind, CustomCursor>,
@@ -122,6 +135,7 @@ impl App {
             plw: PlWin::new(),
             wins: [None, None, None],
             popups: Vec::new(),
+            panels: Vec::new(),
             tip: None,
             cursors: HashMap::new(),
             drag: None,
@@ -443,14 +457,87 @@ impl App {
     fn render_popup(&mut self, i: usize) {
         let Some(p) = self.popups.get_mut(i) else { return };
         menu::draw(&mut p.frame, &p.items, &p.layout, p.hover, &mut self.font);
-        let (w, h) = (p.layout.w as u32, p.layout.h as u32);
-        let (Some(nw), Some(nh)) = (NonZeroU32::new(w), NonZeroU32::new(h)) else { return };
-        if p.surface.resize(nw, nh).is_ok() {
-            if let Ok(mut buf) = p.surface.buffer_mut() {
-                present_scaled(&p.frame, 1, &mut buf, w);
-                let _ = buf.present();
-            }
+        present_unscaled(&mut p.surface, &p.frame);
+    }
+
+    // --- own dialogs ------------------------------------------------------------
+
+    /// Opens the dialog `kind`, or raises it
+    /// when it is already open.
+    fn open_panel(&mut self, el: &ActiveEventLoop, kind: PanelKind) {
+        if let Some(p) = self.panels.iter().find(|p| p.panel.kind() == kind) {
+            p.window.focus_window();
+            return;
         }
+        let panel = Panel::open(kind, &self.model);
+        let (w, h) = (panel.form().w, panel.form().h);
+        // Centred on the main window's monitor, so the title bar is on screen.
+        let monitor = self.win(WinKind::Main).and_then(|m| m.window.current_monitor());
+        let (cx, cy) = monitor
+            .map(|m| (m.position().x + m.size().width as i32 / 2, m.position().y + m.size().height as i32 / 2))
+            .unwrap_or((640, 400));
+        let attrs = platform::attributes(WindowRole::Dialog)
+            .with_title(panel.title())
+            .with_inner_size(PhysicalSize::new(w as u32, h as u32))
+            .with_position(PhysicalPosition::new((cx - w / 2).max(0), (cy - h / 2).max(0)));
+        let Ok(window) = el.create_window(attrs).map(Arc::new) else { return };
+        let Ok(ctx) = softbuffer::Context::new(window.clone()) else { return };
+        let Ok(surface) = Surface::new(&ctx, window.clone()) else { return };
+        let frame = Bitmap::new(w, h, 0);
+        self.panels.push(PanelWindow { window, surface, panel, frame, cursor: (0, 0), last_click: None });
+        self.render_panel(self.panels.len() - 1);
+    }
+
+    fn render_panel(&mut self, i: usize) {
+        let Some(p) = self.panels.get_mut(i) else { return };
+        p.panel.form().draw(&mut p.frame, &mut self.font);
+        present_unscaled(&mut p.surface, &p.frame);
+    }
+
+    fn panel_event(&mut self, el: &ActiveEventLoop, i: usize, ev: WindowEvent) {
+        let p = &mut self.panels[i];
+        let (x, y) = p.cursor;
+        let form = p.panel.form_mut();
+        let out = match ev {
+            WindowEvent::CloseRequested => Event::Cancel,
+            WindowEvent::RedrawRequested => Event::None,
+            WindowEvent::ModifiersChanged(m) => {
+                self.mods = m.state();
+                return;
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                p.cursor = (position.x as i32, position.y as i32);
+                return;
+            }
+            WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
+                let now = Instant::now();
+                let double = p.last_click.is_some_and(|(t, at)| now - t < Duration::from_millis(400) && at == (x, y));
+                p.last_click = Some((now, (x, y)));
+                form.mouse_down(x, y, double)
+            }
+            WindowEvent::MouseInput { state: ElementState::Released, button: MouseButton::Left, .. } => form.mouse_up(x, y),
+            WindowEvent::MouseWheel { delta, .. } => {
+                form.wheel(match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y.round() as i32,
+                    MouseScrollDelta::PixelDelta(p) => (p.y / 20.0).round() as i32,
+                });
+                Event::None
+            }
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+                match form_key(&event, self.mods.control_key() || self.mods.alt_key()) {
+                    Some(k) => form.key(k),
+                    None => return,
+                }
+            }
+            _ => return,
+        };
+        if !p.panel.handle(out, &mut self.model) {
+            self.panels.remove(i);
+        } else {
+            self.render_panel(i);
+        }
+        self.after_model(el);
+        self.redraw_all();
     }
 
     /// Turns the skin's cursors into window-system cursors (none when the
@@ -539,14 +626,7 @@ impl App {
     fn render_tooltip(&mut self) {
         let Some(Tooltip { text, shown: Some((_, surface)), .. }) = &mut self.tip else { return };
         let frame = menu::tooltip(text, &mut self.font);
-        let (w, h) = (frame.w as u32, frame.h as u32);
-        let (Some(nw), Some(nh)) = (NonZeroU32::new(w), NonZeroU32::new(h)) else { return };
-        if surface.resize(nw, nh).is_ok() {
-            if let Ok(mut buf) = surface.buffer_mut() {
-                present_scaled(&frame, 1, &mut buf, w);
-                let _ = buf.present();
-            }
-        }
+        present_unscaled(surface, &frame);
     }
 
     fn close_popups_from(&mut self, level: usize) {
@@ -1035,6 +1115,7 @@ impl App {
                         events.send(AppEvent::Dialog(DialogResult { kind, values }));
                     });
                 }
+                UiReq::Panel(kind) => self.open_panel(el, kind),
                 UiReq::Menu(items) => {
                     let at = self.cursor_screen(WinKind::Main);
                     self.open_popup(el, items, at);
@@ -1091,6 +1172,10 @@ impl App {
         }
         if self.model.pl_dirty != self.seen_pl_dirty {
             self.seen_pl_dirty = self.model.pl_dirty;
+            for i in 0..self.panels.len() {
+                self.panels[i].panel.playlist_changed(&self.model);
+                self.render_panel(i);
+            }
             if let Some(cur) = self.model.playlist.current() {
                 if self.model.status.playing_id.is_some() {
                     let _ = cur;
@@ -1145,6 +1230,46 @@ impl App {
             self.render(WinKind::Pl);
         }
     }
+}
+
+/// Shows `frame` pixel for pixel: menus, tooltips and dialogs are drawn at
+/// the screen's resolution.
+fn present_unscaled(surface: &mut Surface, frame: &Bitmap) {
+    let (w, h) = (frame.w as u32, frame.h as u32);
+    let (Some(nw), Some(nh)) = (NonZeroU32::new(w), NonZeroU32::new(h)) else { return };
+    if surface.resize(nw, nh).is_ok() {
+        if let Ok(mut buf) = surface.buffer_mut() {
+            present_scaled(frame, 1, &mut buf, w);
+            let _ = buf.present();
+        }
+    }
+}
+
+/// The key for a dialog form; `None` for keys it ignores and for
+/// shortcuts with Ctrl or Alt.
+fn form_key(ev: &KeyEvent, with_modifier: bool) -> Option<widgets::Key> {
+    use widgets::Key as F;
+    Some(match &ev.logical_key {
+        Key::Named(n) => match n {
+            NamedKey::Enter => F::Enter,
+            NamedKey::Escape => F::Escape,
+            NamedKey::Tab => F::Tab,
+            NamedKey::Backspace => F::Backspace,
+            NamedKey::Delete => F::Delete,
+            NamedKey::ArrowLeft => F::Left,
+            NamedKey::ArrowRight => F::Right,
+            NamedKey::ArrowUp => F::Up,
+            NamedKey::ArrowDown => F::Down,
+            NamedKey::Home => F::Home,
+            NamedKey::End => F::End,
+            NamedKey::PageUp => F::PageUp,
+            NamedKey::PageDown => F::PageDown,
+            NamedKey::Space if !with_modifier => F::Char(' '),
+            _ => return None,
+        },
+        _ if with_modifier => return None,
+        _ => F::Char(ev.text.as_ref()?.chars().next()?),
+    })
 }
 
 /// The application logo as the window icon (taskbar, alt-tab).
@@ -1223,6 +1348,9 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn window_event(&mut self, el: &ActiveEventLoop, id: WindowId, ev: WindowEvent) {
+        if let Some(i) = self.panels.iter().position(|p| p.window.id() == id) {
+            return self.panel_event(el, i, ev);
+        }
         if let Some(level) = self.popups.iter().position(|p| p.window.id() == id) {
             match ev {
                 WindowEvent::CursorMoved { position, .. } => {

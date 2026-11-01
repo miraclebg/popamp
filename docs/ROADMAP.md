@@ -15,8 +15,8 @@ open an issue first for larger items.
 
 ## Planned
 
-- **Preferences window:** output device, buffer size, playlist font, title
-  format, file-type registration.
+- **Preferences window:** output device and file-type registration (the
+  window itself, with buffer size, playlist font and title format, exists).
 - **Tags and art:** tag editor and album art (read/write through a tagging
   crate).
 - **More formats:** Opus (libopus), MIDI (SoundFont synth), tracker modules

@@ -27,6 +27,14 @@ All notable changes to this project are documented here. The format follows
 - Playlist MISC > Misc options > Generate HTML playlist… saves the playlist
   as a web page with titles, lengths and the total (id 50026). The general
   options stay reachable there as a submenu.
+- Linamp's own dialog windows, drawn like its menus and no longer needing
+  `zenity`:
+  - Jump to file (`J`) filters the playlist as you type; the arrows pick,
+    Enter plays.
+  - File info (`Alt+3`) lists tags and format of the selected track.
+  - Preferences (`Ctrl+P`, previously the options menu): window behaviour,
+    playlist display and auto-advance take effect at once; playlist font
+    size, title format, fade-out, output buffer and HTTP proxy apply on OK.
 
 ## [0.1.0] - 2026-10-22
 

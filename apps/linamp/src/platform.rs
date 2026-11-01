@@ -20,9 +20,11 @@ pub enum WindowRole {
     Popup,
     /// Tooltips: like menus, but never focused.
     Tooltip,
+    /// Linamp's own dialogs: ordinary windows with a title bar.
+    Dialog,
 }
 
-/// Borderless, fixed-size window attributes for `role`.
+/// Fixed-size window attributes for `role`, borderless but for dialogs.
 pub fn attributes(role: WindowRole) -> WindowAttributes {
     let attrs = Window::default_attributes().with_decorations(false).with_resizable(false).with_name("linamp", "Linamp");
     match role {
@@ -30,6 +32,7 @@ pub fn attributes(role: WindowRole) -> WindowAttributes {
         WindowRole::Docked => attrs.with_x11_window_type(vec![WindowType::Utility]),
         WindowRole::Popup => attrs.with_override_redirect(true).with_x11_window_type(vec![WindowType::PopupMenu]),
         WindowRole::Tooltip => attrs.with_override_redirect(true).with_active(false).with_x11_window_type(vec![WindowType::Tooltip]),
+        WindowRole::Dialog => attrs.with_decorations(true).with_x11_window_type(vec![WindowType::Dialog]),
     }
 }
 

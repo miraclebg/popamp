@@ -74,7 +74,7 @@ libraries below are loaded at runtime, not linked at build time.
 | `libasound.so.2` (ALSA) | **required** | audio output; on PipeWire/PulseAudio it goes through their ALSA `default` device |
 | `libX11`, `libX11-xcb`, `libxcb`, `libXcursor`, `libXi`, `libxkbcommon`, `libxkbcommon-x11` | **required** | windowing and keyboard (loaded with `dlopen`) |
 | `fontconfig` (`fc-match`) and any TrueType font | recommended | playlist and menu text (blank without them) |
-| `zenity` or `kdialog` | recommended | open-file, open-URL, save, preset and jump-to dialogs |
+| `zenity` or `kdialog` | recommended | open-file, open-URL, save and preset dialogs |
 | D-Bus session bus | optional | MPRIS (media keys, desktop widgets) |
 | `yt-dlp` | optional | YouTube links |
 | `ffmpeg` | optional | YouTube links |
@@ -270,7 +270,8 @@ All playback checks ran at volume 0 through the real ALSA/PipeWire output.
 - Mouse interaction: dragging, docking and snapping, sliders, pop-up menus,
   playlist drag-reorder.
 - Keyboard shortcuts.
-- The `zenity`/`kdialog` dialogs and drag & drop.
+- The `zenity`/`kdialog` dialogs, Linamp's own dialogs (Jump to file,
+  File info, Preferences) and drag & drop.
 - Double size.
 - A skin with a `region.txt` window shape.
 - ReplayGain-tagged files.
@@ -285,7 +286,8 @@ Please report problems with these first.
 - No native Wayland windows: Linamp needs Xwayland on Wayland desktops.
 - Starting a YouTube track blocks other commands (such as Stop) for the 2–3 s
   that `yt-dlp` needs.
-- No preferences window; options are in the menus and `linamp.ini`.
+- The Preferences window (`Ctrl+P`) covers the common options; the rest are
+  in the menus and `linamp.ini`.
 - No tag editing, album art, tray icon, media library or Modern (`.wal`)
   skins yet. See [docs/ROADMAP.md](docs/ROADMAP.md).
 

@@ -9,6 +9,7 @@ mod ipc;
 mod menu;
 mod model;
 mod mpris;
+mod panels;
 mod platform;
 mod render;
 mod ui;
@@ -16,6 +17,7 @@ mod ui_eq;
 mod ui_main;
 mod ui_pl;
 mod vis;
+mod widgets;
 
 use cli::Remote;
 use linamp_core::config::{Config, Paths};

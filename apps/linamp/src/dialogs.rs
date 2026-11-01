@@ -20,7 +20,6 @@ pub enum DialogKind {
     SavePlaylist,
     SaveHtml,
     JumpToTime,
-    JumpToFile,
     EditEntry {
         id: u64,
     },

@@ -186,7 +186,8 @@ settings! {
 }
 
 impl Settings {
-    fn sanitize(&mut self) {
+    /// Brings every value into its allowed range.
+    pub fn sanitize(&mut self) {
         self.volume = self.volume.clamp(0, 255);
         self.balance = self.balance.clamp(-127, 127);
         self.preamp = self.preamp.clamp(0, 63);
