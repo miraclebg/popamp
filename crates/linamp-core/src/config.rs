@@ -3,6 +3,7 @@
 //! Key names follow the original `winamp.ini` keys wherever the setting has
 //! the same meaning.
 
+use crate::eqf::Preset;
 use crate::ini::Ini;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -159,6 +160,9 @@ settings! {
     eq_data: String = "31,31,31,31,31,31,31,31,31,31".to_string(),
     /// Preamp, 0..=63 where 0 = +12 dB.
     preamp: i32 = 31,
+    /// The user's "Default" equalizer preset (Presets > Load/Save > Default).
+    eq_default_data: String = "31,31,31,31,31,31,31,31,31,31".to_string(),
+    eq_default_preamp: i32 = 31,
     // Playlist.
     pe_fontsize: i32 = 10,
     shownumsinpl: bool = true,
@@ -197,18 +201,37 @@ impl Settings {
 
     /// The ten EQ bands as 0..=63 values (missing entries are flat).
     pub fn eq_bands(&self) -> [u8; 10] {
-        let mut bands = [31u8; 10];
-        for (slot, part) in bands.iter_mut().zip(self.eq_data.split(',')) {
-            if let Ok(v) = part.trim().parse::<u8>() {
-                *slot = v.min(63);
-            }
-        }
-        bands
+        parse_bands(&self.eq_data)
     }
 
     pub fn set_eq_bands(&mut self, bands: &[u8; 10]) {
-        self.eq_data = bands.iter().map(u8::to_string).collect::<Vec<_>>().join(",");
+        self.eq_data = format_bands(bands);
     }
+
+    /// The user's "Default" equalizer preset; flat until one is saved.
+    pub fn eq_default(&self) -> Preset {
+        Preset { name: "Default".into(), bands: parse_bands(&self.eq_default_data), preamp: self.eq_default_preamp.clamp(0, 63) as u8 }
+    }
+
+    pub fn set_eq_default(&mut self, p: &Preset) {
+        self.eq_default_data = format_bands(&p.bands);
+        self.eq_default_preamp = p.preamp as i32;
+    }
+}
+
+/// Ten comma-separated band values (0..=63); missing or bad ones are flat.
+fn parse_bands(s: &str) -> [u8; 10] {
+    let mut bands = [31u8; 10];
+    for (slot, part) in bands.iter_mut().zip(s.split(',')) {
+        if let Ok(v) = part.trim().parse::<u8>() {
+            *slot = v.min(63);
+        }
+    }
+    bands
+}
+
+fn format_bands(bands: &[u8; 10]) -> String {
+    bands.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
 }
 
 /// Where Linamp keeps its files.
@@ -310,6 +333,19 @@ mod tests {
         let back = Settings::from_ini(&Ini::parse(&ini.to_string_pretty()));
         assert_eq!(back, s);
         assert_eq!(back.eq_bands()[9], 63);
+    }
+
+    #[test]
+    fn eq_default_preset_is_flat_until_saved() {
+        let mut s = Settings::default();
+        let flat = s.eq_default();
+        assert_eq!((flat.name.as_str(), flat.bands, flat.preamp), ("Default", [31; 10], 31));
+        let mine = Preset { name: "x".into(), bands: [0, 1, 2, 3, 4, 5, 6, 7, 8, 63], preamp: 20 };
+        s.set_eq_default(&mine);
+        let mut ini = Ini::new();
+        s.write_ini(&mut ini);
+        let back = Settings::from_ini(&Ini::parse(&ini.to_string_pretty())).eq_default();
+        assert_eq!((back.bands, back.preamp), (mine.bands, mine.preamp));
     }
 
     #[test]

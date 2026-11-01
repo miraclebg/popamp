@@ -103,6 +103,8 @@ commands! {
     AddBookmark = 50021,
     BookmarkSelected = 50022,
     RemoveBookmark = 50023,
+    EqLoadDefault = 50024,
+    EqSaveDefault = 50025,
 }
 
 #[cfg(test)]

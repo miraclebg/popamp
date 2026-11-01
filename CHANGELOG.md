@@ -22,6 +22,8 @@ All notable changes to this project are documented here. The format follows
   selected ones), the main menu's Bookmarks submenu plays or removes them
   (`Ctrl+Alt+I`). They are kept in `bookmarks.m3u8` next to `linamp.ini`.
   Remote command ids 50021–50023.
+- Equalizer Presets > Load/Save > Default: keep your own default curve and
+  return to it in one click (ids 50024/50025).
 
 ## [0.1.0] - 2026-10-22
 

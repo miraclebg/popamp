@@ -1098,6 +1098,14 @@ impl Model {
             C::JumpToTime => self.request_dialog(DialogKind::JumpToTime),
             C::JumpToFile => self.request_dialog(DialogKind::JumpToFile),
             C::FileInfo => self.request_dialog(DialogKind::Info),
+            C::EqLoadDefault => {
+                let p = self.settings().eq_default();
+                self.apply_preset(&p);
+            }
+            C::EqSaveDefault => {
+                let p = self.current_preset("Default");
+                self.settings_mut().set_eq_default(&p);
+            }
             C::AddBookmark => {
                 let current = self.playlist.current_entry().into_iter().cloned().collect::<Vec<_>>();
                 self.add_bookmarks(&current);
@@ -1474,6 +1482,7 @@ impl Model {
                 let mut v = presets(false);
                 v.push(MenuItem::sep());
                 v.push(MenuItem::sub("Auto-load presets", presets(true)));
+                v.push(MenuItem::cmd("Default", "", Command::EqLoadDefault));
                 v.push(MenuItem::cmd("From EQF…", "", Command::EqImportEqf));
                 v
             }),
@@ -1482,6 +1491,7 @@ impl Model {
                 vec![
                     MenuItem::cmd("Preset…", "", Command::EqPresetSave),
                     MenuItem::action("Auto-load preset…", "", MenuAction::EqDialog(DialogKind::EqSavePreset { auto: true })),
+                    MenuItem::cmd("Default", "", Command::EqSaveDefault),
                     MenuItem::sep(),
                     MenuItem::cmd("To EQF…", "", Command::EqExportEqf),
                 ],
@@ -1654,6 +1664,17 @@ mod tests {
         // Saved: a new model on the same settings directory sees them.
         let again = Model::headless(m.paths.clone(), Config::load(m.paths.ini_file()));
         assert_eq!(titles(&again), titles(&m));
+    }
+
+    #[test]
+    fn eq_default_preset_saves_and_loads() {
+        let mut m = Model::for_tests();
+        m.set_eq_band(0, 10);
+        m.exec(Command::EqSaveDefault);
+        m.exec(Command::EqReset);
+        assert_eq!(m.settings().eq_bands()[0], 31);
+        m.exec(Command::EqLoadDefault);
+        assert_eq!(m.settings().eq_bands()[0], 10);
     }
 
     #[test]
