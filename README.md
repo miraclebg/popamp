@@ -26,6 +26,10 @@ and classic `.wsz` skins load at runtime.
 - **Classic windows:** Main, Equalizer and Playlist Editor, drawn pixel-exact
   from the skin at 1x or double size. Windows dock and snap together, and
   support windowshade mode, EasyMove, always-on-top and `region.txt` shapes.
+  Tooltips explain the main window's buttons.
+- **Own dialogs:** Jump to file (search as you type), File info and a
+  Preferences window (`Ctrl+P`). Opening and saving files uses the desktop's
+  dialog through `zenity` or `kdialog`.
 - **Classic skins:** `.wsz`/`.zip` archives or unpacked directories. Each file
   falls back to the default skin if missing or broken. `viscolor.txt`,
   `pledit.txt` and the skin's mouse cursors (`*.cur`) are supported.
@@ -41,7 +45,7 @@ and classic `.wsz` skins load at runtime.
 - **Playlist:**
   - M3U, M3U8, PLS and XSPF.
   - Sort, reverse, randomize, crop, remove dead entries.
-  - Drag to reorder, jump to file or time.
+  - Drag to reorder, jump to time.
   - Bookmarks for favourite files and streams (`Alt+I`, main menu).
   - Export as an HTML page (MISC > Misc options).
   - Advanced Title Formatting (`[%artist% - ]$if2(%title%,…)`).
