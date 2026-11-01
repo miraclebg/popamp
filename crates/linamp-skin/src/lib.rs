@@ -2,13 +2,16 @@
 //! directories, with per-file fallback to Linamp's own default skin.
 
 pub mod bitmap;
+mod classic;
 pub mod cursors;
 pub mod default_skin;
+pub mod layout;
 pub mod sprites;
 pub mod textcfg;
 
 pub use bitmap::Bitmap;
 pub use cursors::{CursorImage, CursorKind};
+pub use layout::Layout;
 pub use sprites::{Rect, Sheet};
 pub use textcfg::{PlColors, Regions};
 
@@ -26,6 +29,8 @@ pub struct Skin {
     pub regions: Regions,
     /// The skin's own mouse cursors; the system cursor stands in for the rest.
     pub cursors: HashMap<CursorKind, CursorImage>,
+    /// The windows and their elements.
+    pub layout: Layout,
 }
 
 impl Skin {
@@ -39,7 +44,15 @@ impl Skin {
             pl: default_skin::pl_colors(),
             regions: Regions::default(),
             cursors: HashMap::new(),
+            layout: Layout::default(),
         }
+        .with_layout()
+    }
+
+    /// Builds the classic layout for the skin's bitmaps.
+    fn with_layout(mut self) -> Skin {
+        self.layout = classic::layout(self.sheet(Sheet::Volume).h, self.sheet(Sheet::Balance).h);
+        self
     }
 
     pub fn sheet(&self, s: Sheet) -> &Bitmap {
@@ -108,7 +121,7 @@ impl Skin {
         if found == 0 {
             log::warn!("skin {}: no recognised bitmaps, using defaults", skin.name);
         }
-        skin
+        skin.with_layout()
     }
 }
 
