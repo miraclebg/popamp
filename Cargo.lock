@@ -1197,10 +1197,12 @@ dependencies = [
  "log",
  "parking_lot",
  "rustfft",
+ "serde_json",
  "softbuffer",
  "winit",
  "x11rb",
  "zbus",
+ "zip",
 ]
 
 [[package]]

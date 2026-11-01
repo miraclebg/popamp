@@ -24,7 +24,11 @@ crossbeam-channel.workspace = true
 parking_lot.workspace = true
 rustfft.workspace = true
 fastrand.workspace = true
+serde_json.workspace = true
 log.workspace = true
 env_logger.workspace = true
 x11rb = { version = "0.13", features = ["shape"] }
 zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
+
+[dev-dependencies]
+zip.workspace = true

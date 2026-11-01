@@ -35,6 +35,10 @@ All notable changes to this project are documented here. The format follows
   - Preferences (`Ctrl+P`, previously the options menu): window behaviour,
     playlist display and auto-advance take effect at once; playlist font
     size, title format, fade-out, output buffer and HTTP proxy apply on OK.
+- Skin Museum (main menu > Skins, id 50027): browse or search the Winamp
+  Skin Museum at skins.webamp.org with previews, then download a skin into
+  the skins folder and use it. Downloads are checked to be skins before
+  they are saved; the HTTP proxy setting applies.
 
 ## [0.1.0] - 2026-10-22
 

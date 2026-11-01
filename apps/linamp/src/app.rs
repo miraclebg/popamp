@@ -485,7 +485,15 @@ impl App {
         let Ok(surface) = Surface::new(&ctx, window.clone()) else { return };
         let frame = Bitmap::new(w, h, 0);
         self.panels.push(PanelWindow { window, surface, panel, frame, cursor: (0, 0), last_click: None });
-        self.render_panel(self.panels.len() - 1);
+        self.panel_changed(self.panels.len() - 1);
+    }
+
+    /// Starts the network work panel `i` asked for and redraws it.
+    fn panel_changed(&mut self, i: usize) {
+        for job in self.panels[i].panel.take_jobs() {
+            crate::museum::start(job, self.model.settings().proxy.clone(), self.model.events().clone());
+        }
+        self.render_panel(i);
     }
 
     fn render_panel(&mut self, i: usize) {
@@ -534,7 +542,7 @@ impl App {
         if !p.panel.handle(out, &mut self.model) {
             self.panels.remove(i);
         } else {
-            self.render_panel(i);
+            self.panel_changed(i);
         }
         self.after_model(el);
         self.redraw_all();
@@ -1339,6 +1347,12 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::Meta(id, m) => self.model.on_meta(id, m),
             AppEvent::Expanded { items, mode } => self.model.on_expanded(items, mode),
             AppEvent::Dialog(r) => self.model.on_dialog(r),
+            AppEvent::Museum(f) => {
+                if let Some(i) = self.panels.iter().position(|p| p.panel.kind() == PanelKind::SkinMuseum) {
+                    self.panels[i].panel.fetched(f, &mut self.model);
+                    self.panel_changed(i);
+                }
+            }
             AppEvent::Remote(req) => {
                 let reply = self.model.on_remote(req.remotes);
                 let _ = req.reply.send(reply);

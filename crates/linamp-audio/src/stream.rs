@@ -105,16 +105,39 @@ pub fn open(url: &str, proxy: &str) -> Result<Opened, String> {
     Ok((Box::new(ReadOnlySource::new(reader)), ext, headers, title))
 }
 
-/// Downloads a small text resource (remote playlists).
-pub fn fetch_text(url: &str, proxy: &str) -> Result<String, String> {
-    let mut builder = ureq::AgentBuilder::new().timeout(std::time::Duration::from_secs(15));
+/// An HTTP client for small downloads, through `proxy` when set.
+fn agent(proxy: &str, timeout_s: u64) -> Result<ureq::Agent, String> {
+    let mut builder = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(timeout_s))
+        .user_agent(concat!("Linamp/", env!("CARGO_PKG_VERSION")));
     if !proxy.trim().is_empty() {
         builder = builder.proxy(ureq::Proxy::new(proxy.trim()).map_err(|e| e.to_string())?);
     }
-    let resp = builder.build().get(url).call().map_err(|e| e.to_string())?;
+    Ok(builder.build())
+}
+
+fn read_body(resp: ureq::Response, max: u64) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
-    resp.into_reader().take(1 << 20).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
-    Ok(linamp_core::text::decode_lossy(&bytes))
+    resp.into_reader().take(max).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    Ok(bytes)
+}
+
+/// Downloads a small text resource (remote playlists).
+pub fn fetch_text(url: &str, proxy: &str) -> Result<String, String> {
+    Ok(linamp_core::text::decode_lossy(&fetch_bytes(url, proxy, 1 << 20)?))
+}
+
+/// Downloads at most `max` bytes from `url`.
+pub fn fetch_bytes(url: &str, proxy: &str, max: u64) -> Result<Vec<u8>, String> {
+    let resp = agent(proxy, 60)?.get(url).call().map_err(|e| e.to_string())?;
+    read_body(resp, max)
+}
+
+/// POSTs a JSON body (a GraphQL query, say) and parses the JSON reply.
+pub fn post_json(url: &str, proxy: &str, body: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let resp =
+        agent(proxy, 30)?.post(url).set("Content-Type", "application/json").send_string(&body.to_string()).map_err(|e| e.to_string())?;
+    serde_json::from_slice(&read_body(resp, 4 << 20)?).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

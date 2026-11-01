@@ -1,17 +1,22 @@
-//! Linamp's own dialog windows: Jump to file, File info and Preferences.
+//! Linamp's own dialog windows: Jump to file, File info, Preferences and
+//! the Skin Museum.
 //! Each is a [`Form`] plus the logic that turns its events into changes to
 //! the [`Model`]; the windows themselves live in `app.rs`.
 
 use crate::model::{Model, UiReq};
+use crate::museum::{self, Fetched, Job};
 use crate::widgets::{Event, Form, Rect, Widget, BUTTON, ROW_H};
 use linamp_core::config::Settings;
 use linamp_core::Command;
+use linamp_skin::Bitmap;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanelKind {
     JumpToFile,
     FileInfo,
     Preferences,
+    SkinMuseum,
 }
 
 /// What a button or check box in a panel stands for.
@@ -20,12 +25,15 @@ pub enum Act {
     Ok,
     Close,
     Flag(Flag),
+    Search,
+    More,
 }
 
 pub enum Panel {
     Jump(JumpToFile),
     Info(FileInfo),
     Prefs(Preferences),
+    Museum(SkinMuseum),
 }
 
 impl Panel {
@@ -34,6 +42,7 @@ impl Panel {
             PanelKind::JumpToFile => Panel::Jump(JumpToFile::new(model)),
             PanelKind::FileInfo => Panel::Info(FileInfo::new(model)),
             PanelKind::Preferences => Panel::Prefs(Preferences::new(model.settings())),
+            PanelKind::SkinMuseum => Panel::Museum(SkinMuseum::new()),
         }
     }
 
@@ -42,6 +51,7 @@ impl Panel {
             Panel::Jump(_) => PanelKind::JumpToFile,
             Panel::Info(_) => PanelKind::FileInfo,
             Panel::Prefs(_) => PanelKind::Preferences,
+            Panel::Museum(_) => PanelKind::SkinMuseum,
         }
     }
 
@@ -50,6 +60,7 @@ impl Panel {
             Panel::Jump(_) => "Jump to file",
             Panel::Info(_) => "File info",
             Panel::Prefs(_) => "Linamp Preferences",
+            Panel::Museum(_) => "Winamp Skin Museum",
         }
     }
 
@@ -58,6 +69,7 @@ impl Panel {
             Panel::Jump(p) => &p.form,
             Panel::Info(p) => &p.form,
             Panel::Prefs(p) => &p.form,
+            Panel::Museum(p) => &p.form,
         }
     }
 
@@ -66,6 +78,7 @@ impl Panel {
             Panel::Jump(p) => &mut p.form,
             Panel::Info(p) => &mut p.form,
             Panel::Prefs(p) => &mut p.form,
+            Panel::Museum(p) => &mut p.form,
         }
     }
 
@@ -76,6 +89,22 @@ impl Panel {
             Panel::Jump(p) => p.handle(ev, model),
             Panel::Info(_) => !matches!(ev, Event::Clicked(_) | Event::Cancel),
             Panel::Prefs(p) => p.handle(ev, model),
+            Panel::Museum(p) => p.handle(ev, model),
+        }
+    }
+
+    /// Network work the panel asked for since the last call.
+    pub fn take_jobs(&mut self) -> Vec<Job> {
+        match self {
+            Panel::Museum(p) => std::mem::take(&mut p.jobs),
+            _ => Vec::new(),
+        }
+    }
+
+    /// A background job finished.
+    pub fn fetched(&mut self, f: Fetched, model: &mut Model) {
+        if let Panel::Museum(p) = self {
+            p.fetched(f, model);
         }
     }
 
@@ -407,6 +436,175 @@ impl Preferences {
     }
 }
 
+// --- Skin Museum -----------------------------------------------------------------
+
+/// Browse and search skins.webamp.org, preview one, download and use it.
+pub struct SkinMuseum {
+    form: Form<Act>,
+    search: usize,
+    list: usize,
+    shot: usize,
+    status: usize,
+    /// The search the list shows (empty: the museum's own order).
+    query: String,
+    entries: Vec<museum::Entry>,
+    /// A page request is under way.
+    loading: bool,
+    /// The last page was full, so there may be more.
+    more: bool,
+    shots: HashMap<String, Bitmap>,
+    /// Requests for `app.rs` to run in the background.
+    jobs: Vec<Job>,
+}
+
+impl SkinMuseum {
+    const CREDIT: &'static str = "Skins from skins.webamp.org belong to their authors.";
+
+    fn new() -> SkinMuseum {
+        let (list_w, shot_w, shot_h) = (260, 275, 348);
+        let w = 10 + list_w + 10 + shot_w + 10;
+        let mut form = Form::new(w, 0);
+        let search = form.add(Rect::new(10, 10, list_w - 80, 24), Widget::Input { text: String::new(), cursor: 0 });
+        button(&mut form, 10 + list_w - 74, 10, "Search", Act::Search, true);
+        let list_h = 4 + 16 * ROW_H;
+        let list = form.add(Rect::new(10, 42, list_w, list_h), Widget::List { rows: vec![], selected: None, scroll: 0 });
+        button(&mut form, 10, 42 + list_h + 8, "More", Act::More, false);
+        let shot = form.add(Rect::new(10 + list_w + 10, 10, shot_w, shot_h), Widget::Image { image: None, note: String::new() });
+        let y = 10 + shot_h + 14;
+        let status = form.add(Rect::new(10, y, w - 2 * BUTTON.0 - 36, BUTTON.1), Widget::Label { text: Self::CREDIT.into(), dim: true });
+        form.add(
+            Rect::new(w - 2 * BUTTON.0 - 56, y, BUTTON.0 + 40, BUTTON.1),
+            Widget::Button { label: "Download & use".into(), action: Act::Ok, default: false },
+        );
+        button(&mut form, w - BUTTON.0 - 10, y, "Close", Act::Close, false);
+        form.h = y + BUTTON.1 + 10;
+        let mut p = SkinMuseum {
+            form,
+            search,
+            list,
+            shot,
+            status,
+            query: String::new(),
+            entries: vec![],
+            loading: false,
+            more: false,
+            shots: HashMap::new(),
+            jobs: vec![],
+        };
+        p.load(String::new());
+        p
+    }
+
+    /// Starts a new list for `query`.
+    fn load(&mut self, query: String) {
+        self.entries.clear();
+        self.form.set_rows(self.list, vec![], None);
+        self.form.set_image(self.shot, None, "");
+        self.query = query;
+        self.request_page();
+    }
+
+    fn request_page(&mut self) {
+        self.loading = true;
+        self.form.set_label(self.status, "Loading…".into());
+        self.jobs.push(Job::Page { query: self.query.clone(), offset: self.entries.len() });
+    }
+
+    fn selected(&self) -> Option<&museum::Entry> {
+        self.form.selected(self.list).and_then(|i| self.entries.get(i))
+    }
+
+    /// Shows the selected skin's screenshot, fetching it the first time.
+    fn show_selected(&mut self) {
+        let Some(md5) = self.selected().map(|e| e.md5.clone()) else { return };
+        match self.shots.get(&md5) {
+            Some(img) => self.form.set_image(self.shot, Some(img.clone()), ""),
+            None => {
+                self.form.set_image(self.shot, None, "Loading preview…");
+                self.jobs.push(Job::Screenshot { md5 });
+            }
+        }
+    }
+
+    fn handle(&mut self, ev: Event<Act>, model: &mut Model) -> bool {
+        match ev {
+            Event::Clicked(Act::Search) => self.load(self.form.text(self.search).trim().to_string()),
+            Event::Clicked(Act::More) if self.more && !self.loading => self.request_page(),
+            Event::Selected => self.show_selected(),
+            Event::Clicked(Act::Ok) | Event::Activated => {
+                if let Some(entry) = self.selected().cloned() {
+                    self.form.set_label(self.status, format!("Downloading {}…", entry.name()));
+                    self.jobs.push(Job::Download { entry, dir: model.paths.skins_dir() });
+                }
+            }
+            Event::Clicked(Act::Close) | Event::Cancel => return false,
+            _ => {}
+        }
+        true
+    }
+
+    fn fetched(&mut self, f: Fetched, model: &mut Model) {
+        match f {
+            Fetched::Page { query, offset, result } => self.page_fetched(&query, offset, result),
+            Fetched::Screenshot { md5, result } => self.screenshot_fetched(md5, result),
+            Fetched::Download { name, result } => {
+                let note = match result {
+                    Ok(path) => {
+                        model.set_skin(Some(path));
+                        format!("Using {name}.")
+                    }
+                    Err(e) => format!("{name}: {e}"),
+                };
+                self.form.set_label(self.status, note);
+            }
+        }
+    }
+
+    fn page_fetched(&mut self, query: &str, offset: usize, result: Result<Vec<museum::Entry>, String>) {
+        // Answers to an older search, or a page already shown, are dropped.
+        if query != self.query || offset != self.entries.len() {
+            return;
+        }
+        self.loading = false;
+        match result {
+            Ok(page) => self.add_page(page),
+            Err(e) => self.form.set_label(self.status, format!("Museum: {e}")),
+        }
+    }
+
+    fn screenshot_fetched(&mut self, md5: String, result: Result<Bitmap, String>) {
+        let showing = self.selected().is_some_and(|e| e.md5 == md5);
+        match result {
+            Ok(img) => {
+                self.shots.insert(md5, img);
+                if showing {
+                    self.show_selected();
+                }
+            }
+            Err(e) if showing => self.form.set_image(self.shot, None, &format!("No preview: {e}")),
+            Err(_) => {}
+        }
+    }
+
+    fn add_page(&mut self, page: Vec<museum::Entry>) {
+        self.more = page.len() >= museum::PAGE;
+        let first = self.entries.is_empty();
+        let names: Vec<String> = page.iter().map(museum::Entry::name).collect();
+        self.entries.extend(page);
+        if first {
+            self.form.set_rows(self.list, names, Some(0));
+            self.show_selected();
+        } else {
+            self.form.push_rows(self.list, names);
+        }
+        let note = match self.entries.len() {
+            0 => "Nothing found.".to_string(),
+            n => format!("{n} skins. {}", Self::CREDIT),
+        };
+        self.form.set_label(self.status, note);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -576,5 +774,79 @@ mod tests {
         retype(&mut p, &mut m, Field::FontSize, "999");
         press(&mut p, &mut m, Key::Enter);
         assert_eq!(m.settings().pe_fontsize, 40);
+    }
+
+    fn museum_entry(n: u8) -> museum::Entry {
+        museum::Entry { md5: format!("{n:032x}"), filename: format!("Skin {n}.wsz") }
+    }
+
+    fn museum_page(query: &str, offset: usize, n: usize) -> Fetched {
+        let result = Ok((0..n).map(|i| museum_entry((offset + i) as u8)).collect());
+        Fetched::Page { query: query.into(), offset, result }
+    }
+
+    fn museum(p: &Panel) -> &SkinMuseum {
+        match p {
+            Panel::Museum(m) => m,
+            _ => panic!("not the museum"),
+        }
+    }
+
+    #[test]
+    fn museum_lists_pages_and_previews_the_selection() {
+        let mut m = songs(&[]);
+        let mut p = Panel::open(PanelKind::SkinMuseum, &m);
+        assert!(matches!(&p.take_jobs()[..], [Job::Page { query, offset: 0 }] if query.is_empty()));
+        p.fetched(museum_page("", 0, museum::PAGE), &mut m);
+        assert_eq!(museum(&p).form.selected(museum(&p).list), Some(0));
+        let md5_0 = museum_entry(0).md5;
+        assert!(matches!(&p.take_jobs()[..], [Job::Screenshot { md5 }] if *md5 == md5_0));
+        // More appends the next page; a late copy of the first is ignored.
+        let ev = Event::Clicked(Act::More);
+        p.handle(ev, &mut m);
+        assert!(matches!(&p.take_jobs()[..], [Job::Page { offset, .. }] if *offset == museum::PAGE));
+        p.fetched(museum_page("", 0, 3), &mut m);
+        p.fetched(museum_page("", museum::PAGE, 2), &mut m);
+        assert_eq!(museum(&p).entries.len(), museum::PAGE + 2);
+        p.handle(Event::Clicked(Act::More), &mut m);
+        assert!(p.take_jobs().is_empty(), "a short page was the last");
+        // A preview is fetched once, then shown from the cache.
+        p.fetched(Fetched::Screenshot { md5: md5_0.clone(), result: Ok(Bitmap::new(2, 2, 0)) }, &mut m);
+        assert!(matches!(museum(&p).form.widget(museum(&p).shot), Widget::Image { image: Some(_), .. }));
+        press(&mut p, &mut m, Key::Down);
+        assert_eq!(p.take_jobs().len(), 1);
+        press(&mut p, &mut m, Key::Up);
+        assert!(p.take_jobs().is_empty());
+    }
+
+    #[test]
+    fn museum_search_replaces_the_list() {
+        let mut m = songs(&[]);
+        let mut p = Panel::open(PanelKind::SkinMuseum, &m);
+        p.fetched(museum_page("", 0, 5), &mut m);
+        type_text(&mut p, &mut m, "bento");
+        press(&mut p, &mut m, Key::Enter);
+        assert!(matches!(&p.take_jobs()[..], [_, _, Job::Page { query, offset: 0 }] if query == "bento"));
+        p.fetched(museum_page("", 5, 5), &mut m);
+        assert!(museum(&p).entries.is_empty(), "answer to the old list");
+        p.fetched(Fetched::Page { query: "bento".into(), offset: 0, result: Ok(vec![]) }, &mut m);
+        let status = museum(&p).form.widget(museum(&p).status).clone();
+        assert!(matches!(status, Widget::Label { text, .. } if text == "Nothing found."));
+    }
+
+    #[test]
+    fn museum_downloads_into_the_skins_folder() {
+        let mut m = songs(&[]);
+        let mut p = Panel::open(PanelKind::SkinMuseum, &m);
+        p.fetched(museum_page("", 0, 2), &mut m);
+        p.take_jobs();
+        p.handle(Event::Activated, &mut m);
+        let dir = m.paths.skins_dir();
+        assert!(matches!(&p.take_jobs()[..], [Job::Download { entry, dir: d }] if entry.md5 == museum_entry(0).md5 && *d == dir));
+        let failed = Fetched::Download { name: "Skin 0".into(), result: Err("not a usable skin".into()) };
+        p.fetched(failed, &mut m);
+        let status = museum(&p).form.widget(museum(&p).status).clone();
+        assert!(matches!(status, Widget::Label { text, .. } if text == "Skin 0: not a usable skin"));
+        assert!(!press(&mut p, &mut m, Key::Escape));
     }
 }

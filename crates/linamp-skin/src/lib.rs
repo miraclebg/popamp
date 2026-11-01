@@ -120,7 +120,19 @@ fn wanted(name: &str) -> bool {
 
 fn read_zip_files(path: &Path) -> Result<HashMap<String, Vec<u8>>, String> {
     let file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("{}: not a skin archive: {e}", path.display()))?;
+    read_zip(file).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Checks downloaded bytes before they are saved as a skin: a zip archive
+/// whose main window bitmap decodes.
+pub fn check_archive(bytes: &[u8]) -> Result<(), String> {
+    let files = read_zip(std::io::Cursor::new(bytes))?;
+    let main = files.get(Sheet::Main.file_name()).ok_or("no main window bitmap in the archive")?;
+    Bitmap::decode(main).map(drop)
+}
+
+fn read_zip(file: impl Read + std::io::Seek) -> Result<HashMap<String, Vec<u8>>, String> {
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("not a skin archive: {e}"))?;
     let mut out = HashMap::new();
     for i in 0..zip.len() {
         let Ok(mut entry) = zip.by_index(i) else { continue };
@@ -215,5 +227,26 @@ mod tests {
         assert_eq!(skin.sheet(Sheet::Balance).px[0], 0xffffff, "balance falls back to volume");
         assert_eq!(skin.sheet(Sheet::Main).w, 275, "bad main.bmp falls back to default");
         assert_eq!(skin.pl.normal, 0x112233);
+    }
+
+    fn zip_of(files: &[(&str, &[u8])]) -> Vec<u8> {
+        use std::io::Write;
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for (name, data) in files {
+            w.start_file(*name, opts).unwrap();
+            w.write_all(data).unwrap();
+        }
+        w.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn checks_downloaded_archives() {
+        let mut png = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png).write_image(&[0u8; 3], 1, 1, image::ExtendedColorType::Rgb8).unwrap();
+        assert_eq!(check_archive(&zip_of(&[("Skin/MAIN.BMP", &png)])), Ok(()));
+        assert!(check_archive(b"<html>not found</html>").unwrap_err().contains("not a skin archive"));
+        assert!(check_archive(&zip_of(&[("eqmain.bmp", &png)])).unwrap_err().contains("main window"));
+        assert!(check_archive(&zip_of(&[("main.bmp", b"junk")])).is_err());
     }
 }

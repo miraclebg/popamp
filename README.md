@@ -33,6 +33,9 @@ and classic `.wsz` skins load at runtime.
 - **Classic skins:** `.wsz`/`.zip` archives or unpacked directories. Each file
   falls back to the default skin if missing or broken. `viscolor.txt`,
   `pledit.txt` and the skin's mouse cursors (`*.cur`) are supported.
+  Skins > Skin Museum browses, searches and downloads skins from
+  [skins.webamp.org](https://skins.webamp.org); Linamp contacts the
+  museum only while that window is open.
 - **Playback:**
   - Formats: MP3, AAC/M4A, FLAC, Ogg Vorbis, WAV, AIFF, MKA (Matroska audio)
     and ALAC, decoded by [Symphonia](https://github.com/pdeljanov/Symphonia).

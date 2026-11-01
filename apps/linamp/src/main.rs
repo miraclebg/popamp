@@ -9,6 +9,7 @@ mod ipc;
 mod menu;
 mod model;
 mod mpris;
+mod museum;
 mod panels;
 mod platform;
 mod render;

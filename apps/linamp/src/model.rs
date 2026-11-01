@@ -41,6 +41,7 @@ pub enum AppEvent {
     Expanded { items: Vec<Item>, mode: AddMode },
     Dialog(DialogResult),
     Remote(crate::ipc::Request),
+    Museum(crate::museum::Fetched),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1134,6 +1135,7 @@ impl Model {
                 }
             }
             C::SkinBrowser => self.request_dialog(DialogKind::Skin),
+            C::SkinMuseum => self.ui.push(UiReq::Panel(PanelKind::SkinMuseum)),
             C::EqPresetLoad => self.request_dialog(DialogKind::EqLoadPreset { auto: false }),
             C::EqPresetSave => self.request_dialog(DialogKind::EqSavePreset { auto: false }),
             C::EqPresetDelete => self.request_dialog(DialogKind::EqDeletePreset { auto: false }),
@@ -1470,7 +1472,11 @@ impl Model {
     }
 
     pub fn skins_menu(&self) -> Vec<MenuItem> {
-        let mut items = vec![MenuItem::cmd("Skin browser…", "Alt+S", Command::SkinBrowser), MenuItem::sep()];
+        let mut items = vec![
+            MenuItem::cmd("Skin browser…", "Alt+S", Command::SkinBrowser),
+            MenuItem::cmd("Skin Museum (online)…", "", Command::SkinMuseum),
+            MenuItem::sep(),
+        ];
         items.push(MenuItem::action("Linamp Default", "", MenuAction::Skin(None)).checked(self.skin_path.is_none()));
         for p in linamp_skin::list_skins(&self.paths.skins_dir()).into_iter().take(40) {
             let name = p.file_stem().unwrap_or_default().to_string_lossy().into_owned();

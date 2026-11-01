@@ -48,12 +48,37 @@ pub enum Key {
 /// One control. `A` names what a button or check box stands for.
 #[derive(Debug, Clone)]
 pub enum Widget<A> {
-    Label { text: String, dim: bool },
-    Input { text: String, cursor: usize },
-    List { rows: Vec<String>, selected: Option<usize>, scroll: usize },
-    Button { label: String, action: A, default: bool },
-    Check { label: String, checked: bool, action: A },
-    Group { label: String },
+    Label {
+        text: String,
+        dim: bool,
+    },
+    Input {
+        text: String,
+        cursor: usize,
+    },
+    List {
+        rows: Vec<String>,
+        selected: Option<usize>,
+        scroll: usize,
+    },
+    Button {
+        label: String,
+        action: A,
+        default: bool,
+    },
+    Check {
+        label: String,
+        checked: bool,
+        action: A,
+    },
+    Group {
+        label: String,
+    },
+    /// A picture, or `note` in an empty frame until it arrives.
+    Image {
+        image: Option<Bitmap>,
+        note: String,
+    },
 }
 
 /// What happened to the form.
@@ -125,6 +150,21 @@ impl<A: Copy + PartialEq> Form<A> {
         }
     }
 
+    /// Shows `image` in image `i`, or `note` when there is none.
+    pub fn set_image(&mut self, i: usize, new: Option<Bitmap>, new_note: &str) {
+        if let Widget::Image { image, note } = &mut self.controls[i].1 {
+            *image = new;
+            *note = new_note.into();
+        }
+    }
+
+    /// Appends rows to list `i`, keeping the selection and scroll.
+    pub fn push_rows(&mut self, i: usize, more: impl IntoIterator<Item = String>) {
+        if let Widget::List { rows, .. } = &mut self.controls[i].1 {
+            rows.extend(more);
+        }
+    }
+
     /// The text of field `i` (empty for other controls).
     pub fn text(&self, i: usize) -> &str {
         match &self.controls[i].1 {
@@ -179,7 +219,10 @@ impl<A: Copy + PartialEq> Form<A> {
     }
 
     pub fn mouse_down(&mut self, x: i32, y: i32, double: bool) -> Event<A> {
-        let Some(i) = self.controls.iter().position(|(r, w)| r.contains(x, y) && !matches!(w, Widget::Label { .. } | Widget::Group { .. }))
+        let Some(i) = self
+            .controls
+            .iter()
+            .position(|(r, w)| r.contains(x, y) && !matches!(w, Widget::Label { .. } | Widget::Group { .. } | Widget::Image { .. }))
         else {
             return Event::None;
         };
@@ -211,7 +254,7 @@ impl<A: Copy + PartialEq> Form<A> {
                 *checked = !*checked;
                 Event::Toggled(*action, *checked)
             }
-            Widget::Label { .. } | Widget::Group { .. } => Event::None,
+            Widget::Label { .. } | Widget::Group { .. } | Widget::Image { .. } => Event::None,
         }
     }
 
@@ -297,6 +340,7 @@ impl<A: Copy + PartialEq> Form<A> {
                 Widget::Button { label, default, .. } => draw_button(b, font, *r, label, self.pressed == Some(i), *default),
                 Widget::Check { label, checked, .. } => draw_check(b, font, *r, label, *checked),
                 Widget::Group { label } => draw_group(b, font, *r, label),
+                Widget::Image { image, note } => draw_image(b, font, *r, image.as_ref(), note),
             }
         }
     }
@@ -406,6 +450,18 @@ fn draw_group(b: &mut Bitmap, font: &mut Font, r: Rect, label: &str) {
     let tw = font.width(label, FONT_PX);
     b.fill(r.x + 8, r.y, tw + 6, FONT_PX as i32 + 2, BG);
     font.draw(b, r.x + 11, r.y - 1, label, FONT_PX, DIM, r.x, r.w);
+}
+
+fn draw_image(b: &mut Bitmap, font: &mut Font, r: Rect, image: Option<&Bitmap>, note: &str) {
+    match image {
+        Some(img) => b.blit(img, 0, 0, img.w.min(r.w), img.h.min(r.h), r.x, r.y),
+        None => {
+            sunken(b, r, false);
+            let t = font.fit(note, FONT_PX, r.w - 8);
+            let tw = font.width(&t, FONT_PX);
+            font.draw(b, r.x + (r.w - tw) / 2, r.y + r.h / 2 - FONT_PX as i32 / 2, &t, FONT_PX, DIM, r.x, r.w);
+        }
+    }
 }
 
 #[cfg(test)]
