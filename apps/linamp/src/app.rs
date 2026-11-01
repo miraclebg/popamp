@@ -97,9 +97,8 @@ enum Drag {
 pub struct App {
     pub model: Model,
     font: Font,
-    mainw: SkinWin,
-    eqw: SkinWin,
-    plw: SkinWin,
+    /// The skinned windows, by `idx`.
+    skins: [SkinWin; 3],
     wins: [Option<SkinWindow>; 3],
     popups: Vec<Popup>,
     panels: Vec<PanelWindow>,
@@ -129,9 +128,7 @@ impl App {
         App {
             model,
             font,
-            mainw: SkinWin::new(WindowKey::Main),
-            eqw: SkinWin::new(WindowKey::Eq),
-            plw: SkinWin::new(WindowKey::Playlist),
+            skins: [SkinWin::new(WindowKey::Main), SkinWin::new(WindowKey::Eq), SkinWin::new(WindowKey::Playlist)],
             wins: [None, None, None],
             popups: Vec::new(),
             panels: Vec::new(),
@@ -391,11 +388,7 @@ impl App {
             w.frame = Bitmap::new(lw, lh, 0);
         }
         let active = w.focused;
-        match k {
-            WinKind::Main => self.mainw.draw(&self.model, &mut self.font, &mut w.frame, active),
-            WinKind::Eq => self.eqw.draw(&self.model, &mut self.font, &mut w.frame, active),
-            WinKind::Pl => self.plw.draw(&self.model, &mut self.font, &mut w.frame, active),
-        }
+        self.skins[idx(k)].draw(&self.model, &mut self.font, &mut w.frame, active);
         let (pw, ph) = (lw as u32 * scale, lh as u32 * scale);
         let (Some(nw), Some(nh)) = (NonZeroU32::new(pw), NonZeroU32::new(ph)) else { return };
         if w.surface.resize(nw, nh).is_err() {
@@ -569,11 +562,7 @@ impl App {
     /// Shows the skin cursor for the control under the mouse in window `k`.
     fn update_cursor(&mut self, k: WinKind) {
         let input = self.input(k, false, false);
-        let kind = match k {
-            WinKind::Main => self.mainw.cursor(&self.model, input.x, input.y),
-            WinKind::Eq => self.eqw.cursor(&self.model, input.x, input.y),
-            WinKind::Pl => self.plw.cursor(&self.model, input.x, input.y),
-        };
+        let kind = self.skins[idx(k)].cursor(&self.model, input.x, input.y);
         let custom = self.cursors.get(&kind).or_else(|| self.cursors.get(&CursorKind::Normal)).cloned();
         let Some(w) = self.wins[idx(k)].as_mut() else { return };
         if w.cursor_kind == Some(kind) {
@@ -592,7 +581,7 @@ impl App {
             self.tip = None;
             return;
         }
-        let text = self.mainw.tooltip(&self.model, x, y).unwrap_or_else(|| format!("Linamp {}", env!("CARGO_PKG_VERSION")));
+        let text = self.skins[idx(k)].tooltip(&self.model, x, y).unwrap_or_else(|| format!("Linamp {}", env!("CARGO_PKG_VERSION")));
         if self.tip.as_ref().is_none_or(|t| t.text != text) {
             self.tip = Some(Tooltip { text, since: Instant::now(), shown: None });
         }
@@ -869,11 +858,7 @@ impl App {
             });
         self.last_click = if right || double { None } else { Some((k, Instant::now(), pos)) };
         let input = self.input(k, right, double);
-        let out = match k {
-            WinKind::Main => self.mainw.mouse_down(&mut self.model, &input),
-            WinKind::Eq => self.eqw.mouse_down(&mut self.model, &input),
-            WinKind::Pl => self.plw.mouse_down(&mut self.model, &input),
-        };
+        let out = self.skins[idx(k)].mouse_down(&mut self.model, &input);
         self.handle_out(el, k, out);
     }
 
@@ -890,11 +875,7 @@ impl App {
         }
         let target = self.capture.take().unwrap_or(k);
         let input = self.input(target, false, false);
-        let out = match target {
-            WinKind::Main => self.mainw.mouse_up(&mut self.model, &input),
-            WinKind::Eq => self.eqw.mouse_up(&mut self.model, &input),
-            WinKind::Pl => self.plw.mouse_up(&mut self.model, &input),
-        };
+        let out = self.skins[idx(target)].mouse_up(&mut self.model, &input);
         self.handle_out(el, target, out);
     }
 
@@ -907,11 +888,7 @@ impl App {
         let target = self.capture.unwrap_or(k);
         let input = self.input(target, false, false);
         self.hover_tooltip(target, input.x, input.y);
-        let changed = match target {
-            WinKind::Main => self.mainw.mouse_move(&mut self.model, input.x, input.y),
-            WinKind::Eq => self.eqw.mouse_move(&mut self.model, input.x, input.y),
-            WinKind::Pl => self.plw.mouse_move(&mut self.model, input.x, input.y),
-        };
+        let changed = self.skins[idx(target)].mouse_move(&mut self.model, input.x, input.y);
         if changed {
             self.render(target);
             if target == WinKind::Eq {
@@ -929,8 +906,8 @@ impl App {
             self.popup_key(el, code);
             return;
         }
-        if k == WinKind::Pl && self.plw.popup_open() && code == KeyCode::Escape {
-            self.plw.close_popup();
+        if self.skins[idx(k)].popup_open() && code == KeyCode::Escape {
+            self.skins[idx(k)].close_popup();
             self.render(k);
             return;
         }
@@ -988,7 +965,7 @@ impl App {
                 _ => None,
             };
             if let Some(n) = nav {
-                self.plw.key_nav(&mut self.model, n, shift);
+                self.skins[idx(WinKind::Pl)].key_nav(&mut self.model, n, shift);
                 return self.redraw_after(el, k);
             }
             let cmd = match code {
@@ -1203,7 +1180,7 @@ impl App {
             WinKind::Pl => {
                 // Insert at the row under the cursor.
                 let input = self.input(WinKind::Pl, false, false);
-                let at = self.plw.row_at(&self.model, input.y);
+                let at = self.skins[idx(WinKind::Pl)].row_at(&self.model, input.y);
                 self.model.add(files, AddMode::Insert(at.min(self.model.playlist.len())));
             }
             _ if self.mods.shift_key() => self.model.add(files, AddMode::Append),
@@ -1225,7 +1202,7 @@ impl App {
         let rate = sh.sample_rate();
         let settings = self.model.settings().clone();
         self.model.vis.analyze(&settings, rate);
-        self.mainw.tick(&self.model);
+        self.skins[idx(WinKind::Main)].tick(&self.model);
         self.render(WinKind::Main);
         if self.last_slow.elapsed() >= Duration::from_millis(500) {
             self.last_slow = Instant::now();
@@ -1337,7 +1314,7 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::Engine(e) => {
                 self.model.on_engine(e);
                 if let Some(cur) = self.model.playlist.current() {
-                    self.plw.ensure_visible(&self.model, cur);
+                    self.skins[idx(WinKind::Pl)].ensure_visible(&self.model, cur);
                 }
                 self.render(WinKind::Main);
                 self.render(WinKind::Pl);
@@ -1400,8 +1377,8 @@ impl ApplicationHandler<AppEvent> for App {
                 if !f && !self.popups.is_empty() {
                     self.popup_focus_check = Some(Instant::now());
                 }
-                if !f && k == WinKind::Pl && self.plw.popup_open() {
-                    self.plw.close_popup();
+                if !f && self.skins[idx(k)].popup_open() {
+                    self.skins[idx(k)].close_popup();
                 }
                 self.render(k);
             }
@@ -1433,11 +1410,7 @@ impl ApplicationHandler<AppEvent> for App {
                 };
                 if steps != 0 {
                     let input = self.input(k, false, false);
-                    match k {
-                        WinKind::Main => self.mainw.wheel(&mut self.model, input.x, input.y, steps),
-                        WinKind::Eq => self.eqw.wheel(&mut self.model, input.x, input.y, steps),
-                        WinKind::Pl => self.plw.wheel(&mut self.model, input.x, input.y, steps),
-                    }
+                    self.skins[idx(k)].wheel(&mut self.model, input.x, input.y, steps);
                     self.render(k);
                     self.render(WinKind::Main);
                 }
