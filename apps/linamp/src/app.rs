@@ -262,43 +262,24 @@ impl App {
     /// when a window above them changes height.
     fn apply_layout(&mut self) {
         let scale = self.scale();
-        type Geometry = (i32, i32, i32, i32, bool);
-        let old: Vec<Option<Geometry>> = WindowKey::ALL
+        let old: Vec<Option<Rect>> = WindowKey::ALL
             .iter()
             .map(|&k| {
-                self.win(k).map(|w| {
-                    let s = w.window.inner_size();
-                    (w.pos.0, w.pos.1, s.width as i32, s.height as i32, w.visible)
-                })
+                let w = self.win(k).filter(|w| w.visible)?;
+                let s = w.window.inner_size();
+                Some((w.pos.0, w.pos.1, s.width as i32, s.height as i32))
             })
             .collect();
-        let mut new_pos: Vec<(i32, i32)> = WindowKey::ALL.iter().map(|&k| self.win(k).map(|w| w.pos).unwrap_or((0, 0))).collect();
-        for (i, &k) in WindowKey::ALL.iter().enumerate() {
-            let Some((x, y, ow, oh, vis)) = old[i] else { continue };
-            let (lw, lh) = self.logical_size(k);
-            let (nw, nh) = (scale.px(lw), scale.px(lh));
-            if !vis || (nw == ow && nh == oh) {
-                continue;
-            }
-            // Shift windows docked below/right of this one.
-            for (j, &other) in WindowKey::ALL.iter().enumerate() {
-                if j == i {
-                    continue;
-                }
-                let Some((ox, oy, oww, ohh, ovis)) = old[j] else { continue };
-                if !ovis {
-                    continue;
-                }
-                let h_overlap = ox < x + ow && ox + oww > x;
-                let v_overlap = oy < y + oh && oy + ohh > y;
-                if (oy - (y + oh)).abs() <= 1 && h_overlap {
-                    new_pos[j].1 += nh - oh;
-                } else if (ox - (x + ow)).abs() <= 1 && v_overlap {
-                    new_pos[j].0 += nw - ow;
-                }
-                let _ = other;
-            }
-        }
+        let sizes: Vec<(i32, i32)> = WindowKey::ALL
+            .iter()
+            .map(|&k| {
+                let (lw, lh) = self.logical_size(k);
+                (scale.px(lw), scale.px(lh))
+            })
+            .collect();
+        let moved = follow_docked(&old, &sizes);
+        let new_pos: Vec<(i32, i32)> =
+            WindowKey::ALL.iter().zip(moved).map(|(&k, p)| self.win(k).map_or((0, 0), |w| if w.visible { p } else { w.pos })).collect();
         for (i, &k) in WindowKey::ALL.iter().enumerate() {
             let visible = self.wanted_visible(k);
             let (lw, lh) = self.logical_size(k);
@@ -1400,5 +1381,72 @@ impl ApplicationHandler<AppEvent> for App {
         if !self.model.quit {
             self.model.save_session();
         }
+    }
+}
+
+/// Screen rectangle of a shown window: x, y, width, height.
+type Rect = (i32, i32, i32, i32);
+
+/// New positions after windows change size: a window docked below or to the
+/// right of another moves with it and by its growth, down the whole chain.
+fn follow_docked(old: &[Option<Rect>], sizes: &[(i32, i32)]) -> Vec<(i32, i32)> {
+    let mut shift = vec![(0, 0); old.len()];
+    // Each pass carries the shift one more link down a chain.
+    for _ in 0..old.len() {
+        for (i, &a) in old.iter().enumerate() {
+            let Some(a) = a else { continue };
+            let grow = (sizes[i].0 - a.2, sizes[i].1 - a.3);
+            for (j, &b) in old.iter().enumerate() {
+                if let (true, Some(b)) = (i != j, b) {
+                    if let Some(by) = docked_by(a, b, grow) {
+                        shift[j] = (shift[i].0 + by.0, shift[i].1 + by.1);
+                    }
+                }
+            }
+        }
+    }
+    old.iter().zip(shift).map(|(r, s)| r.map_or((0, 0), |r| (r.0 + s.0, r.1 + s.1))).collect()
+}
+
+/// How far `b` moves when `a`, which it may be docked to, grows by `grow`:
+/// down if `b` sits under `a`, right if `b` sits to its right.
+fn docked_by(a: Rect, b: Rect, grow: (i32, i32)) -> Option<(i32, i32)> {
+    let (x, y, w, h) = a;
+    let columns_overlap = b.0 < x + w && b.0 + b.2 > x;
+    let rows_overlap = b.1 < y + h && b.1 + b.3 > y;
+    if (b.1 - (y + h)).abs() <= 1 && columns_overlap {
+        Some((0, grow.1))
+    } else if (b.0 - (x + w)).abs() <= 1 && rows_overlap {
+        Some((grow.0, 0))
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_docked_chain_moves_down_as_a_whole() {
+        // Main, EQ and playlist stacked at x1, then all grown to x1.5.
+        let old = [Some((100, 100, 275, 116)), Some((100, 216, 275, 116)), Some((100, 332, 275, 232))];
+        let sizes = [(413, 174), (413, 174), (413, 348)];
+        assert_eq!(follow_docked(&old, &sizes), [(100, 100), (100, 274), (100, 448)]);
+    }
+
+    #[test]
+    fn a_window_to_the_right_moves_with_its_neighbour() {
+        // EQ right of main, playlist below EQ; only main grows.
+        let old = [Some((0, 0, 275, 116)), Some((275, 0, 275, 116)), Some((275, 116, 275, 232))];
+        let sizes = [(300, 116), (275, 116), (275, 232)];
+        assert_eq!(follow_docked(&old, &sizes), [(0, 0), (300, 0), (300, 116)]);
+    }
+
+    #[test]
+    fn hidden_and_detached_windows_stay_put() {
+        let old = [Some((0, 0, 275, 116)), None, Some((500, 500, 275, 232))];
+        let sizes = [(413, 174), (0, 0), (413, 348)];
+        assert_eq!(follow_docked(&old, &sizes), [(0, 0), (0, 0), (500, 500)]);
     }
 }
