@@ -110,11 +110,14 @@ pub struct App {
     snapshot: Option<(std::path::PathBuf, u32)>,
     platform: Platform,
     mpris: Option<crate::mpris::Mpris>,
+    /// The scale the windows are shown at now.
+    shown_scale: Scale,
 }
 
 impl App {
     pub fn new(model: Model, start_minimized: bool, mpris: Option<crate::mpris::Mpris>) -> App {
         let font = Font::load(&model.skin.pl.font);
+        let shown_scale = Scale::of(model.settings());
         App {
             model,
             font,
@@ -138,6 +141,7 @@ impl App {
             snapshot: std::env::var_os("LINAMP_SNAPSHOT").map(|d| (std::path::PathBuf::from(d), 0)),
             platform: Platform::connect(),
             mpris,
+            shown_scale,
         }
     }
 
@@ -248,7 +252,7 @@ impl App {
             self.store_pos(k, pos);
         }
         self.build_cursors(el);
-        self.apply_layout();
+        self.apply_layout(WindowKey::Main);
         if self.start_minimized {
             for k in WindowKey::ALL {
                 if let Some(w) = self.win(k) {
@@ -259,15 +263,14 @@ impl App {
     }
 
     /// Applies sizes, scale and visibility; keeps docked windows attached
-    /// when a window above them changes height.
-    fn apply_layout(&mut self) {
-        let scale = self.scale();
+    /// when windows change size; `anchor` stays where it is.
+    fn apply_layout(&mut self, anchor: WindowKey) {
+        let (scale, shown) = (self.scale(), self.shown_scale);
         let old: Vec<Option<Rect>> = WindowKey::ALL
             .iter()
             .map(|&k| {
                 let w = self.win(k).filter(|w| w.visible)?;
-                let s = w.window.inner_size();
-                Some((w.pos.0, w.pos.1, s.width as i32, s.height as i32))
+                Some((w.pos.0, w.pos.1, shown.px(w.size.0), shown.px(w.size.1)))
             })
             .collect();
         let sizes: Vec<(i32, i32)> = WindowKey::ALL
@@ -277,7 +280,7 @@ impl App {
                 (scale.px(lw), scale.px(lh))
             })
             .collect();
-        let moved = follow_docked(&old, &sizes);
+        let moved = follow_docked(&old, &sizes, anchor.index(), |d| scale.px(shown.skin(d)));
         let new_pos: Vec<(i32, i32)> =
             WindowKey::ALL.iter().zip(moved).map(|(&k, p)| self.win(k).map_or((0, 0), |w| if w.visible { p } else { w.pos })).collect();
         for (i, &k) in WindowKey::ALL.iter().enumerate() {
@@ -299,6 +302,7 @@ impl App {
             }
             self.store_pos(k, pos);
         }
+        self.shown_scale = scale;
         self.update_shapes();
     }
 
@@ -755,7 +759,7 @@ impl App {
                 let s = self.scale();
                 let (dx, dy) = (s.skin(cursor.0 - start.0), s.skin(cursor.1 - start.1));
                 if crate::bind::resize(&mut self.model, WindowKey::Playlist, *start_size, dx, dy) {
-                    self.apply_layout();
+                    self.apply_layout(WindowKey::Playlist);
                 }
             }
             None => {}
@@ -1058,7 +1062,7 @@ impl App {
                     self.open_popup(el, items, at);
                 }
                 UiReq::Layout => {
-                    self.apply_layout();
+                    self.apply_layout(WindowKey::Main);
                     self.redraw_all();
                 }
                 UiReq::Minimize => {
@@ -1387,66 +1391,103 @@ impl ApplicationHandler<AppEvent> for App {
 /// Screen rectangle of a shown window: x, y, width, height.
 type Rect = (i32, i32, i32, i32);
 
-/// New positions after windows change size: a window docked below or to the
-/// right of another moves with it and by its growth, down the whole chain.
-fn follow_docked(old: &[Option<Rect>], sizes: &[(i32, i32)]) -> Vec<(i32, i32)> {
-    let mut shift = vec![(0, 0); old.len()];
-    // Each pass carries the shift one more link down a chain.
-    for _ in 0..old.len() {
-        for (i, &a) in old.iter().enumerate() {
-            let Some(a) = a else { continue };
-            let grow = (sizes[i].0 - a.2, sizes[i].1 - a.3);
-            for (j, &b) in old.iter().enumerate() {
-                if let (true, Some(b)) = (i != j, b) {
-                    if let Some(by) = docked_by(a, b, grow) {
-                        shift[j] = (shift[i].0 + by.0, shift[i].1 + by.1);
-                    }
+/// New positions after windows change size. `anchor`, then the first shown
+/// window of every other docked group, stays put; a window docked to a placed
+/// one goes back against the same edge, its offset along that edge passed
+/// through `rescale`.
+fn follow_docked(old: &[Option<Rect>], sizes: &[(i32, i32)], anchor: usize, rescale: impl Fn(i32) -> i32) -> Vec<(i32, i32)> {
+    let mut pos: Vec<Option<(i32, i32)>> = vec![None; old.len()];
+    for root in std::iter::once(anchor).chain(0..old.len()) {
+        let Some(r) = old[root].filter(|_| pos[root].is_none()) else { continue };
+        pos[root] = Some((r.0, r.1));
+        let mut todo = vec![root];
+        while let Some(a) = todo.pop() {
+            let (Some(ra), Some(pa)) = (old[a], pos[a]) else { continue };
+            let now = (pa.0, pa.1, sizes[a].0, sizes[a].1);
+            for b in 0..old.len() {
+                let Some(rb) = old[b].filter(|_| pos[b].is_none()) else { continue };
+                pos[b] = reattach(ra, rb, now, sizes[b], &rescale);
+                if pos[b].is_some() {
+                    todo.push(b);
                 }
             }
         }
     }
-    old.iter().zip(shift).map(|(r, s)| r.map_or((0, 0), |r| (r.0 + s.0, r.1 + s.1))).collect()
+    pos.into_iter().map(|p| p.unwrap_or((0, 0))).collect()
 }
 
-/// How far `b` moves when `a`, which it may be docked to, grows by `grow`:
-/// down if `b` sits under `a`, right if `b` sits to its right.
-fn docked_by(a: Rect, b: Rect, grow: (i32, i32)) -> Option<(i32, i32)> {
-    let (x, y, w, h) = a;
-    let columns_overlap = b.0 < x + w && b.0 + b.2 > x;
-    let rows_overlap = b.1 < y + h && b.1 + b.3 > y;
-    if (b.1 - (y + h)).abs() <= 1 && columns_overlap {
-        Some((0, grow.1))
-    } else if (b.0 - (x + w)).abs() <= 1 && rows_overlap {
-        Some((grow.0, 0))
-    } else {
-        None
-    }
+/// Where `b`, which touched `a` before, goes now that `a` is at `now` and
+/// `b` has `size`; `None` if they did not touch.
+fn reattach(a: Rect, b: Rect, now: Rect, size: (i32, i32), rescale: &impl Fn(i32) -> i32) -> Option<(i32, i32)> {
+    let columns_overlap = b.0 < a.0 + a.2 && b.0 + b.2 > a.0;
+    let rows_overlap = b.1 < a.1 + a.3 && b.1 + b.3 > a.1;
+    let touch = |gap: i32| gap.abs() <= 1;
+    let x = now.0 + rescale(b.0 - a.0);
+    let y = now.1 + rescale(b.1 - a.1);
+    let sides = [
+        (columns_overlap && touch(b.1 - (a.1 + a.3)), (x, now.1 + now.3)),  // below
+        (columns_overlap && touch(a.1 - (b.1 + b.3)), (x, now.1 - size.1)), // above
+        (rows_overlap && touch(b.0 - (a.0 + a.2)), (now.0 + now.2, y)),     // right
+        (rows_overlap && touch(a.0 - (b.0 + b.2)), (now.0 - size.0, y)),    // left
+    ];
+    sides.into_iter().find(|s| s.0).map(|s| s.1)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn x15(d: i32) -> i32 {
+        d * 3 / 2
+    }
+
     #[test]
     fn a_docked_chain_moves_down_as_a_whole() {
         // Main, EQ and playlist stacked at x1, then all grown to x1.5.
         let old = [Some((100, 100, 275, 116)), Some((100, 216, 275, 116)), Some((100, 332, 275, 232))];
         let sizes = [(413, 174), (413, 174), (413, 348)];
-        assert_eq!(follow_docked(&old, &sizes), [(100, 100), (100, 274), (100, 448)]);
+        assert_eq!(follow_docked(&old, &sizes, 0, x15), [(100, 100), (100, 274), (100, 448)]);
     }
 
     #[test]
-    fn a_window_to_the_right_moves_with_its_neighbour() {
-        // EQ right of main, playlist below EQ; only main grows.
-        let old = [Some((0, 0, 275, 116)), Some((275, 0, 275, 116)), Some((275, 116, 275, 232))];
-        let sizes = [(300, 116), (275, 116), (275, 232)];
-        assert_eq!(follow_docked(&old, &sizes), [(0, 0), (300, 0), (300, 116)]);
+    fn a_window_on_the_left_moves_left_as_it_grows() {
+        // Playlist left of main, EQ under main; x1 to x1.5 and back.
+        let old = [Some((500, 0, 275, 116)), Some((500, 116, 275, 116)), Some((225, 0, 275, 232))];
+        let sizes = [(413, 174), (413, 174), (413, 348)];
+        let grown = follow_docked(&old, &sizes, 0, x15);
+        assert_eq!(grown, [(500, 0), (500, 174), (87, 0)]);
+        let old = [Some((500, 0, 413, 174)), Some((500, 174, 413, 174)), Some((87, 0, 413, 348))];
+        let sizes = [(275, 116), (275, 116), (275, 232)];
+        assert_eq!(follow_docked(&old, &sizes, 0, |d| d * 2 / 3), [(500, 0), (500, 116), (225, 0)]);
     }
 
     #[test]
-    fn hidden_and_detached_windows_stay_put() {
+    fn offsets_along_an_edge_scale_with_the_windows() {
+        // EQ right of main and 20 pixels lower.
+        let old = [Some((0, 0, 275, 116)), Some((275, 20, 275, 116)), None];
+        let sizes = [(413, 174), (413, 174), (0, 0)];
+        assert_eq!(follow_docked(&old, &sizes, 0, x15), [(0, 0), (413, 30), (0, 0)]);
+    }
+
+    #[test]
+    fn shading_main_pulls_the_window_below_up_and_leaves_the_side_one() {
+        let old = [Some((500, 0, 275, 116)), Some((500, 116, 275, 116)), Some((225, 0, 275, 232))];
+        let sizes = [(275, 14), (275, 116), (275, 232)];
+        assert_eq!(follow_docked(&old, &sizes, 0, |d| d), [(500, 0), (500, 14), (225, 0)]);
+    }
+
+    #[test]
+    fn the_resized_window_stays_and_pushes_its_neighbour() {
+        // Playlist left of main grows 25 wider: main moves right, not the playlist left.
+        let old = [Some((500, 0, 275, 116)), None, Some((225, 0, 275, 232))];
+        let sizes = [(275, 116), (0, 0), (300, 232)];
+        assert_eq!(follow_docked(&old, &sizes, 2, |d| d), [(525, 0), (0, 0), (225, 0)]);
+    }
+
+    #[test]
+    fn detached_windows_stay_put() {
         let old = [Some((0, 0, 275, 116)), None, Some((500, 500, 275, 232))];
         let sizes = [(413, 174), (0, 0), (413, 348)];
-        assert_eq!(follow_docked(&old, &sizes), [(0, 0), (0, 0), (500, 500)]);
+        assert_eq!(follow_docked(&old, &sizes, 0, x15), [(0, 0), (0, 0), (500, 500)]);
     }
 }
