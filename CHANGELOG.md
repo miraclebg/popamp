@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `/RENDER=<dir>` (with optional `/SKIN=<file>` and files) draws every
+  window in a set of fixed states to PNG files without a display or sound
+  card, for skin previews and before/after comparisons. The set of states
+  follows Ferramp's `--render`.
+
 ## [0.1.0] - 2026-10-22
 
 First release.

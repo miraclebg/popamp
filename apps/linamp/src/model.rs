@@ -20,6 +20,18 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::event_loop::EventLoopProxy;
 
+/// Where background threads send their results. Headless rendering has
+/// no event loop, so its sink drops everything.
+#[derive(Clone)]
+pub struct Events(Option<EventLoopProxy<AppEvent>>);
+
+impl Events {
+    /// Returns false once nobody is listening (or never was).
+    pub fn send(&self, ev: AppEvent) -> bool {
+        self.0.as_ref().is_some_and(|p| p.send_event(ev).is_ok())
+    }
+}
+
 /// Events delivered to the UI thread.
 #[derive(Debug)]
 pub enum AppEvent {
@@ -83,7 +95,7 @@ pub struct Model {
     pub vis: Vis,
     pub ui: Vec<UiReq>,
     pub quit: bool,
-    proxy: EventLoopProxy<AppEvent>,
+    events: Events,
     meta_tx: crossbeam_channel::Sender<(u64, String)>,
     error_skips: usize,
     pub last_dir: Option<PathBuf>,
@@ -97,15 +109,15 @@ fn wants_meta(e: &Entry) -> bool {
     !e.is_url() || (youtube::is_youtube(&e.location) && e.file_title.is_none())
 }
 
-fn spawn_meta_workers(proxy: EventLoopProxy<AppEvent>) -> crossbeam_channel::Sender<(u64, String)> {
+fn spawn_meta_workers(events: Events) -> crossbeam_channel::Sender<(u64, String)> {
     let (tx, rx) = crossbeam_channel::unbounded::<(u64, String)>();
     for i in 0..2 {
         let rx = rx.clone();
-        let proxy = proxy.clone();
+        let events = events.clone();
         let _ = std::thread::Builder::new().name(format!("linamp-meta{i}")).spawn(move || {
             for (id, path) in rx {
                 let res = if youtube::is_youtube(&path) { youtube::read_meta(&path) } else { linamp_audio::read_meta(Path::new(&path)) };
-                if proxy.send_event(AppEvent::Meta(id, res)).is_err() {
+                if !events.send(AppEvent::Meta(id, res)) {
                     return;
                 }
             }
@@ -188,7 +200,17 @@ impl Model {
         let engine = Engine::spawn("default".into(), move |ev| {
             let _ = engine_proxy.send_event(AppEvent::Engine(ev));
         });
-        let meta_tx = spawn_meta_workers(proxy.clone());
+        Self::with_engine(paths, config, engine, Events(Some(proxy)))
+    }
+
+    /// A model with no audio device and no event loop, for drawing the
+    /// windows offline (`--render`).
+    pub fn headless(paths: Paths, config: Config) -> Model {
+        Self::with_engine(paths, config, Engine::headless(), Events(None))
+    }
+
+    fn with_engine(paths: Paths, config: Config, engine: Engine, events: Events) -> Model {
+        let meta_tx = spawn_meta_workers(events.clone());
         let eq_presets = eqf::read_file(&paths.eq_library()).unwrap_or_else(|_| eqf::builtin_presets());
         let eq_auto = eqf::read_file(&paths.eq_auto_library()).unwrap_or_default();
         let format = Format::cached(&config.settings.titlefmt);
@@ -208,7 +230,7 @@ impl Model {
             vis: Vis::new(),
             ui: Vec::new(),
             quit: false,
-            proxy,
+            events,
             meta_tx,
             error_skips: 0,
             last_dir: None,
@@ -230,8 +252,8 @@ impl Model {
         &mut self.config.settings
     }
 
-    pub fn proxy(&self) -> &EventLoopProxy<AppEvent> {
-        &self.proxy
+    pub fn events(&self) -> &Events {
+        &self.events
     }
 
     pub fn push_engine_settings(&mut self) {
@@ -294,12 +316,27 @@ impl Model {
             let p = PathBuf::from(first);
             self.last_dir = if p.is_dir() { Some(p) } else { p.parent().map(Path::to_path_buf) };
         }
-        let proxy = self.proxy.clone();
+        let events = self.events.clone();
         let proxy_setting = self.settings().proxy.clone();
         let _ = std::thread::Builder::new().name("linamp-expand".into()).spawn(move || {
             let items = expand(locations, &proxy_setting);
-            let _ = proxy.send_event(AppEvent::Expanded { items, mode });
+            events.send(AppEvent::Expanded { items, mode });
         });
+    }
+
+    /// Like `add`, but expands the locations and reads their tags on this
+    /// thread. For headless rendering, which has no event loop to wait on.
+    pub fn add_now(&mut self, locations: Vec<String>, mode: AddMode) {
+        if locations.is_empty() {
+            return;
+        }
+        let items = expand(locations, &self.settings().proxy);
+        self.on_expanded(items, mode);
+        let local: Vec<(u64, String)> =
+            self.playlist.entries().iter().filter(|e| !e.is_url()).map(|e| (e.id, e.location.clone())).collect();
+        for (id, path) in local {
+            self.on_meta(id, linamp_audio::read_meta(Path::new(&path)));
+        }
     }
 
     pub fn on_expanded(&mut self, items: Vec<Item>, mode: AddMode) {

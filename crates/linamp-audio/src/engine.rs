@@ -142,6 +142,19 @@ pub struct Shared {
 }
 
 impl Shared {
+    fn new() -> Shared {
+        Shared {
+            state: AtomicU8::new(0),
+            position_ms: AtomicU64::new(0),
+            length_ms: AtomicU64::new(u64::MAX),
+            bitrate_kbps: AtomicU32::new(0),
+            sample_rate: AtomicU32::new(0),
+            channels: AtomicU32::new(0),
+            played_frames: AtomicU64::new(0),
+            vis: Mutex::new(VisRing::new()),
+        }
+    }
+
     pub fn state(&self) -> PlayState {
         match self.state.load(Ordering::Relaxed) {
             1 => PlayState::Playing,
@@ -179,22 +192,34 @@ pub struct Engine {
 impl Engine {
     pub fn spawn(device: String, on_event: impl Fn(EngineEvent) + Send + 'static) -> Engine {
         let (tx, rx) = crossbeam_channel::unbounded();
-        let shared = Arc::new(Shared {
-            state: AtomicU8::new(0),
-            position_ms: AtomicU64::new(0),
-            length_ms: AtomicU64::new(u64::MAX),
-            bitrate_kbps: AtomicU32::new(0),
-            sample_rate: AtomicU32::new(0),
-            channels: AtomicU32::new(0),
-            played_frames: AtomicU64::new(0),
-            vis: Mutex::new(VisRing::new()),
-        });
+        let shared = Arc::new(Shared::new());
         let worker_shared = shared.clone();
         let thread = std::thread::Builder::new()
             .name("linamp-audio".into())
             .spawn(move || Worker::new(device, rx, worker_shared, Box::new(on_event)).run())
             .expect("spawn audio thread");
         Engine { tx, shared, thread: Some(thread) }
+    }
+
+    /// An engine without an audio thread or device, for rendering the
+    /// windows offline. Commands are dropped; `simulate` sets what the
+    /// windows show.
+    pub fn headless() -> Engine {
+        let (tx, _) = crossbeam_channel::unbounded();
+        Engine { tx, shared: Arc::new(Shared::new()), thread: None }
+    }
+
+    /// Publishes a playback state as if a track were playing. Only a
+    /// headless engine allows this: a real worker owns these values.
+    pub fn simulate(&self, state: PlayState, position_ms: u64, info: &StreamInfo) {
+        assert!(self.thread.is_none(), "simulate() needs a headless engine");
+        let sh = &self.shared;
+        sh.state.store(state as u8, Ordering::Relaxed);
+        sh.position_ms.store(position_ms, Ordering::Relaxed);
+        sh.length_ms.store(info.length_ms.unwrap_or(u64::MAX), Ordering::Relaxed);
+        sh.bitrate_kbps.store(info.bitrate_kbps.unwrap_or(0), Ordering::Relaxed);
+        sh.sample_rate.store(info.sample_rate, Ordering::Relaxed);
+        sh.channels.store(info.channels as u32, Ordering::Relaxed);
     }
 
     pub fn send(&self, cmd: EngineCmd) {
@@ -695,5 +720,29 @@ mod tests {
         assert_eq!(out, [196.0, 197.0, 198.0, 199.0]);
         v.read(1002, &mut out); // before the first frame
         assert_eq!(out, [0.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn headless_engine_reports_simulated_playback() {
+        let engine = Engine::headless();
+        assert_eq!(engine.shared().state(), PlayState::Stopped);
+        let info = StreamInfo {
+            sample_rate: 44_100,
+            channels: 2,
+            length_ms: Some(225_000),
+            bitrate_kbps: Some(128),
+            codec: "mp3".into(),
+            seekable: true,
+        };
+        engine.simulate(PlayState::Playing, 83_000, &info);
+        let sh = engine.shared();
+        assert_eq!(sh.state(), PlayState::Playing);
+        assert_eq!(sh.position_ms(), 83_000);
+        assert_eq!(sh.length_ms(), Some(225_000));
+        assert_eq!(sh.bitrate_kbps(), 128);
+        assert_eq!(sh.sample_rate(), 44_100);
+        assert_eq!(sh.channels(), 2);
+        // Commands go nowhere instead of panicking.
+        engine.send(EngineCmd::Stop);
     }
 }

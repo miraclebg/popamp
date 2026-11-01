@@ -34,6 +34,10 @@ pub struct Options {
     pub safe: bool,
     pub del_m3u: bool,
     pub remotes: Vec<Remote>,
+    /// Draw the windows into PNG files in this directory and exit.
+    pub render: Option<PathBuf>,
+    /// Skin for `render`.
+    pub skin: Option<PathBuf>,
     pub help: bool,
     pub version: bool,
 }
@@ -108,6 +112,14 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Options, String> 
             }
             "SAFE" | "SAFEALWAYS" => {
                 o.safe = true;
+                None
+            }
+            "RENDER" => {
+                o.render = Some(value.map(PathBuf::from).ok_or("/RENDER= needs a directory")?);
+                None
+            }
+            "SKIN" => {
+                o.skin = value.map(PathBuf::from);
                 None
             }
             "DELM3U" => {
@@ -196,6 +208,9 @@ Options accept /SWITCH or --switch spelling:
   /VOLUP /VOLDOWN /VOL=<0-100> /PANLEFT /PANRIGHT /PAN=<-127..127>
   /JUMPTO /CLEAR /STARTMIN /STARTMAX /DELM3U
   /COMMAND=<id>        run a Winamp command id (e.g. 40045 = Play)
+  /RENDER=<dir>        draw the windows into PNG files (no display needed)
+                       and exit; FILES fill the playlist
+  /SKIN=<file>         skin for /RENDER (default: the built-in skin)
   /CLOSE /QUIT /EXIT   quit the running instance
   /KILL                kill the running instance
   /STATUS              print the running instance's status as JSON
@@ -244,9 +259,18 @@ mod tests {
     }
 
     #[test]
+    fn render_options() {
+        let o = p(&["--render=/tmp/out", "/SKIN=/tmp/Base.wsz", "/tmp/a.mp3"]);
+        assert_eq!(o.render, Some(PathBuf::from("/tmp/out")));
+        assert_eq!(o.skin, Some(PathBuf::from("/tmp/Base.wsz")));
+        assert_eq!(o.remotes, [Remote::Open(vec!["/tmp/a.mp3".into()])]);
+    }
+
+    #[test]
     fn errors() {
         assert!(parse(["/BOGUS".to_string()]).is_err());
         assert!(parse(["/COMMAND=1".to_string()]).is_err());
         assert!(parse(["/VOL=abc".to_string()]).is_err());
+        assert!(parse(["/RENDER".to_string()]).is_err());
     }
 }

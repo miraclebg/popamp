@@ -917,10 +917,10 @@ impl App {
         for r in reqs {
             match r {
                 UiReq::Dialog(kind, req) => {
-                    let proxy = self.model.proxy().clone();
+                    let events = self.model.events().clone();
                     let _ = std::thread::Builder::new().name("linamp-dialog".into()).spawn(move || {
                         let values = dialogs::execute(&req);
-                        let _ = proxy.send_event(AppEvent::Dialog(DialogResult { kind, values }));
+                        events.send(AppEvent::Dialog(DialogResult { kind, values }));
                     });
                 }
                 UiReq::Menu(items) => {

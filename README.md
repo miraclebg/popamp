@@ -295,7 +295,13 @@ cargo clippy --workspace --all-targets
 cargo run -p linamp-audio --example play -- --vol 0 file.mp3   # headless engine test
 cargo run -p linamp-skin --example dump_sheets -- skin.wsz out/ # dump sprite sheets
 LINAMP_SNAPSHOT=out/ linamp /NEW /INIDIR=/tmp/cfg              # render windows to PNG and exit
+linamp /RENDER=out/ /SKIN=skin.wsz [files]                     # same without a display: fixed states
 ```
+
+`/RENDER` needs no X server or sound card. It writes one PNG per window and
+state (stopped, playing with spectrum or oscilloscope, toggles, equalizer
+values and a preset, windowshade, small and wide playlist) using the
+settings in `out/linamp.ini` if that file exists.
 
 | Crate | Contents |
 |---|---|
@@ -326,5 +332,6 @@ license, shall be dual licensed as above, without any additional terms or
 conditions.
 
 Third-party crates keep their own licenses. Notably, the Symphonia decoders
-are MPL-2.0. Winamp is a trademark of its owner; Linamp is an independent
+are MPL-2.0. Code adapted from other projects is listed in
+[THIRD_PARTY.md](THIRD_PARTY.md). Winamp is a trademark of its owner; Linamp is an independent
 project and is not affiliated with or endorsed by it.

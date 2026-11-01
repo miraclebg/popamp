@@ -32,6 +32,7 @@ Useful tools:
 cargo run -p linamp-audio --example play -- --vol 0 file.flac   # engine without UI
 cargo run -p linamp-skin --example dump_sheets -- skin.wsz out/  # skin sheets as PNG
 LINAMP_SNAPSHOT=out/ cargo run -p linamp -- /NEW /INIDIR=/tmp/x  # windows as PNG, then exit
+cargo run -p linamp -- /RENDER=out/ /SKIN=skin.wsz                 # same, headless, fixed states
 ```
 
 ## Before opening a pull request
@@ -50,7 +51,7 @@ Guidelines:
 - **Scope:** keep changes focused; one logical change per commit, with a
   message that says why.
 - **Tests:** add unit tests for parsing, formats and model logic. UI changes
-  should come with a before/after `LINAMP_SNAPSHOT` image in the PR.
+  should come with before/after `/RENDER` images in the PR.
 - **Real-time safety:** don't block the audio thread on locks the UI holds
   for long, and don't do I/O on the UI thread. Use the existing worker
   threads and events.

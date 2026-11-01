@@ -4,6 +4,7 @@ mod app;
 mod cli;
 mod dialogs;
 mod font;
+mod headless;
 mod ipc;
 mod menu;
 mod model;
@@ -36,6 +37,20 @@ fn main() {
     }
     if opts.version {
         println!("linamp {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+    if let Some(dir) = &opts.render {
+        let files = opts.remotes.iter().flat_map(|r| match r {
+            Remote::Open(f) | Remote::Add(f) => f.clone(),
+            _ => Vec::new(),
+        });
+        match headless::render_all(dir, opts.skin.clone(), files.collect()) {
+            Ok(()) => println!("rendered to {}", dir.display()),
+            Err(e) => {
+                eprintln!("linamp: {e}");
+                std::process::exit(1);
+            }
+        }
         return;
     }
     let class = opts.instance_class.clone().unwrap_or_else(|| "default".into());
