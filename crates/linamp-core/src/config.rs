@@ -243,6 +243,9 @@ impl Paths {
     pub fn playlist_file(&self) -> PathBuf {
         self.config_dir.join("linamp.m3u8")
     }
+    pub fn bookmarks_file(&self) -> PathBuf {
+        self.config_dir.join("bookmarks.m3u8")
+    }
     pub fn eq_library(&self) -> PathBuf {
         self.config_dir.join("linamp.q1")
     }

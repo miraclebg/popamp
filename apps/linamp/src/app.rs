@@ -960,6 +960,9 @@ impl App {
             K::KeyS if alt => Some(C::SkinBrowser),
             K::KeyM if alt => Some(C::Minimize),
             K::Digit3 if alt => Some(C::FileInfo),
+            K::KeyI if ctrl && alt => Some(C::RemoveBookmark),
+            K::KeyI if alt && k == WinKind::Pl => Some(C::BookmarkSelected),
+            K::KeyI if alt => Some(C::AddBookmark),
             K::KeyF if alt => {
                 let items = self.model.main_menu();
                 let at = self.cursor_screen(k);

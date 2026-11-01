@@ -18,6 +18,10 @@ All notable changes to this project are documented here. The format follows
 - Skin cursors: the skin's `*.cur` files (including animated ones, first
   frame) replace the mouse pointer over the matching controls, as in the
   original. `usecursors=0` in `linamp.ini` turns them off.
+- Bookmarks: `Alt+I` bookmarks the playing track (in the playlist: the
+  selected ones), the main menu's Bookmarks submenu plays or removes them
+  (`Ctrl+Alt+I`). They are kept in `bookmarks.m3u8` next to `linamp.ini`.
+  Remote command ids 50021–50023.
 
 ## [0.1.0] - 2026-10-22
 

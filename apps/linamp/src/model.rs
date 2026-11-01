@@ -92,6 +92,8 @@ pub struct Model {
     pub transient: Option<(String, Instant)>,
     pub eq_presets: Vec<Preset>,
     pub eq_auto: Vec<Preset>,
+    /// Favourite files and streams, kept in `bookmarks.m3u8`.
+    pub bookmarks: Vec<Item>,
     pub vis: Vis,
     pub ui: Vec<UiReq>,
     pub quit: bool,
@@ -101,6 +103,11 @@ pub struct Model {
     pub last_dir: Option<PathBuf>,
     /// Increments when anything visible in the playlist changes.
     pub pl_dirty: u64,
+}
+
+/// How a bookmark shows in menus and lists: its title, else its location.
+fn bookmark_label(b: &Item) -> String {
+    b.title.clone().filter(|t| !t.is_empty()).unwrap_or_else(|| b.location.clone())
 }
 
 /// Local files get their tags read; YouTube videos are resolved only when
@@ -209,10 +216,14 @@ impl Model {
         Self::with_engine(paths, config, Engine::headless(), Events(None))
     }
 
-    /// A headless model with default settings, for unit tests.
+    /// A headless model with default settings and its own empty settings
+    /// directory, for unit tests.
     #[cfg(test)]
     pub fn for_tests() -> Model {
-        let dir = std::env::temp_dir().join("linamp-test-no-config");
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("linamp-test-{}-{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
         Self::headless(Paths::resolve(Some(dir.clone())), Config::load(dir.join("linamp.ini")))
     }
 
@@ -220,6 +231,7 @@ impl Model {
         let meta_tx = spawn_meta_workers(events.clone());
         let eq_presets = eqf::read_file(&paths.eq_library()).unwrap_or_else(|_| eqf::builtin_presets());
         let eq_auto = eqf::read_file(&paths.eq_auto_library()).unwrap_or_default();
+        let bookmarks = plformats::read_file(&paths.bookmarks_file()).unwrap_or_default();
         let format = Format::cached(&config.settings.titlefmt);
         let mut m = Model {
             paths,
@@ -234,6 +246,7 @@ impl Model {
             transient: None,
             eq_presets,
             eq_auto,
+            bookmarks,
             vis: Vis::new(),
             ui: Vec::new(),
             quit: false,
@@ -663,6 +676,44 @@ impl Model {
         Preset { name: name.to_string(), bands: self.settings().eq_bands(), preamp: self.settings().preamp as u8 }
     }
 
+    // --- bookmarks ---------------------------------------------------------------
+
+    fn add_bookmarks(&mut self, entries: &[Entry]) {
+        if entries.is_empty() {
+            return;
+        }
+        self.bookmarks.extend(plformats::items_from_entries(entries));
+        self.save_bookmarks();
+        self.flash(if entries.len() == 1 { "BOOKMARK ADDED".to_string() } else { format!("{} BOOKMARKS ADDED", entries.len()) });
+    }
+
+    pub fn remove_bookmark(&mut self, i: usize) {
+        if i < self.bookmarks.len() {
+            self.bookmarks.remove(i);
+            self.save_bookmarks();
+        }
+    }
+
+    fn save_bookmarks(&self) {
+        if let Err(e) = plformats::write_file(&self.paths.bookmarks_file(), &self.bookmarks) {
+            log::warn!("cannot save bookmarks: {e}");
+        }
+    }
+
+    /// "Bookmarks" in the main menu: managing them, then one item each.
+    pub fn bookmarks_menu(&self) -> Vec<MenuItem> {
+        use Command as C;
+        let mut v = vec![
+            MenuItem::cmd("Add current as bookmark", "Alt+I", C::AddBookmark),
+            MenuItem::cmd("Remove bookmark…", "Ctrl+Alt+I", C::RemoveBookmark),
+        ];
+        if !self.bookmarks.is_empty() {
+            v.push(MenuItem::sep());
+            v.extend(self.bookmarks.iter().enumerate().map(|(i, b)| MenuItem::action(&bookmark_label(b), "", MenuAction::PlayBookmark(i))));
+        }
+        v
+    }
+
     fn save_eq_libraries(&self) {
         if let Err(e) = eqf::write_file(&self.paths.eq_library(), &self.eq_presets) {
             log::warn!("cannot save EQ presets: {e}");
@@ -742,6 +793,11 @@ impl Model {
                     self.playlist.index_of_id(*id).and_then(|i| self.playlist.entry(i)).map(|e| e.location.clone()).unwrap_or_default();
                 Request::Entry { title: "Edit playlist entry".into(), text: "Location:".into(), initial: loc }
             }
+            DialogKind::RemoveBookmark => Request::List {
+                title: "Remove bookmark".into(),
+                column: "Bookmark".into(),
+                rows: self.bookmarks.iter().map(bookmark_label).collect(),
+            },
             DialogKind::EqLoadPreset { auto } | DialogKind::EqDeletePreset { auto } => {
                 let list = if *auto { &self.eq_auto } else { &self.eq_presets };
                 Request::List { title: "EQ presets".into(), column: "Preset".into(), rows: list.iter().map(|p| p.name.clone()).collect() }
@@ -880,6 +936,11 @@ impl Model {
                 let list = if auto { &self.eq_auto } else { &self.eq_presets };
                 if let Some(p) = first.and_then(|s| s.trim().parse::<usize>().ok()).and_then(|i| list.get(i)).cloned() {
                     self.apply_preset(&p);
+                }
+            }
+            DialogKind::RemoveBookmark => {
+                if let Some(i) = first.and_then(|s| s.trim().parse::<usize>().ok()) {
+                    self.remove_bookmark(i);
                 }
             }
             DialogKind::EqDeletePreset { auto } => {
@@ -1037,6 +1098,15 @@ impl Model {
             C::JumpToTime => self.request_dialog(DialogKind::JumpToTime),
             C::JumpToFile => self.request_dialog(DialogKind::JumpToFile),
             C::FileInfo => self.request_dialog(DialogKind::Info),
+            C::AddBookmark => {
+                let current = self.playlist.current_entry().into_iter().cloned().collect::<Vec<_>>();
+                self.add_bookmarks(&current);
+            }
+            C::BookmarkSelected => {
+                let selected: Vec<Entry> = self.playlist.entries().iter().filter(|e| e.selected).cloned().collect();
+                self.add_bookmarks(&selected);
+            }
+            C::RemoveBookmark => self.request_dialog(DialogKind::RemoveBookmark),
             C::EditPlaylistEntry => {
                 let idx = self.playlist.selected_indices().first().copied().or(self.playlist.current());
                 if let Some(id) = idx.and_then(|i| self.playlist.entry(i)).map(|e| e.id) {
@@ -1249,6 +1319,11 @@ impl Model {
             }
             MenuAction::EqDialog(kind) => self.request_dialog(kind),
             MenuAction::PlaySelected => self.exec(Command::PlaySelected),
+            MenuAction::PlayBookmark(i) => {
+                if let Some(b) = self.bookmarks.get(i) {
+                    self.add(vec![b.location.clone()], AddMode::ReplaceAndPlay);
+                }
+            }
         }
     }
 
@@ -1270,6 +1345,7 @@ impl Model {
                 ],
             ),
             MenuItem::cmd("View file info…", "Alt+3", C::FileInfo),
+            MenuItem::sub("Bookmarks", self.bookmarks_menu()),
             MenuItem::sep(),
             MenuItem::cmd("Main Window", "Alt+W", C::ToggleMainWindow),
             MenuItem::cmd("Playlist Editor", "Alt+E", C::TogglePlaylistWindow).checked(s.pe_open),
@@ -1432,6 +1508,7 @@ impl Model {
             MenuItem::sep(),
             MenuItem::cmd("View file info…", "Alt+3", C::FileInfo),
             MenuItem::cmd("Playlist entry…", "Ctrl+E", C::EditPlaylistEntry),
+            MenuItem::cmd("Bookmark item(s)", "Alt+I", C::BookmarkSelected),
             MenuItem::sep(),
             MenuItem::sub("Sort", self.sort_menu()),
         ]
@@ -1542,5 +1619,52 @@ impl Model {
             esc(&cur.map(|e| e.display.clone()).unwrap_or_default()),
             esc(&cur.map(|e| e.location.clone()).unwrap_or_default()),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A model whose playlist holds `n` local entries titled "Song 1"...
+    fn with_songs(n: usize) -> Model {
+        let mut m = Model::for_tests();
+        let items =
+            (1..=n).map(|i| Item { location: format!("/music/{i}.mp3"), title: Some(format!("Song {i}")), length_ms: None }).collect();
+        m.on_expanded(items, AddMode::Append);
+        m
+    }
+
+    fn titles(m: &Model) -> Vec<String> {
+        m.bookmarks.iter().map(|b| b.title.clone().unwrap_or_default()).collect()
+    }
+
+    #[test]
+    fn bookmarks_current_and_selected_and_persist() {
+        let mut m = with_songs(3);
+        m.exec(Command::AddBookmark); // nothing playing: nothing to add
+        assert!(m.bookmarks.is_empty());
+        m.playlist.set_current(Some(1));
+        m.exec(Command::AddBookmark);
+        m.playlist.select_only(0);
+        m.playlist.select_range(0, 2);
+        m.exec(Command::BookmarkSelected);
+        assert_eq!(titles(&m), ["Song 2", "Song 1", "Song 2", "Song 3"]);
+        assert_eq!(m.bookmarks[0].location, "/music/2.mp3");
+        // Saved: a new model on the same settings directory sees them.
+        let again = Model::headless(m.paths.clone(), Config::load(m.paths.ini_file()));
+        assert_eq!(titles(&again), titles(&m));
+    }
+
+    #[test]
+    fn removing_and_playing_bookmarks() {
+        let mut m = with_songs(2);
+        m.playlist.select_range(0, 1);
+        m.exec(Command::BookmarkSelected);
+        m.remove_bookmark(0);
+        m.remove_bookmark(7); // out of range: ignored
+        assert_eq!(titles(&m), ["Song 2"]);
+        let menu = m.bookmarks_menu();
+        assert!(menu.iter().any(|i| i.label == "Song 2"));
     }
 }

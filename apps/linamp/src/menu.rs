@@ -23,6 +23,7 @@ pub enum MenuAction {
     EqPreset(usize, bool),
     EqDialog(DialogKind),
     PlaySelected,
+    PlayBookmark(usize),
 }
 
 #[derive(Debug, Clone)]

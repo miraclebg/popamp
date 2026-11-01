@@ -100,6 +100,9 @@ commands! {
     TogglePlShade = 50018,
     BalanceLeft = 50019,
     BalanceRight = 50020,
+    AddBookmark = 50021,
+    BookmarkSelected = 50022,
+    RemoveBookmark = 50023,
 }
 
 #[cfg(test)]

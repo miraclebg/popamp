@@ -32,6 +32,7 @@ pub enum DialogKind {
     EqDeletePreset {
         auto: bool,
     },
+    RemoveBookmark,
     EqImport,
     EqExport,
     Skin,

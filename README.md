@@ -42,6 +42,7 @@ and classic `.wsz` skins load at runtime.
   - M3U, M3U8, PLS and XSPF.
   - Sort, reverse, randomize, crop, remove dead entries.
   - Drag to reorder, jump to file or time.
+  - Bookmarks for favourite files and streams (`Alt+I`, main menu).
   - Advanced Title Formatting (`[%artist% - ]$if2(%title%,…)`).
 - **Visualization:** classic spectrum analyzer (normal, fire and line styles,
   peaks) and oscilloscope (dots, lines, solid).
