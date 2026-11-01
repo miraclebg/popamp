@@ -10,7 +10,6 @@ open an issue first for larger items.
   distributions.
 - **Golden-image tests in CI:** render windows with `LINAMP_SNAPSHOT` under
   Xvfb and compare against committed PNGs.
-- **Skin cursors:** load the skin's `.cur` files.
 - **Non-blocking YouTube startup:** resolve with `yt-dlp` off the audio
   thread so Stop works while connecting.
 

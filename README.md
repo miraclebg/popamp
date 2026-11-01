@@ -27,8 +27,8 @@ and classic `.wsz` skins load at runtime.
   from the skin at 1x or double size. Windows dock and snap together, and
   support windowshade mode, EasyMove, always-on-top and `region.txt` shapes.
 - **Classic skins:** `.wsz`/`.zip` archives or unpacked directories. Each file
-  falls back to the default skin if missing or broken. `viscolor.txt` and
-  `pledit.txt` are supported.
+  falls back to the default skin if missing or broken. `viscolor.txt`,
+  `pledit.txt` and the skin's mouse cursors (`*.cur`) are supported.
 - **Playback:**
   - Formats: MP3, AAC/M4A, FLAC, Ogg Vorbis, WAV, AIFF, MKA (Matroska audio)
     and ALAC, decoded by [Symphonia](https://github.com/pdeljanov/Symphonia).

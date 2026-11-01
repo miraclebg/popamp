@@ -15,6 +15,9 @@ All notable changes to this project are documented here. The format follows
 - Tooltips on the main window: the title bar buttons, the clutter bar and
   the song title explain themselves after the mouse rests on them; elsewhere
   the tooltip shows the program name.
+- Skin cursors: the skin's `*.cur` files (including animated ones, first
+  frame) replace the mouse pointer over the matching controls, as in the
+  original. `usecursors=0` in `linamp.ini` turns them off.
 
 ## [0.1.0] - 2026-10-22
 

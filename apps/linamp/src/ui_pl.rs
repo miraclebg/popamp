@@ -8,6 +8,7 @@ use crate::ui::{Input, Out};
 use linamp_core::text::format_duration_ms;
 use linamp_core::Command;
 use linamp_skin::sprites::{pl as p, r, Rect};
+use linamp_skin::CursorKind;
 use linamp_skin::{Bitmap, Sheet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,6 +116,22 @@ impl PlWin {
             self.scroll = row;
         } else if row >= self.scroll + vis {
             self.scroll = row + 1 - vis;
+        }
+    }
+
+    /// The skin cursor for the control under the mouse (or being dragged).
+    pub fn cursor(&self, model: &Model, x: i32, y: i32) -> CursorKind {
+        use CursorKind as C;
+        let shade = model.settings().pe_ws;
+        match (shade, self.pressed.or_else(|| self.hit(model, x, y))) {
+            (_, Some(W::Close)) => C::PClose,
+            (_, Some(W::Shade)) => C::PWinBut,
+            (false, Some(W::Resize)) => C::PSize,
+            (true, Some(W::Resize)) => C::PWSSize,
+            (true, _) => C::PWSNorm,
+            (false, Some(W::Title)) => C::PTBar,
+            (false, Some(W::Scroll)) => C::PVScroll,
+            _ => C::PNormal,
         }
     }
 
@@ -535,4 +552,25 @@ pub enum Nav {
     PageDown,
     Home,
     End,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use linamp_skin::CursorKind as C;
+
+    #[test]
+    fn cursors_follow_the_control_under_the_mouse() {
+        let mut m = Model::for_tests();
+        let w = PlWin::new();
+        assert_eq!(w.cursor(&m, 267, 5), C::PClose);
+        assert_eq!(w.cursor(&m, 257, 5), C::PWinBut);
+        assert_eq!(w.cursor(&m, 100, 5), C::PTBar);
+        assert_eq!(w.cursor(&m, 100, 50), C::PNormal);
+        assert_eq!(w.cursor(&m, 262, 40), C::PVScroll);
+        assert_eq!(w.cursor(&m, 268, 226), C::PSize);
+        m.settings_mut().pe_ws = true;
+        assert_eq!(w.cursor(&m, 100, 5), C::PWSNorm);
+        assert_eq!(w.cursor(&m, 267, 5), C::PClose);
+    }
 }

@@ -24,7 +24,7 @@ symphonia = { version = "0.5", features = ["all", "opt-simd"] }
 libloading = "0.8"
 rustfft = "6"
 zip = { version = "2", default-features = false, features = ["deflate"] }
-image = { version = "0.25", default-features = false, features = ["bmp", "png", "gif", "jpeg"] }
+image = { version = "0.25", default-features = false, features = ["bmp", "png", "gif", "jpeg", "ico"] }
 winit = { version = "0.30", default-features = false, features = ["x11", "rwh_06"] }
 softbuffer = { version = "0.4", default-features = false, features = ["x11", "x11-dlopen"] }
 fontdue = "0.9"

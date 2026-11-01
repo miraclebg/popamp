@@ -2,11 +2,13 @@
 //! directories, with per-file fallback to Linamp's own default skin.
 
 pub mod bitmap;
+pub mod cursors;
 pub mod default_skin;
 pub mod sprites;
 pub mod textcfg;
 
 pub use bitmap::Bitmap;
+pub use cursors::{CursorImage, CursorKind};
 pub use sprites::{Rect, Sheet};
 pub use textcfg::{PlColors, Regions};
 
@@ -22,6 +24,8 @@ pub struct Skin {
     pub viscolor: [u32; 24],
     pub pl: PlColors,
     pub regions: Regions,
+    /// The skin's own mouse cursors; the system cursor stands in for the rest.
+    pub cursors: HashMap<CursorKind, CursorImage>,
 }
 
 impl Skin {
@@ -34,6 +38,7 @@ impl Skin {
             viscolor: default_skin::viscolors(),
             pl: default_skin::pl_colors(),
             regions: Regions::default(),
+            cursors: HashMap::new(),
         }
     }
 
@@ -90,6 +95,15 @@ impl Skin {
         }
         if let Some(t) = files.get("region.txt") {
             skin.regions = textcfg::parse_region(&linamp_core::text::decode_lossy(t));
+        }
+        for kind in CursorKind::ALL {
+            let Some(bytes) = files.get(kind.file_name()) else { continue };
+            match cursors::parse(bytes) {
+                Some(c) => {
+                    skin.cursors.insert(kind, c);
+                }
+                None => log::warn!("skin {}: cannot decode {}", skin.name, kind.file_name()),
+            }
         }
         if found == 0 {
             log::warn!("skin {}: no recognised bitmaps, using defaults", skin.name);
@@ -169,6 +183,16 @@ pub fn list_skins(dir: &Path) -> Vec<std::path::PathBuf> {
 mod tests {
     use super::*;
     use image::ImageEncoder as _;
+
+    #[test]
+    fn loads_skin_cursors() {
+        let mut files = HashMap::new();
+        files.insert("normal.cur".to_string(), cursors::tests::sample_cur());
+        files.insert("close.cur".to_string(), b"broken".to_vec());
+        let skin = Skin::from_files("t".into(), &files);
+        assert_eq!(skin.cursors.keys().collect::<Vec<_>>(), [&CursorKind::Normal]);
+        assert!(Skin::builtin().cursors.is_empty());
+    }
 
     #[test]
     fn builtin_sheets_have_reference_sizes() {

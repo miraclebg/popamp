@@ -209,6 +209,13 @@ impl Model {
         Self::with_engine(paths, config, Engine::headless(), Events(None))
     }
 
+    /// A headless model with default settings, for unit tests.
+    #[cfg(test)]
+    pub fn for_tests() -> Model {
+        let dir = std::env::temp_dir().join("linamp-test-no-config");
+        Self::headless(Paths::resolve(Some(dir.clone())), Config::load(dir.join("linamp.ini")))
+    }
+
     fn with_engine(paths: Paths, config: Config, engine: Engine, events: Events) -> Model {
         let meta_tx = spawn_meta_workers(events.clone());
         let eq_presets = eqf::read_file(&paths.eq_library()).unwrap_or_else(|_| eqf::builtin_presets());

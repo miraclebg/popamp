@@ -8,6 +8,7 @@ use linamp_audio::PlayState;
 use linamp_core::text::format_duration_ms;
 use linamp_core::Command;
 use linamp_skin::sprites::{main as m, r, Rect};
+use linamp_skin::CursorKind;
 use linamp_skin::{Bitmap, Sheet};
 use std::time::{Duration, Instant};
 
@@ -124,6 +125,26 @@ impl MainWin {
             return Some(W::Clutter(idx));
         }
         (y < 14).then_some(W::TitleBar)
+    }
+
+    /// The skin cursor for the control under the mouse (or being dragged).
+    pub fn cursor(&self, model: &Model, x: i32, y: i32) -> CursorKind {
+        use CursorKind as C;
+        let shade = model.settings().windowshade;
+        match (shade, self.pressed.or_else(|| self.hit(model, x, y))) {
+            (false, Some(W::Options)) => C::MainMenu,
+            (true, Some(W::Options)) => C::MMenu,
+            (_, Some(W::Minimize)) => C::Min,
+            (_, Some(W::Close)) => C::Close,
+            (_, Some(W::Shade)) => C::WinBut,
+            (_, Some(W::Seek)) => C::PosBar,
+            (_, Some(W::ShadeSeek)) => C::WSPosBar,
+            (_, Some(W::Volume | W::Balance)) => C::VolBal,
+            (_, Some(W::Marquee)) => C::SongName,
+            (false, Some(W::TitleBar)) => C::TitleBar,
+            (true, _) => C::WSNormal,
+            _ => C::Normal,
+        }
     }
 
     /// Tooltip for the control under the mouse: a few controls have their
@@ -597,16 +618,29 @@ impl MainWin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use linamp_core::config::{Config, Paths};
+    use linamp_skin::CursorKind as C;
 
-    fn model() -> Model {
-        let dir = std::env::temp_dir().join("linamp-ui-main-test-no-config");
-        Model::headless(Paths::resolve(Some(dir.clone())), Config::load(dir.join("linamp.ini")))
+    #[test]
+    fn cursors_follow_the_control_under_the_mouse() {
+        let mut m = Model::for_tests();
+        let w = MainWin::new();
+        let at = |m: &Model, x, y| w.cursor(m, x, y);
+        assert_eq!(at(&m, 9, 5), C::MainMenu);
+        assert_eq!(at(&m, 247, 5), C::Min);
+        assert_eq!(at(&m, 267, 5), C::Close);
+        assert_eq!(at(&m, 257, 5), C::WinBut);
+        assert_eq!(at(&m, 100, 5), C::TitleBar);
+        assert_eq!(at(&m, 120, 60), C::VolBal);
+        assert_eq!(at(&m, 180, 27), C::SongName);
+        assert_eq!(at(&m, 50, 97), C::Normal);
+        m.settings_mut().windowshade = true;
+        assert_eq!(at(&m, 9, 5), C::MMenu);
+        assert_eq!(at(&m, 100, 5), C::WSNormal);
     }
 
     #[test]
     fn tooltips_name_the_control_under_the_mouse() {
-        let mut m = model();
+        let mut m = Model::for_tests();
         let w = MainWin::new();
         assert_eq!(w.tooltip(&m, 13, 36), "Toggle Always-On-Top");
         assert_eq!(w.tooltip(&m, 180, 27), "Song Title (right-click for options)");

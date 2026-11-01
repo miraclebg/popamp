@@ -5,6 +5,7 @@ use crate::render::sprite;
 use crate::ui::{Input, Out};
 use linamp_core::Command;
 use linamp_skin::sprites::{eq as e, r, Rect};
+use linamp_skin::CursorKind;
 use linamp_skin::{Bitmap, Sheet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +44,16 @@ impl EqWin {
             e::SHADE_SIZE
         } else {
             e::SIZE
+        }
+    }
+
+    /// The skin cursor for the control under the mouse (or being dragged).
+    pub fn cursor(&self, model: &Model, x: i32, y: i32) -> CursorKind {
+        match self.pressed.or_else(|| self.hit(model, x, y)) {
+            Some(W::Close) => CursorKind::EqClose,
+            Some(W::Preamp | W::Band(_)) => CursorKind::EqSlid,
+            Some(W::Title) => CursorKind::EqTitle,
+            _ => CursorKind::EqNormal,
         }
     }
 
@@ -235,5 +246,22 @@ impl EqWin {
             Some(W::Band(i)) => model.set_eq_band(i, model.settings().eq_bands()[i] as i32 - steps * 2),
             _ => model.set_volume(model.settings().volume + steps * 8),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use linamp_skin::CursorKind as C;
+
+    #[test]
+    fn cursors_follow_the_control_under_the_mouse() {
+        let m = Model::for_tests();
+        let w = EqWin::new();
+        assert_eq!(w.cursor(&m, 267, 5), C::EqClose);
+        assert_eq!(w.cursor(&m, 25, 50), C::EqSlid);
+        assert_eq!(w.cursor(&m, 82, 50), C::EqSlid);
+        assert_eq!(w.cursor(&m, 100, 5), C::EqTitle);
+        assert_eq!(w.cursor(&m, 5, 105), C::EqNormal);
     }
 }

@@ -14,6 +14,8 @@ use crate::ui_pl::{Nav, PlWin};
 use linamp_audio::PlayState;
 use linamp_core::Command;
 use linamp_skin::Bitmap;
+use linamp_skin::CursorKind;
+use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -22,7 +24,7 @@ use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
-use winit::window::{Window, WindowId, WindowLevel};
+use winit::window::{CursorIcon, CustomCursor, Window, WindowId, WindowLevel};
 
 const KINDS: [WinKind; 3] = [WinKind::Main, WinKind::Eq, WinKind::Pl];
 
@@ -49,6 +51,8 @@ struct SkinWindow {
     cursor: (i32, i32),
     frame: Bitmap,
     shape_sig: Option<(usize, i32, i32, i32)>,
+    /// The skin cursor last set on this window.
+    cursor_kind: Option<CursorKind>,
 }
 
 struct Popup {
@@ -88,6 +92,8 @@ pub struct App {
     wins: [Option<SkinWindow>; 3],
     popups: Vec<Popup>,
     tip: Option<Tooltip>,
+    /// The skin's cursors, made into window-system cursors.
+    cursors: HashMap<CursorKind, CustomCursor>,
     drag: Option<Drag>,
     capture: Option<WinKind>,
     mods: ModifiersState,
@@ -117,6 +123,7 @@ impl App {
             wins: [None, None, None],
             popups: Vec::new(),
             tip: None,
+            cursors: HashMap::new(),
             drag: None,
             capture: None,
             mods: ModifiersState::empty(),
@@ -245,7 +252,7 @@ impl App {
                     return;
                 }
             };
-            window.set_cursor(winit::window::CursorIcon::Default);
+            window.set_cursor(CursorIcon::Default);
             self.wins[idx(k)] = Some(SkinWindow {
                 window,
                 surface,
@@ -256,9 +263,11 @@ impl App {
                 cursor: (0, 0),
                 frame: Bitmap::new(w, h, 0),
                 shape_sig: None,
+                cursor_kind: None,
             });
             self.store_pos(k, pos);
         }
+        self.build_cursors(el);
         self.apply_layout();
         if self.start_minimized {
             for k in KINDS {
@@ -441,6 +450,45 @@ impl App {
                 present_scaled(&p.frame, 1, &mut buf, w);
                 let _ = buf.present();
             }
+        }
+    }
+
+    /// Turns the skin's cursors into window-system cursors (none when the
+    /// skin has none or `usecursors` is off).
+    fn build_cursors(&mut self, el: &ActiveEventLoop) {
+        self.cursors.clear();
+        if self.model.settings().usecursors {
+            for (kind, c) in &self.model.skin.cursors {
+                match CustomCursor::from_rgba(c.rgba.clone(), c.w, c.h, c.hot_x, c.hot_y) {
+                    Ok(src) => {
+                        self.cursors.insert(*kind, el.create_custom_cursor(src));
+                    }
+                    Err(e) => log::warn!("cursor {}: {e}", kind.file_name()),
+                }
+            }
+        }
+        for w in self.wins.iter_mut().flatten() {
+            w.cursor_kind = None;
+        }
+    }
+
+    /// Shows the skin cursor for the control under the mouse in window `k`.
+    fn update_cursor(&mut self, k: WinKind) {
+        let input = self.input(k, false, false);
+        let kind = match k {
+            WinKind::Main => self.mainw.cursor(&self.model, input.x, input.y),
+            WinKind::Eq => self.eqw.cursor(&self.model, input.x, input.y),
+            WinKind::Pl => self.plw.cursor(&self.model, input.x, input.y),
+        };
+        let custom = self.cursors.get(&kind).or_else(|| self.cursors.get(&CursorKind::Normal)).cloned();
+        let Some(w) = self.wins[idx(k)].as_mut() else { return };
+        if w.cursor_kind == Some(kind) {
+            return;
+        }
+        w.cursor_kind = Some(kind);
+        match custom {
+            Some(c) => w.window.set_cursor(c),
+            None => w.window.set_cursor(CursorIcon::Default),
         }
     }
 
@@ -768,6 +816,7 @@ impl App {
             self.drag_to(k);
             return;
         }
+        self.update_cursor(k);
         let target = self.capture.unwrap_or(k);
         let input = self.input(target, false, false);
         self.hover_tooltip(target, input.x, input.y);
@@ -1014,6 +1063,7 @@ impl App {
                 }
                 UiReq::SkinChanged => {
                     self.font = Font::load(&self.model.skin.pl.font);
+                    self.build_cursors(el);
                     for k in KINDS {
                         if let Some(w) = self.win_mut(k) {
                             w.shape_sig = None;
