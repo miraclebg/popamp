@@ -16,7 +16,6 @@ mod platform;
 mod render;
 mod skinwin;
 mod ui;
-mod ui_pl;
 mod vis;
 mod widgets;
 

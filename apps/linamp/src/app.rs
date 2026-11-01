@@ -8,9 +8,8 @@ use crate::model::{AddMode, AppEvent, Model, UiReq, WinKind};
 use crate::panels::{Panel, PanelKind};
 use crate::platform::{self, Platform, WindowRole};
 use crate::render::present_scaled;
-use crate::skinwin::SkinWin;
+use crate::skinwin::{Nav, SkinWin};
 use crate::ui::{Input, Out};
-use crate::ui_pl::{Nav, PlWin};
 use crate::widgets::{self, Event};
 use linamp_audio::PlayState;
 use linamp_core::Command;
@@ -100,7 +99,7 @@ pub struct App {
     font: Font,
     mainw: SkinWin,
     eqw: SkinWin,
-    plw: PlWin,
+    plw: SkinWin,
     wins: [Option<SkinWindow>; 3],
     popups: Vec<Popup>,
     panels: Vec<PanelWindow>,
@@ -132,7 +131,7 @@ impl App {
             font,
             mainw: SkinWin::new(WindowKey::Main),
             eqw: SkinWin::new(WindowKey::Eq),
-            plw: PlWin::new(),
+            plw: SkinWin::new(WindowKey::Playlist),
             wins: [None, None, None],
             popups: Vec::new(),
             panels: Vec::new(),
@@ -167,7 +166,7 @@ impl App {
         match k {
             WinKind::Main => crate::bind::window_size(&self.model, WindowKey::Main),
             WinKind::Eq => crate::bind::window_size(&self.model, WindowKey::Eq),
-            WinKind::Pl => PlWin::size(&self.model),
+            WinKind::Pl => crate::bind::window_size(&self.model, WindowKey::Playlist),
         }
     }
 
@@ -393,9 +392,9 @@ impl App {
         }
         let active = w.focused;
         match k {
-            WinKind::Main => self.mainw.draw(&self.model, &mut w.frame, active),
-            WinKind::Eq => self.eqw.draw(&self.model, &mut w.frame, active),
-            WinKind::Pl => self.plw.draw(&mut self.model, &mut self.font, &mut w.frame, active),
+            WinKind::Main => self.mainw.draw(&self.model, &mut self.font, &mut w.frame, active),
+            WinKind::Eq => self.eqw.draw(&self.model, &mut self.font, &mut w.frame, active),
+            WinKind::Pl => self.plw.draw(&self.model, &mut self.font, &mut w.frame, active),
         }
         let (pw, ph) = (lw as u32 * scale, lh as u32 * scale);
         let (Some(nw), Some(nh)) = (NonZeroU32::new(pw), NonZeroU32::new(ph)) else { return };
@@ -813,7 +812,7 @@ impl App {
             Some(Drag::Resize { start_size, start }) => {
                 let s = self.scale();
                 let (dx, dy) = ((cursor.0 - start.0) / s, (cursor.1 - start.1) / s);
-                if PlWin::resize_to(&mut self.model, *start_size, dx, dy) {
+                if crate::bind::resize(&mut self.model, WindowKey::Playlist, *start_size, dx, dy) {
                     self.apply_layout();
                 }
             }
@@ -930,8 +929,8 @@ impl App {
             self.popup_key(el, code);
             return;
         }
-        if k == WinKind::Pl && self.plw.menu_open() && code == KeyCode::Escape {
-            self.plw.close_menu();
+        if k == WinKind::Pl && self.plw.popup_open() && code == KeyCode::Escape {
+            self.plw.close_popup();
             self.render(k);
             return;
         }
@@ -1204,8 +1203,7 @@ impl App {
             WinKind::Pl => {
                 // Insert at the row under the cursor.
                 let input = self.input(WinKind::Pl, false, false);
-                let row_h = self.model.settings().pe_fontsize + 3;
-                let at = self.plw.scroll + ((input.y - 20).max(0) / row_h) as usize;
+                let at = self.plw.row_at(&self.model, input.y);
                 self.model.add(files, AddMode::Insert(at.min(self.model.playlist.len())));
             }
             _ if self.mods.shift_key() => self.model.add(files, AddMode::Append),
@@ -1402,8 +1400,8 @@ impl ApplicationHandler<AppEvent> for App {
                 if !f && !self.popups.is_empty() {
                     self.popup_focus_check = Some(Instant::now());
                 }
-                if !f && k == WinKind::Pl && self.plw.menu_open() {
-                    self.plw.close_menu();
+                if !f && k == WinKind::Pl && self.plw.popup_open() {
+                    self.plw.close_popup();
                 }
                 self.render(k);
             }
@@ -1438,7 +1436,7 @@ impl ApplicationHandler<AppEvent> for App {
                     match k {
                         WinKind::Main => self.mainw.wheel(&mut self.model, input.x, input.y, steps),
                         WinKind::Eq => self.eqw.wheel(&mut self.model, input.x, input.y, steps),
-                        WinKind::Pl => self.plw.wheel(&mut self.model, steps),
+                        WinKind::Pl => self.plw.wheel(&mut self.model, input.x, input.y, steps),
                     }
                     self.render(k);
                     self.render(WinKind::Main);

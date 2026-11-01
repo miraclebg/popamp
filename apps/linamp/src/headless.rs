@@ -8,7 +8,6 @@
 use crate::font::Font;
 use crate::model::{AddMode, Model, WinKind};
 use crate::skinwin::SkinWin;
-use crate::ui_pl::PlWin;
 use linamp_audio::{PlayState, StreamInfo};
 use linamp_core::config::{Config, Paths, Settings};
 use linamp_skin::layout::WindowKey;
@@ -69,14 +68,15 @@ impl Renderer {
         let (w, h) = match k {
             WinKind::Main => crate::bind::window_size(m, WindowKey::Main),
             WinKind::Eq => crate::bind::window_size(m, WindowKey::Eq),
-            WinKind::Pl => PlWin::size(m),
+            WinKind::Pl => crate::bind::window_size(m, WindowKey::Playlist),
         };
         let mut b = Bitmap::new(w, h, 0);
-        match k {
-            WinKind::Main => SkinWin::new(WindowKey::Main).draw(m, &mut b, true),
-            WinKind::Eq => SkinWin::new(WindowKey::Eq).draw(m, &mut b, true),
-            WinKind::Pl => PlWin::new().draw(m, &mut Font::load(&m.skin.pl.font), &mut b, true),
-        }
+        let key = match k {
+            WinKind::Main => WindowKey::Main,
+            WinKind::Eq => WindowKey::Eq,
+            WinKind::Pl => WindowKey::Playlist,
+        };
+        SkinWin::new(key).draw(m, &mut Font::load(&m.skin.pl.font), &mut b, true);
         let path = self.dir.join(format!("{name}.png"));
         b.save_png(&path).map_err(|e| format!("{}: {e}", path.display()))
     }

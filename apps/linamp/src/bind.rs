@@ -178,6 +178,22 @@ pub fn stored_size(model: &Model, key: WindowKey) -> (i32, i32) {
     }
 }
 
+/// Resizes a window to its size at the start of a drag plus the drag, in
+/// the steps its layout allows; returns true if the size changed.
+pub fn resize(model: &mut Model, key: WindowKey, start: (i32, i32), dx: i32, dy: i32) -> bool {
+    let Some(def) = model.skin.layout.window(key) else { return false };
+    let size = (def.normal.width.snap(start.0 + dx), def.normal.height.snap(start.1 + dy));
+    if size == stored_size(model, key) {
+        return false;
+    }
+    let s = model.settings_mut();
+    match key {
+        WindowKey::Playlist => (s.pe_width, s.pe_height) = size,
+        _ => return false,
+    }
+    true
+}
+
 pub fn window_size(model: &Model, key: WindowKey) -> (i32, i32) {
     let Some(def) = model.skin.layout.window(key) else { return (0, 0) };
     let mode = def.mode(shaded(model, key));

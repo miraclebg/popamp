@@ -3,12 +3,16 @@
 //! code serves every window of every skin.
 
 use crate::bind;
+use crate::font::Font;
 use crate::model::Model;
 use crate::render::{skin_text, skin_text_width, sprite, time_digits};
 use crate::ui::{Input, Out};
 use linamp_audio::PlayState;
 use linamp_core::text::format_duration_ms;
-use linamp_skin::layout::{Action, Element, EmptyPress, Fill, Kind, MenuRef, Mode, Paint, Slider, Value, Wheel, WindowDef, WindowKey};
+use linamp_core::Command;
+use linamp_skin::layout::{
+    Action, Element, EmptyPress, Fill, Kind, Look, MenuRef, Mode, Paint, PopupItem, Slider, Value, Wheel, WindowDef, WindowKey,
+};
 use linamp_skin::sprites::{eq as e, main as m, Rect};
 use linamp_skin::{Bitmap, CursorKind, Sheet, Skin};
 use std::time::{Duration, Instant};
@@ -26,6 +30,29 @@ pub struct SkinWin {
     marquee_offset: i32,
     marquee_drag: Option<(i32, i32)>,
     last_scroll: Instant,
+    list: ListState,
+    /// The open popup: (shade mode, element index), and the item under the mouse.
+    popup: Option<((bool, usize), Option<usize>)>,
+}
+
+#[derive(Default)]
+struct ListState {
+    /// First visible row.
+    scroll: usize,
+    /// Where shift-selection starts.
+    anchor: usize,
+    /// Row-drag reordering: the row the drag is currently at.
+    drag_row: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Nav {
+    Up,
+    Down,
+    PageUp,
+    PageDown,
+    Home,
+    End,
 }
 
 /// The window's current mode with its size.
@@ -37,7 +64,17 @@ struct Current<'a> {
 
 impl SkinWin {
     pub fn new(key: WindowKey) -> Self {
-        Self { key, pressed: None, grab: 0, preview: None, marquee_offset: 0, marquee_drag: None, last_scroll: Instant::now() }
+        Self {
+            key,
+            pressed: None,
+            grab: 0,
+            preview: None,
+            marquee_offset: 0,
+            marquee_drag: None,
+            last_scroll: Instant::now(),
+            list: ListState::default(),
+            popup: None,
+        }
     }
 
     fn def<'a>(&self, model: &'a Model) -> Option<&'a WindowDef> {
@@ -141,9 +178,188 @@ impl SkinWin {
         false
     }
 
+    // --- track list ----------------------------------------------------------
+
+    fn list_area(&self, model: &Model) -> Option<Rect> {
+        let c = self.current(model)?;
+        c.mode.elements.iter().find(|el| matches!(el.kind, Kind::List)).map(|el| el.at.resolve(c.w, c.h))
+    }
+
+    fn row_h(model: &Model) -> i32 {
+        model.settings().pe_fontsize + 3
+    }
+
+    fn visible_rows(&self, model: &Model) -> usize {
+        self.list_area(model).map_or(1, |r| (r.h / Self::row_h(model)).max(1) as usize)
+    }
+
+    /// The first visible row, kept within the list.
+    fn scroll(&self, model: &Model) -> usize {
+        self.list.scroll.min(model.playlist.len().saturating_sub(self.visible_rows(model)))
+    }
+
+    /// The row at window height `y` (past the end when below the last one).
+    pub fn row_at(&self, model: &Model, y: i32) -> usize {
+        let top = self.list_area(model).map_or(0, |r| r.y);
+        self.scroll(model) + ((y - top).max(0) / Self::row_h(model)) as usize
+    }
+
+    /// Scrolls so `row` is visible.
+    pub fn ensure_visible(&mut self, model: &Model, row: usize) {
+        let vis = self.visible_rows(model);
+        let scroll = self.scroll(model);
+        self.list.scroll = if row < scroll {
+            row
+        } else if row >= scroll + vis {
+            row + 1 - vis
+        } else {
+            scroll
+        };
+    }
+
+    /// Keyboard navigation in the list.
+    pub fn key_nav(&mut self, model: &mut Model, key: Nav, shift: bool) {
+        let len = model.playlist.len();
+        if len == 0 {
+            return;
+        }
+        let page = (self.visible_rows(model) / 5).max(1);
+        let cur = model.playlist.cursor.min(len - 1);
+        let target = match key {
+            Nav::Up => cur.saturating_sub(1),
+            Nav::Down => (cur + 1).min(len - 1),
+            Nav::PageUp => cur.saturating_sub(page),
+            Nav::PageDown => (cur + page).min(len - 1),
+            Nav::Home => 0,
+            Nav::End => len - 1,
+        };
+        if shift {
+            model.playlist.select_range(self.list.anchor.min(len - 1), target);
+        } else {
+            model.playlist.select_only(target);
+            self.list.anchor = target;
+        }
+        model.playlist.cursor = target;
+        self.ensure_visible(model, target);
+        model.pl_dirty += 1;
+    }
+
+    /// A press on the list: selects, plays on double click, or starts a row drag.
+    fn press_row(&mut self, model: &mut Model, ev: &Input) -> bool {
+        let i = self.row_at(model, ev.y);
+        let len = model.playlist.len();
+        if i >= len {
+            model.playlist.select_all(false);
+            return false;
+        }
+        if ev.double {
+            model.play_index(i);
+            return false;
+        }
+        if ev.shift {
+            model.playlist.select_range(self.list.anchor.min(len - 1), i);
+        } else if ev.ctrl {
+            model.playlist.toggle_selected(i);
+            self.list.anchor = i;
+        } else {
+            if !model.playlist.entry(i).is_some_and(|e| e.selected) {
+                model.playlist.select_only(i);
+            }
+            self.list.anchor = i;
+            self.list.drag_row = Some(i);
+        }
+        model.playlist.cursor = i;
+        model.pl_dirty += 1;
+        true
+    }
+
+    /// Moves the selected rows with a row drag; returns true if they moved.
+    fn drag_rows(&mut self, model: &mut Model, y: i32) -> bool {
+        let Some(from) = self.list.drag_row else { return false };
+        let top = self.list_area(model).map_or(0, |r| r.y);
+        let row = (self.scroll(model) as i32 + (y - top).div_euclid(Self::row_h(model))).max(0) as usize;
+        if row == from {
+            return false;
+        }
+        let moved = model.playlist.move_selected(row as isize - from as isize);
+        self.list.drag_row = Some((from as isize + moved) as usize);
+        model.pl_dirty += 1;
+        model.update_next();
+        self.ensure_visible(model, row.min(model.playlist.len().saturating_sub(1)));
+        true
+    }
+
+    /// Scrolls so the thumb's middle follows `y` on the scroll bar `r`.
+    fn scroll_to(&mut self, model: &Model, r: Rect, thumb: &Look, y: i32) {
+        let th = thumb_h(thumb);
+        let track = (r.h - th).max(1);
+        let max = model.playlist.len().saturating_sub(self.visible_rows(model));
+        let frac = ((y - r.y - th / 2) as f32 / track as f32).clamp(0.0, 1.0);
+        self.list.scroll = (frac * max as f32).round() as usize;
+    }
+
+    // --- popups --------------------------------------------------------------
+
+    pub fn popup_open(&self) -> bool {
+        self.popup.is_some()
+    }
+
+    pub fn close_popup(&mut self) {
+        self.popup = None;
+    }
+
+    /// The open popup's items with their places.
+    fn popup_items(&self, model: &Model) -> Vec<(PopupItem, Rect)> {
+        let Some(((shade, i), _)) = self.popup else { return Vec::new() };
+        if shade != bind::shaded(model, self.key) {
+            return Vec::new();
+        }
+        let Some((Element { kind: Kind::Popup { items, .. }, .. }, r)) = self.element(model, i) else { return Vec::new() };
+        let mut y = r.y;
+        items
+            .into_iter()
+            .enumerate()
+            .map(|(k, item)| {
+                let src = item.look.normal.map(|p| p.src).unwrap_or(Rect { x: 0, y: 0, w: 0, h: 0 });
+                if k > 0 {
+                    y -= src.h;
+                }
+                (item, Rect { x: r.x, y, w: src.w, h: src.h })
+            })
+            .collect()
+    }
+
+    fn popup_hit(&self, model: &Model, x: i32, y: i32) -> Option<(usize, PopupItem)> {
+        self.popup_items(model).into_iter().enumerate().find(|(_, (_, r))| r.contains(x, y)).map(|(k, (item, _))| (k, item))
+    }
+
+    fn run_popup_item(&mut self, model: &mut Model, item: PopupItem, ev: &Input) -> Out {
+        self.close_popup();
+        match item.action {
+            Action::Click { plain, shift, ctrl } => model.exec(clicked(plain, shift, ctrl, ev)),
+            Action::Press(c) => model.exec(c),
+            Action::MenuOnPress(menu) | Action::MenuOnRelease(menu) => return Out::Menu(bind::menu(model, menu)),
+            Action::Nothing => {}
+        }
+        Out::Redraw
+    }
+
+    fn draw_popup(&self, model: &Model, b: &mut Bitmap) {
+        let Some(((_, i), hover)) = self.popup else { return };
+        let items = self.popup_items(model);
+        for (k, (item, r)) in items.iter().enumerate() {
+            if let Some(p) = item.look.pick(false, hover == Some(k), true) {
+                draw_paint(b, &model.skin, p, *r, Fill::Once);
+            }
+        }
+        if let (false, Some((Element { kind: Kind::Popup { bar: Some(bar), .. }, .. }, r))) = (items.is_empty(), self.element(model, i)) {
+            draw_paint(b, &model.skin, bar, r, Fill::Once);
+        }
+    }
+
     // --- drawing -------------------------------------------------------------
 
-    pub fn draw(&self, model: &Model, b: &mut Bitmap, active: bool) {
+    pub fn draw(&self, model: &Model, font: &mut Font, b: &mut Bitmap, active: bool) {
         let Some(c) = self.current(model) else { return };
         let active = active || !model.settings().dim_inactive;
         let pressed = self.pressed_index(model);
@@ -181,7 +397,54 @@ impl SkinWin {
                 Kind::Clock => self.draw_clock(model, b, r),
                 Kind::Vis => model.vis.draw(b, r.x, r.y, r.w, r.h, model.settings(), &skin.viscolor),
                 Kind::EqGraph => draw_eq_graph(model, b, r),
-                Kind::Drag { .. } | Kind::Resize | Kind::List | Kind::ListScroll { .. } | Kind::Popup { .. } => {}
+                Kind::List => self.draw_list(model, font, b, r, active),
+                Kind::ListScroll { thumb } => {
+                    let track = r.h - thumb_h(thumb);
+                    let max = model.playlist.len().saturating_sub(self.visible_rows(model));
+                    let ty = if max == 0 { 0 } else { (self.scroll(model) as i32 * track) / max as i32 };
+                    if let Some(p) = thumb.pick(false, held, true) {
+                        draw_paint(b, skin, p, Rect { y: r.y + ty, ..r }, Fill::Once);
+                    }
+                }
+                Kind::Drag { .. } | Kind::Resize | Kind::Popup { .. } => {}
+            }
+        }
+        self.draw_popup(model, b);
+    }
+
+    fn draw_list(&self, model: &Model, font: &mut Font, b: &mut Bitmap, list: Rect, active: bool) {
+        let colors = &model.skin.pl;
+        b.fill(list.x, list.y, list.w, list.h, colors.normal_bg);
+        let s = model.settings();
+        let row_h = Self::row_h(model);
+        let px = s.pe_fontsize as u32;
+        let digits = model.playlist.len().max(1).to_string().len();
+        let current = model.playlist.current();
+        let scroll = self.scroll(model);
+        for vi in 0..self.visible_rows(model) {
+            let i = scroll + vi;
+            let Some(e) = model.playlist.entry(i) else { break };
+            let ry = list.y + vi as i32 * row_h;
+            if e.selected {
+                b.fill(list.x, ry, list.w, row_h, colors.selected_bg);
+            }
+            let color = if Some(i) == current { colors.current } else { colors.normal };
+            let time = e.length_ms.map(format_duration_ms).unwrap_or_default();
+            let tw = font.width(&time, px);
+            let label = match (s.shownumsinpl, s.zeropadplnum) {
+                (true, true) => format!("{:0digits$}. {}", i + 1, e.display),
+                (true, false) => format!("{}. {}", i + 1, e.display),
+                _ => e.display.clone(),
+            };
+            let fitted = font.fit(&label, px, list.w - tw - 8);
+            font.draw(b, list.x + 2, ry + 1, &fitted, px, color, list.x, list.w);
+            font.draw(b, list.x + list.w - tw - 2, ry + 1, &time, px, color, list.x, list.w);
+            if i == model.playlist.cursor && active {
+                // Focus rectangle (dotted).
+                for xx in (list.x..list.x + list.w).step_by(2) {
+                    b.set(xx, ry, color);
+                    b.set(xx, ry + row_h - 1, color);
+                }
             }
         }
     }
@@ -230,9 +493,23 @@ impl SkinWin {
     // --- input ---------------------------------------------------------------
 
     pub fn mouse_down(&mut self, model: &mut Model, ev: &Input) -> Out {
+        if self.popup.is_some() {
+            if let Some((_, item)) = self.popup_hit(model, ev.x, ev.y) {
+                return self.run_popup_item(model, item, ev);
+            }
+            self.close_popup();
+            return Out::Redraw;
+        }
         let hit = self.hit(model, ev.x, ev.y);
         let found = hit.and_then(|i| self.element(model, i));
         if ev.right {
+            if let Some((Element { kind: Kind::List, .. }, _)) = found {
+                // The row menu acts on the row under the mouse.
+                let i = self.row_at(model, ev.y);
+                if i < model.playlist.len() && !model.playlist.entry(i).is_some_and(|e| e.selected) {
+                    model.playlist.select_only(i);
+                }
+            }
             let menu = found.and_then(|(el, _)| el.menu).unwrap_or(MenuRef::Main);
             return Out::Menu(bind::menu(model, menu));
         }
@@ -279,6 +556,23 @@ impl SkinWin {
                 self.pressed = Some((shade, i));
                 Out::Capture
             }
+            Kind::List => {
+                if !self.press_row(model, ev) {
+                    return Out::Redraw;
+                }
+                self.pressed = Some((shade, i));
+                Out::Capture
+            }
+            Kind::ListScroll { thumb } => {
+                self.pressed = Some((shade, i));
+                self.scroll_to(model, r, &thumb, ev.y);
+                Out::Capture
+            }
+            Kind::Popup { .. } => {
+                self.popup = Some(((shade, i), None));
+                self.pressed = Some((shade, i));
+                Out::Capture
+            }
             Kind::Resize => Out::BeginResize,
             _ => Out::None,
         }
@@ -314,6 +608,11 @@ impl SkinWin {
 
     /// Follows a drag; returns true if the window needs drawing.
     pub fn mouse_move(&mut self, model: &mut Model, x: i32, y: i32) -> bool {
+        if let Some((at, hover)) = self.popup {
+            let now = self.popup_hit(model, x, y).map(|(k, _)| k);
+            self.popup = Some((at, now));
+            return now != hover;
+        }
         let Some((el, r)) = self.pressed_index(model).and_then(|i| self.element(model, i)) else { return false };
         match el.kind {
             Kind::Slider(s) => self.slide(model, &s, r, x, y),
@@ -321,18 +620,29 @@ impl SkinWin {
                 let Some((sx, so)) = self.marquee_drag else { return false };
                 self.marquee_offset = so - (x - sx);
             }
+            Kind::List => return self.drag_rows(model, y),
+            Kind::ListScroll { thumb } => self.scroll_to(model, r, &thumb, y),
             _ => return false,
         }
         true
     }
 
     pub fn mouse_up(&mut self, model: &mut Model, ev: &Input) -> Out {
-        let Some(i) = self.pressed_index(model) else {
-            self.pressed = None;
-            return Out::None;
-        };
-        let over = self.hit(model, ev.x, ev.y) == Some(i);
+        let pressed = self.pressed_index(model);
         self.pressed = None;
+        self.list.drag_row = None;
+        if let Some(((_, at), _)) = self.popup {
+            if let Some((_, item)) = self.popup_hit(model, ev.x, ev.y) {
+                return self.run_popup_item(model, item, ev);
+            }
+            // Released on the button that opened it: the popup stays open.
+            if !(pressed == Some(at) && self.hit(model, ev.x, ev.y) == Some(at)) {
+                self.close_popup();
+            }
+            return Out::Redraw;
+        }
+        let Some(i) = pressed else { return Out::None };
+        let over = self.hit(model, ev.x, ev.y) == Some(i);
         let Some((el, _)) = self.element(model, i) else { return Out::Redraw };
         match el.kind {
             Kind::Slider(s) => {
@@ -348,12 +658,7 @@ impl SkinWin {
             }
             Kind::Button { action, .. } | Kind::Toggle { action, .. } if over => match action {
                 Action::Click { plain, shift, ctrl } => {
-                    let c = match (ev.ctrl, ev.shift) {
-                        (true, _) => ctrl.unwrap_or(plain),
-                        (false, true) => shift.unwrap_or(plain),
-                        _ => plain,
-                    };
-                    model.exec(c);
+                    model.exec(clicked(plain, shift, ctrl, ev));
                     Out::Redraw
                 }
                 Action::MenuOnRelease(menu) => Out::Menu(bind::menu(model, menu)),
@@ -372,10 +677,25 @@ impl SkinWin {
                 return;
             }
         }
-        if let Some(Wheel::Volume(step)) = self.def(model).map(|d| d.wheel) {
-            model.set_volume(model.settings().volume + steps * step);
+        match self.def(model).map(|d| d.wheel) {
+            Some(Wheel::Volume(step)) => model.set_volume(model.settings().volume + steps * step),
+            Some(Wheel::ScrollList) => self.list.scroll = self.scroll(model).saturating_add_signed(-steps as isize * 3),
+            None => {}
         }
     }
+}
+
+/// The command a click runs with the held modifiers.
+fn clicked(plain: Command, shift: Option<Command>, ctrl: Option<Command>, ev: &Input) -> Command {
+    match (ev.ctrl, ev.shift) {
+        (true, _) => ctrl.unwrap_or(plain),
+        (false, true) => shift.unwrap_or(plain),
+        _ => plain,
+    }
+}
+
+fn thumb_h(thumb: &Look) -> i32 {
+    thumb.normal.map_or(0, |p| p.src.h)
 }
 
 /// How far the thumb sits from the slider's start for value `v`.
@@ -548,5 +868,119 @@ mod tests {
         assert_eq!(m.settings().eq_bands()[0], 29, "wheel up raises the band");
         // Empty space moves the window.
         assert!(matches!(w.mouse_down(&mut m, &input(5, 105)), Out::BeginMove));
+    }
+
+    /// A 275x116 playlist (four 13 px rows from y 20) holding `n` tracks.
+    fn playlist(n: usize) -> (Model, SkinWin) {
+        let mut m = Model::for_tests();
+        m.playlist.extend((0..n).map(|i| linamp_core::playlist::Entry::new(format!("/m/{i:02}.mp3"))));
+        (m.settings_mut().pe_width, m.settings_mut().pe_height) = (275, 116);
+        (m, SkinWin::new(WindowKey::Playlist))
+    }
+
+    fn selected(m: &Model) -> Vec<usize> {
+        m.playlist.selected_indices()
+    }
+
+    #[test]
+    fn playlist_cursors_follow_the_control_under_the_mouse() {
+        let (mut m, w) = playlist(0);
+        assert_eq!(w.cursor(&m, 267, 5), C::PClose);
+        assert_eq!(w.cursor(&m, 257, 5), C::PWinBut);
+        assert_eq!(w.cursor(&m, 100, 5), C::PTBar);
+        assert_eq!(w.cursor(&m, 100, 50), C::PNormal);
+        assert_eq!(w.cursor(&m, 262, 40), C::PVScroll);
+        assert_eq!(w.cursor(&m, 268, 106), C::PSize);
+        m.settings_mut().pe_ws = true;
+        assert_eq!(w.cursor(&m, 100, 5), C::PWSNorm);
+        assert_eq!(w.cursor(&m, 267, 5), C::PClose);
+    }
+
+    #[test]
+    fn rows_select_with_modifiers_and_move_by_drag() {
+        let (mut m, mut w) = playlist(6);
+        w.mouse_down(&mut m, &input(50, 20 + 13 + 2));
+        w.mouse_up(&mut m, &input(50, 35));
+        assert_eq!(selected(&m), [1]);
+        w.mouse_down(&mut m, &Input { shift: true, ..input(50, 20 + 3 * 13 + 2) });
+        w.mouse_up(&mut m, &input(50, 61));
+        assert_eq!(selected(&m), [1, 2, 3]);
+        w.mouse_down(&mut m, &Input { ctrl: true, ..input(50, 22) });
+        w.mouse_up(&mut m, &input(50, 22));
+        assert_eq!(selected(&m), [0, 1, 2, 3]);
+        // A plain press on a selected row keeps the selection and drags it.
+        w.mouse_down(&mut m, &input(50, 22));
+        w.mouse_move(&mut m, 50, 22 + 13);
+        w.mouse_up(&mut m, &input(50, 35));
+        assert_eq!(m.playlist.entry(0).unwrap().location, "/m/04.mp3");
+        assert_eq!(selected(&m), [1, 2, 3, 4]);
+        // Below the last row: select nothing.
+        let (mut m, mut w) = playlist(2);
+        m.playlist.select_only(0);
+        w.mouse_down(&mut m, &input(50, 70));
+        assert!(selected(&m).is_empty());
+    }
+
+    #[test]
+    fn right_click_on_a_row_selects_it_for_the_row_menu() {
+        let (mut m, mut w) = playlist(3);
+        m.playlist.select_only(0);
+        let out = w.mouse_down(&mut m, &Input { right: true, ..input(50, 20 + 2 * 13 + 2) });
+        assert!(matches!(out, Out::Menu(_)));
+        assert_eq!(selected(&m), [2]);
+    }
+
+    #[test]
+    fn wheel_keys_and_scroll_bar_scroll_the_list() {
+        let (mut m, mut w) = playlist(20);
+        w.wheel(&mut m, 50, 50, -2);
+        assert_eq!(w.scroll(&m), 6);
+        w.wheel(&mut m, 50, 50, -10);
+        assert_eq!(w.scroll(&m), 16, "stops at the last page");
+        w.wheel(&mut m, 50, 50, 10);
+        assert_eq!(w.scroll(&m), 0);
+        w.key_nav(&mut m, Nav::End, false);
+        assert_eq!((m.playlist.cursor, w.scroll(&m)), (19, 16));
+        w.key_nav(&mut m, Nav::Home, true);
+        assert_eq!((selected(&m).len(), w.scroll(&m)), (20, 0));
+        // Scroll bar at x 260, y 20..78 with an 18 px thumb: bottom is the end.
+        w.mouse_down(&mut m, &input(262, 77));
+        assert_eq!(w.scroll(&m), 16);
+        w.mouse_move(&mut m, 262, 20);
+        assert_eq!(w.scroll(&m), 0);
+        w.mouse_up(&mut m, &input(262, 20));
+        assert_eq!(w.row_at(&m, 20 + 13), 1);
+    }
+
+    #[test]
+    fn popup_buttons_open_picture_menus() {
+        let (mut m, mut w) = playlist(3);
+        // SEL at (72, 86): its items stack upward 18 px each.
+        assert!(matches!(w.mouse_down(&mut m, &input(80, 100)), Out::Capture));
+        assert!(w.popup_open());
+        w.mouse_up(&mut m, &input(80, 100));
+        assert_eq!(selected(&m), [0, 1, 2], "the bottom item covers the button: Select all");
+        m.playlist.select_all(false);
+        w.mouse_down(&mut m, &input(95, 100));
+        w.mouse_up(&mut m, &input(95, 100));
+        assert!(w.popup_open(), "released on the button beside the items: stays open");
+        assert!(w.mouse_move(&mut m, 80, 86 - 36 + 5), "hovering an item redraws");
+        w.mouse_down(&mut m, &input(80, 86 - 36 + 5));
+        assert!(!w.popup_open());
+        assert_eq!(selected(&m), [0, 1, 2], "Invert selection");
+        // Dragged off and released elsewhere: closed, nothing run.
+        w.mouse_down(&mut m, &input(80, 100));
+        w.mouse_up(&mut m, &input(200, 40));
+        assert!(!w.popup_open());
+        assert_eq!(selected(&m), [0, 1, 2]);
+    }
+
+    #[test]
+    fn resizing_snaps_to_the_layout_steps() {
+        let (mut m, _) = playlist(0);
+        assert!(crate::bind::resize(&mut m, WindowKey::Playlist, (275, 116), 30, 10));
+        assert_eq!(crate::bind::window_size(&m, WindowKey::Playlist), (300, 116));
+        assert!(!crate::bind::resize(&mut m, WindowKey::Playlist, (275, 116), 20, -100));
+        assert!(!crate::bind::resize(&mut m, WindowKey::Main, (275, 116), 100, 100));
     }
 }
