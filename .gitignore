@@ -3,3 +3,4 @@
 *.wsz
 /local/
 *.swp
+/dist

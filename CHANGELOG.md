@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `.deb` and AppImage packages for x86_64 and ARM64, built by a release
+  workflow on version tags (`packaging/build-deb.sh`,
+  `packaging/build-appimage.sh`), and AppStream metadata.
 - `/RENDER=<dir>` (with optional `/SKIN=<file>` and files) draws every
   window in a set of fixed states to PNG files without a display or sound
   card, for skin previews and before/after comparisons. The set of states
