@@ -105,6 +105,7 @@ commands! {
     RemoveBookmark = 50023,
     EqLoadDefault = 50024,
     EqSaveDefault = 50025,
+    PlGenerateHtml = 50026,
 }
 
 #[cfg(test)]

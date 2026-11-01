@@ -18,6 +18,7 @@ pub enum DialogKind {
     },
     LoadPlaylist,
     SavePlaylist,
+    SaveHtml,
     JumpToTime,
     JumpToFile,
     EditEntry {

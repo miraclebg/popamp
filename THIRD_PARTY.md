@@ -13,6 +13,7 @@ contributors, MIT OR Apache-2.0.
 |---|---|
 | `apps/linamp/src/headless.rs` (`/RENDER`) | the idea of headless rendering and its set of window states (`src/render.rs`); the code was written for Linamp's model |
 | `linamp-skin/src/cursors.rs`, `cursor()` in the windows | the `.cur`/`.ani` decoding approach and which cursor shows over which control (`src/skin/mod.rs`, `src/ui/*_win.rs`) |
+| `plformats::html` | the HTML playlist export and its colours (`src/app.rs` `html_playlist`) |
 | EQ "Default" preset (`Settings::eq_default`) | the Load/Save Default entries (`src/app.rs` `eq_lib`) |
 | bookmarks in `model.rs` | the feature, its menus and keys (`src/app.rs`, `src/ui/menu.rs`) |
 | `MainWin::tooltip`, tooltip timing in `app.rs` | the tooltip texts, the 0.6 s delay and 7 s timeout (`src/ui/main_win.rs`, `src/app.rs`) |

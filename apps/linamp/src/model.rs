@@ -775,6 +775,7 @@ impl Model {
                 start,
             },
             DialogKind::SavePlaylist => Request::Save { title: "Save playlist".into(), name: "playlist.m3u8".into(), start },
+            DialogKind::SaveHtml => Request::Save { title: "Generate HTML playlist".into(), name: "playlist.html".into(), start },
             DialogKind::JumpToTime => {
                 let len = self.engine.shared().length_ms().map(format_duration_ms).unwrap_or_else(|| "?".into());
                 Request::Entry {
@@ -903,6 +904,18 @@ impl Model {
                         p.set_extension("m3u8");
                     }
                     if let Err(e) = self.save_playlist_file(&p) {
+                        self.flash(format!("SAVE FAILED: {e}"));
+                    }
+                }
+            }
+            DialogKind::SaveHtml => {
+                if let Some(f) = first {
+                    let mut p = PathBuf::from(f);
+                    if p.extension().is_none() {
+                        p.set_extension("html");
+                    }
+                    let html = plformats::html(&plformats::items_from_entries(self.playlist.entries()));
+                    if let Err(e) = std::fs::write(&p, html) {
                         self.flash(format!("SAVE FAILED: {e}"));
                     }
                 }
@@ -1098,6 +1111,7 @@ impl Model {
             C::JumpToTime => self.request_dialog(DialogKind::JumpToTime),
             C::JumpToFile => self.request_dialog(DialogKind::JumpToFile),
             C::FileInfo => self.request_dialog(DialogKind::Info),
+            C::PlGenerateHtml => self.request_dialog(DialogKind::SaveHtml),
             C::EqLoadDefault => {
                 let p = self.settings().eq_default();
                 self.apply_preset(&p);
@@ -1524,6 +1538,15 @@ impl Model {
         ]
     }
 
+    /// The playlist's MISC > Misc options menu.
+    pub fn playlist_misc_menu(&self) -> Vec<MenuItem> {
+        vec![
+            MenuItem::cmd("Generate HTML playlist…", "", Command::PlGenerateHtml),
+            MenuItem::sep(),
+            MenuItem::sub("Options", self.options_menu()),
+        ]
+    }
+
     pub fn sort_menu(&self) -> Vec<MenuItem> {
         use Command as C;
         vec![
@@ -1675,6 +1698,18 @@ mod tests {
         assert_eq!(m.settings().eq_bands()[0], 31);
         m.exec(Command::EqLoadDefault);
         assert_eq!(m.settings().eq_bands()[0], 10);
+    }
+
+    #[test]
+    fn generates_an_html_playlist() {
+        let mut m = with_songs(2);
+        m.exec(Command::PlGenerateHtml);
+        assert!(matches!(m.ui.last(), Some(UiReq::Dialog(DialogKind::SaveHtml, _))));
+        let path = m.paths.config_dir.join("list");
+        std::fs::create_dir_all(&m.paths.config_dir).unwrap();
+        m.on_dialog(DialogResult { kind: DialogKind::SaveHtml, values: vec![path.to_string_lossy().into_owned()] });
+        let html = std::fs::read_to_string(path.with_extension("html")).unwrap();
+        assert!(html.contains("<li>Song 2 <span>(?)</span></li>"));
     }
 
     #[test]

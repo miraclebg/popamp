@@ -24,6 +24,9 @@ All notable changes to this project are documented here. The format follows
   Remote command ids 50021–50023.
 - Equalizer Presets > Load/Save > Default: keep your own default curve and
   return to it in one click (ids 50024/50025).
+- Playlist MISC > Misc options > Generate HTML playlist… saves the playlist
+  as a web page with titles, lengths and the total (id 50026). The general
+  options stay reachable there as a submenu.
 
 ## [0.1.0] - 2026-10-22
 

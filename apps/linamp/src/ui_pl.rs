@@ -59,7 +59,7 @@ fn menu_command(m: usize, k: usize) -> Option<Result<Command, MenuBuilder>> {
         (2, 0) => Ok(C::SelectAll),
         (2, 1) => Ok(C::SelectNone),
         (2, 2) => Ok(C::InvertSelection),
-        (3, 0) => Err(|m: &Model| m.options_menu()),
+        (3, 0) => Err(|m: &Model| m.playlist_misc_menu()),
         (3, 1) => Ok(C::FileInfo),
         (3, 2) => Err(|m: &Model| m.sort_menu()),
         (4, 0) => Ok(C::PlaylistOpen),

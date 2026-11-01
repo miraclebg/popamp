@@ -43,6 +43,7 @@ and classic `.wsz` skins load at runtime.
   - Sort, reverse, randomize, crop, remove dead entries.
   - Drag to reorder, jump to file or time.
   - Bookmarks for favourite files and streams (`Alt+I`, main menu).
+  - Export as an HTML page (MISC > Misc options).
   - Advanced Title Formatting (`[%artist% - ]$if2(%title%,…)`).
 - **Visualization:** classic spectrum analyzer (normal, fire and line styles,
   peaks) and oscilloscope (dots, lines, solid).

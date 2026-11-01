@@ -273,6 +273,24 @@ pub fn write_file(path: &Path, items: &[Item]) -> io::Result<()> {
     crate::config::write_atomic(path, text.as_bytes())
 }
 
+/// A playlist as a web page: numbered titles with their lengths, and the
+/// total, in the player's colours ("Generate HTML playlist").
+pub fn html(items: &[Item]) -> String {
+    let len = |i: &Item| i.length_ms.map(crate::text::format_duration_ms).unwrap_or_else(|| "?".into());
+    let total: u64 = items.iter().filter_map(|i| i.length_ms).sum();
+    let mut s = String::from(concat!(
+        "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"><title>Linamp playlist</title>\n",
+        "<style>body{background:#000040;color:#ffbf00;font-family:sans-serif}span{color:#fff}</style>\n",
+        "</head><body>\n<h1>Linamp playlist</h1>\n",
+    ));
+    s += &format!("<p>{} tracks, total length {}</p>\n<ol>\n", items.len(), crate::text::format_duration_ms(total));
+    for i in items {
+        let title = i.title.as_deref().filter(|t| !t.is_empty()).unwrap_or(&i.location);
+        s += &format!("<li>{} <span>({})</span></li>\n", xml_escape(title), len(i));
+    }
+    s + "</ol>\n</body></html>\n"
+}
+
 pub fn items_from_entries(entries: &[Entry]) -> Vec<Item> {
     entries
         .iter()
@@ -283,6 +301,20 @@ pub fn items_from_entries(entries: &[Entry]) -> Vec<Item> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn html_lists_tracks_with_lengths() {
+        let items = [
+            Item { location: "/a.mp3".into(), title: Some("Tom & Jerry <live>".into()), length_ms: Some(65_000) },
+            Item { location: "/b.mp3".into(), title: None, length_ms: None },
+        ];
+        let html = html(&items);
+        assert!(html.starts_with("<!DOCTYPE html>"));
+        assert!(html.contains("2 tracks, total length 1:05"));
+        assert!(html.contains("<li>Tom &amp; Jerry &lt;live&gt; <span>(1:05)</span></li>"));
+        assert!(html.contains("<li>/b.mp3 <span>(?)</span></li>"));
+        assert!(html.trim_end().ends_with("</html>"));
+    }
 
     fn sample() -> Vec<Item> {
         vec![
