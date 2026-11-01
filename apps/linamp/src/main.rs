@@ -1,6 +1,7 @@
 //! Linamp: a Winamp-style skinnable audio player for Linux.
 
 mod app;
+mod bind;
 mod cli;
 mod dialogs;
 mod font;
@@ -13,9 +14,9 @@ mod museum;
 mod panels;
 mod platform;
 mod render;
+mod skinwin;
 mod ui;
 mod ui_eq;
-mod ui_main;
 mod ui_pl;
 mod vis;
 mod widgets;

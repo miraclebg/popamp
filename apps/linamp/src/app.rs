@@ -8,13 +8,14 @@ use crate::model::{AddMode, AppEvent, Model, UiReq, WinKind};
 use crate::panels::{Panel, PanelKind};
 use crate::platform::{self, Platform, WindowRole};
 use crate::render::present_scaled;
+use crate::skinwin::SkinWin;
 use crate::ui::{Input, Out};
 use crate::ui_eq::EqWin;
-use crate::ui_main::MainWin;
 use crate::ui_pl::{Nav, PlWin};
 use crate::widgets::{self, Event};
 use linamp_audio::PlayState;
 use linamp_core::Command;
+use linamp_skin::layout::WindowKey;
 use linamp_skin::Bitmap;
 use linamp_skin::CursorKind;
 use std::collections::HashMap;
@@ -98,7 +99,7 @@ enum Drag {
 pub struct App {
     pub model: Model,
     font: Font,
-    mainw: MainWin,
+    mainw: SkinWin,
     eqw: EqWin,
     plw: PlWin,
     wins: [Option<SkinWindow>; 3],
@@ -130,7 +131,7 @@ impl App {
         App {
             model,
             font,
-            mainw: MainWin::new(),
+            mainw: SkinWin::new(WindowKey::Main),
             eqw: EqWin::new(),
             plw: PlWin::new(),
             wins: [None, None, None],
@@ -165,7 +166,7 @@ impl App {
 
     fn logical_size(&self, k: WinKind) -> (i32, i32) {
         match k {
-            WinKind::Main => MainWin::size(&self.model),
+            WinKind::Main => crate::bind::window_size(&self.model, WindowKey::Main),
             WinKind::Eq => EqWin::size(&self.model),
             WinKind::Pl => PlWin::size(&self.model),
         }
@@ -393,7 +394,7 @@ impl App {
         }
         let active = w.focused;
         match k {
-            WinKind::Main => self.mainw.draw(&mut self.model, &mut w.frame, active),
+            WinKind::Main => self.mainw.draw(&self.model, &mut w.frame, active),
             WinKind::Eq => self.eqw.draw(&mut self.model, &mut w.frame, active),
             WinKind::Pl => self.plw.draw(&mut self.model, &mut self.font, &mut w.frame, active),
         }
@@ -593,7 +594,7 @@ impl App {
             self.tip = None;
             return;
         }
-        let text = self.mainw.tooltip(&self.model, x, y);
+        let text = self.mainw.tooltip(&self.model, x, y).unwrap_or_else(|| format!("Linamp {}", env!("CARGO_PKG_VERSION")));
         if self.tip.as_ref().is_none_or(|t| t.text != text) {
             self.tip = Some(Tooltip { text, since: Instant::now(), shown: None });
         }
@@ -1436,7 +1437,7 @@ impl ApplicationHandler<AppEvent> for App {
                 if steps != 0 {
                     let input = self.input(k, false, false);
                     match k {
-                        WinKind::Main => self.mainw.wheel(&mut self.model, steps),
+                        WinKind::Main => self.mainw.wheel(&mut self.model, input.x, input.y, steps),
                         WinKind::Eq => self.eqw.wheel(&mut self.model, input.x, input.y, steps),
                         WinKind::Pl => self.plw.wheel(&mut self.model, steps),
                     }

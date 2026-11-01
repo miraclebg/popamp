@@ -7,11 +7,12 @@
 
 use crate::font::Font;
 use crate::model::{AddMode, Model, WinKind};
+use crate::skinwin::SkinWin;
 use crate::ui_eq::EqWin;
-use crate::ui_main::MainWin;
 use crate::ui_pl::PlWin;
 use linamp_audio::{PlayState, StreamInfo};
 use linamp_core::config::{Config, Paths, Settings};
+use linamp_skin::layout::WindowKey;
 use linamp_skin::{Bitmap, Skin};
 use std::path::{Path, PathBuf};
 
@@ -67,13 +68,13 @@ impl Renderer {
 
     fn save(&self, m: &mut Model, k: WinKind, name: &str) -> Result<(), String> {
         let (w, h) = match k {
-            WinKind::Main => MainWin::size(m),
+            WinKind::Main => crate::bind::window_size(m, WindowKey::Main),
             WinKind::Eq => EqWin::size(m),
             WinKind::Pl => PlWin::size(m),
         };
         let mut b = Bitmap::new(w, h, 0);
         match k {
-            WinKind::Main => MainWin::new().draw(m, &mut b, true),
+            WinKind::Main => SkinWin::new(WindowKey::Main).draw(m, &mut b, true),
             WinKind::Eq => EqWin::new().draw(m, &mut b, true),
             WinKind::Pl => PlWin::new().draw(m, &mut Font::load(&m.skin.pl.font), &mut b, true),
         }
