@@ -10,7 +10,6 @@ use crate::platform::{self, Platform, WindowRole};
 use crate::render::present_scaled;
 use crate::skinwin::SkinWin;
 use crate::ui::{Input, Out};
-use crate::ui_eq::EqWin;
 use crate::ui_pl::{Nav, PlWin};
 use crate::widgets::{self, Event};
 use linamp_audio::PlayState;
@@ -100,7 +99,7 @@ pub struct App {
     pub model: Model,
     font: Font,
     mainw: SkinWin,
-    eqw: EqWin,
+    eqw: SkinWin,
     plw: PlWin,
     wins: [Option<SkinWindow>; 3],
     popups: Vec<Popup>,
@@ -132,7 +131,7 @@ impl App {
             model,
             font,
             mainw: SkinWin::new(WindowKey::Main),
-            eqw: EqWin::new(),
+            eqw: SkinWin::new(WindowKey::Eq),
             plw: PlWin::new(),
             wins: [None, None, None],
             popups: Vec::new(),
@@ -167,7 +166,7 @@ impl App {
     fn logical_size(&self, k: WinKind) -> (i32, i32) {
         match k {
             WinKind::Main => crate::bind::window_size(&self.model, WindowKey::Main),
-            WinKind::Eq => EqWin::size(&self.model),
+            WinKind::Eq => crate::bind::window_size(&self.model, WindowKey::Eq),
             WinKind::Pl => PlWin::size(&self.model),
         }
     }
@@ -395,7 +394,7 @@ impl App {
         let active = w.focused;
         match k {
             WinKind::Main => self.mainw.draw(&self.model, &mut w.frame, active),
-            WinKind::Eq => self.eqw.draw(&mut self.model, &mut w.frame, active),
+            WinKind::Eq => self.eqw.draw(&self.model, &mut w.frame, active),
             WinKind::Pl => self.plw.draw(&mut self.model, &mut self.font, &mut w.frame, active),
         }
         let (pw, ph) = (lw as u32 * scale, lh as u32 * scale);

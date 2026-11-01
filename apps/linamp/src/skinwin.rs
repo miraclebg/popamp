@@ -519,4 +519,34 @@ mod tests {
         w.wheel(&mut m, 50, 50, 2);
         assert_eq!(m.settings().volume, 116);
     }
+
+    #[test]
+    fn eq_cursors_follow_the_control_under_the_mouse() {
+        let m = Model::for_tests();
+        let w = SkinWin::new(WindowKey::Eq);
+        assert_eq!(w.cursor(&m, 267, 5), C::EqClose);
+        assert_eq!(w.cursor(&m, 25, 50), C::EqSlid);
+        assert_eq!(w.cursor(&m, 82, 50), C::EqSlid);
+        assert_eq!(w.cursor(&m, 100, 5), C::EqTitle);
+        assert_eq!(w.cursor(&m, 5, 105), C::EqNormal);
+    }
+
+    #[test]
+    fn eq_sliders_drag_reset_and_wheel() {
+        let mut m = Model::for_tests();
+        let mut w = SkinWin::new(WindowKey::Eq);
+        // Band 0 at x 78, y 38, 63 px tall, 11 px thumb: top is +12 dB (0).
+        w.mouse_down(&mut m, &input(84, 38 + 5));
+        w.mouse_move(&mut m, 84, 38);
+        assert_eq!(m.settings().eq_bands()[0], 0);
+        w.mouse_move(&mut m, 84, 38 + 5 + 52);
+        assert_eq!(m.settings().eq_bands()[0], 63);
+        w.mouse_up(&mut m, &input(84, 100));
+        w.mouse_down(&mut m, &Input { double: true, ..input(84, 60) });
+        assert_eq!(m.settings().eq_bands()[0], 31, "double click resets");
+        w.wheel(&mut m, 84, 60, 1);
+        assert_eq!(m.settings().eq_bands()[0], 29, "wheel up raises the band");
+        // Empty space moves the window.
+        assert!(matches!(w.mouse_down(&mut m, &input(5, 105)), Out::BeginMove));
+    }
 }
