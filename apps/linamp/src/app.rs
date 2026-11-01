@@ -61,6 +61,19 @@ struct Popup {
     frame: Bitmap,
 }
 
+/// Tooltip timing, as in the original: appears after the mouse rests on a
+/// control for a moment, disappears after a while.
+const TIP_DELAY: Duration = Duration::from_millis(600);
+const TIP_TIMEOUT: Duration = Duration::from_secs(7);
+
+/// The tooltip for what the mouse rests on in the main window.
+struct Tooltip {
+    text: String,
+    since: Instant,
+    /// The window, once shown.
+    shown: Option<(Arc<Window>, Surface)>,
+}
+
 enum Drag {
     Move { group: Vec<(WinKind, (i32, i32))>, start: (i32, i32) },
     Resize { start_size: (i32, i32), start: (i32, i32) },
@@ -74,6 +87,7 @@ pub struct App {
     plw: PlWin,
     wins: [Option<SkinWindow>; 3],
     popups: Vec<Popup>,
+    tip: Option<Tooltip>,
     drag: Option<Drag>,
     capture: Option<WinKind>,
     mods: ModifiersState,
@@ -102,6 +116,7 @@ impl App {
             plw: PlWin::new(),
             wins: [None, None, None],
             popups: Vec::new(),
+            tip: None,
             drag: None,
             capture: None,
             mods: ModifiersState::empty(),
@@ -429,6 +444,63 @@ impl App {
         }
     }
 
+    /// Starts the tooltip timer when the mouse rests on a new control.
+    fn hover_tooltip(&mut self, k: WinKind, x: i32, y: i32) {
+        if k != WinKind::Main || self.capture.is_some() {
+            self.tip = None;
+            return;
+        }
+        let text = self.mainw.tooltip(&self.model, x, y);
+        if self.tip.as_ref().is_none_or(|t| t.text != text) {
+            self.tip = Some(Tooltip { text, since: Instant::now(), shown: None });
+        }
+    }
+
+    /// Shows the tooltip once the mouse has rested long enough, and hides it
+    /// after a while or when a menu or drag takes over.
+    fn update_tooltip(&mut self, el: &ActiveEventLoop) {
+        if !self.popups.is_empty() || self.drag.is_some() {
+            self.tip = None;
+        }
+        let Some(tip) = &mut self.tip else { return };
+        let age = tip.since.elapsed();
+        if age >= TIP_TIMEOUT {
+            tip.shown = None;
+            return;
+        }
+        if age < TIP_DELAY || tip.shown.is_some() {
+            return;
+        }
+        let text = tip.text.clone();
+        let frame = menu::tooltip(&text, &mut self.font);
+        let (x, y) = self.cursor_screen(WinKind::Main);
+        let attrs = platform::attributes(WindowRole::Tooltip)
+            .with_title(text)
+            .with_inner_size(PhysicalSize::new(frame.w as u32, frame.h as u32))
+            .with_position(PhysicalPosition::new(x, y + 20))
+            .with_window_level(WindowLevel::AlwaysOnTop);
+        let Ok(window) = el.create_window(attrs).map(Arc::new) else { return };
+        let Ok(ctx) = softbuffer::Context::new(window.clone()) else { return };
+        let Ok(surface) = Surface::new(&ctx, window.clone()) else { return };
+        window.request_redraw();
+        if let Some(tip) = &mut self.tip {
+            tip.shown = Some((window, surface));
+        }
+    }
+
+    fn render_tooltip(&mut self) {
+        let Some(Tooltip { text, shown: Some((_, surface)), .. }) = &mut self.tip else { return };
+        let frame = menu::tooltip(text, &mut self.font);
+        let (w, h) = (frame.w as u32, frame.h as u32);
+        let (Some(nw), Some(nh)) = (NonZeroU32::new(w), NonZeroU32::new(h)) else { return };
+        if surface.resize(nw, nh).is_ok() {
+            if let Ok(mut buf) = surface.buffer_mut() {
+                present_scaled(&frame, 1, &mut buf, w);
+                let _ = buf.present();
+            }
+        }
+    }
+
     fn close_popups_from(&mut self, level: usize) {
         self.popups.truncate(level);
     }
@@ -646,6 +718,7 @@ impl App {
     }
 
     fn mouse_down(&mut self, el: &ActiveEventLoop, k: WinKind, button: MouseButton) {
+        self.tip = None;
         if !self.popups.is_empty() {
             self.popups.clear();
             return;
@@ -697,6 +770,7 @@ impl App {
         }
         let target = self.capture.unwrap_or(k);
         let input = self.input(target, false, false);
+        self.hover_tooltip(target, input.x, input.y);
         let changed = match target {
             WinKind::Main => self.mainw.mouse_move(&mut self.model, input.x, input.y),
             WinKind::Eq => self.eqw.mouse_move(&mut self.model, input.x, input.y),
@@ -1035,6 +1109,7 @@ impl ApplicationHandler<AppEvent> for App {
             let fps = if self.model.state() == PlayState::Playing && s.sa != 0 { s.vis_fps.max(1) } else { 6 };
             self.next_frame = Instant::now() + Duration::from_millis(1000 / fps as u64);
             self.tick();
+            self.update_tooltip(el);
             self.flush_drops(el);
             if let Some((dir, frames)) = &mut self.snapshot {
                 *frames += 1;
@@ -1114,8 +1189,15 @@ impl ApplicationHandler<AppEvent> for App {
             }
             return;
         }
+        if self.tip.as_ref().and_then(|t| t.shown.as_ref()).is_some_and(|(w, _)| w.id() == id) {
+            if let WindowEvent::RedrawRequested = ev {
+                self.render_tooltip();
+            }
+            return;
+        }
         let Some(k) = self.kind_of(id) else { return };
         match ev {
+            WindowEvent::CursorLeft { .. } => self.tip = None,
             WindowEvent::CloseRequested => self.run(el, Command::Exit),
             WindowEvent::RedrawRequested => self.render(k),
             WindowEvent::Focused(f) => {

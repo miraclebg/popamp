@@ -126,6 +126,25 @@ impl MainWin {
         (y < 14).then_some(W::TitleBar)
     }
 
+    /// Tooltip for the control under the mouse: a few controls have their
+    /// own text, as in the original; everywhere else shows the program name.
+    pub fn tooltip(&self, model: &Model, x: i32, y: i32) -> String {
+        let text = match self.hit(model, x, y) {
+            Some(W::Options) => "Main Menu",
+            Some(W::Minimize) => "Minimize",
+            Some(W::Shade) => "Toggle Windowshade Mode",
+            Some(W::Close) => "Close",
+            Some(W::Clutter(0)) => "Options Menu",
+            Some(W::Clutter(1)) => "Toggle Always-On-Top",
+            Some(W::Clutter(2)) => "File Info Box",
+            Some(W::Clutter(3)) => "Toggle Doublesize Mode",
+            Some(W::Clutter(4)) => "Visualization Menu",
+            Some(W::Marquee) => "Song Title (right-click for options)",
+            _ => return format!("Linamp {}", env!("CARGO_PKG_VERSION")),
+        };
+        text.to_string()
+    }
+
     fn marquee_text(&self, model: &Model) -> String {
         if let Some(ms) = self.seek_preview {
             let len = model.engine.shared().length_ms().unwrap_or(1).max(1);
@@ -572,5 +591,30 @@ impl MainWin {
 
     pub fn wheel(&mut self, model: &mut Model, steps: i32) {
         model.set_volume(model.settings().volume + steps * 8);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use linamp_core::config::{Config, Paths};
+
+    fn model() -> Model {
+        let dir = std::env::temp_dir().join("linamp-ui-main-test-no-config");
+        Model::headless(Paths::resolve(Some(dir.clone())), Config::load(dir.join("linamp.ini")))
+    }
+
+    #[test]
+    fn tooltips_name_the_control_under_the_mouse() {
+        let mut m = model();
+        let w = MainWin::new();
+        assert_eq!(w.tooltip(&m, 13, 36), "Toggle Always-On-Top");
+        assert_eq!(w.tooltip(&m, 180, 27), "Song Title (right-click for options)");
+        assert_eq!(w.tooltip(&m, 9, 5), "Main Menu");
+        // Elsewhere, the program name.
+        assert!(w.tooltip(&m, 50, 97).starts_with("Linamp "));
+        // The clutter bar is hidden in windowshade mode.
+        m.settings_mut().windowshade = true;
+        assert!(w.tooltip(&m, 13, 36).starts_with("Linamp "));
     }
 }

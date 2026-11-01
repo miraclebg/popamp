@@ -18,6 +18,8 @@ pub enum WindowRole {
     Docked,
     /// Pop-up menus: placed and stacked by us, not the window manager.
     Popup,
+    /// Tooltips: like menus, but never focused.
+    Tooltip,
 }
 
 /// Borderless, fixed-size window attributes for `role`.
@@ -27,6 +29,7 @@ pub fn attributes(role: WindowRole) -> WindowAttributes {
         WindowRole::Main => attrs,
         WindowRole::Docked => attrs.with_x11_window_type(vec![WindowType::Utility]),
         WindowRole::Popup => attrs.with_override_redirect(true).with_x11_window_type(vec![WindowType::PopupMenu]),
+        WindowRole::Tooltip => attrs.with_override_redirect(true).with_active(false).with_x11_window_type(vec![WindowType::Tooltip]),
     }
 }
 

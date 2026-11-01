@@ -12,3 +12,4 @@ contributors, MIT OR Apache-2.0.
 | Linamp | Taken from Ferramp |
 |---|---|
 | `apps/linamp/src/headless.rs` (`/RENDER`) | the idea of headless rendering and its set of window states (`src/render.rs`); the code was written for Linamp's model |
+| `MainWin::tooltip`, tooltip timing in `app.rs` | the tooltip texts, the 0.6 s delay and 7 s timeout (`src/ui/main_win.rs`, `src/app.rs`) |

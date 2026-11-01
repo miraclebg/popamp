@@ -12,6 +12,9 @@ All notable changes to this project are documented here. The format follows
   window in a set of fixed states to PNG files without a display or sound
   card, for skin previews and before/after comparisons. The set of states
   follows Ferramp's `--render`.
+- Tooltips on the main window: the title bar buttons, the clutter bar and
+  the song title explain themselves after the mouse rests on them; elsewhere
+  the tooltip shows the program name.
 
 ## [0.1.0] - 2026-10-22
 

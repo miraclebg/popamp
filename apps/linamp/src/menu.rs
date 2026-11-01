@@ -61,6 +61,15 @@ impl MenuItem {
 }
 
 pub const FONT_PX: u32 = 12;
+
+/// A tooltip: black text on pale yellow, as system tooltips used to be.
+pub fn tooltip(text: &str, font: &mut Font) -> Bitmap {
+    let (w, h) = (font.width(text, FONT_PX) + 6, 16);
+    let mut b = Bitmap::new(w, h, rgb(255, 255, 225));
+    b.bevel(0, 0, w, h, rgb(0, 0, 0), rgb(0, 0, 0));
+    font.draw(&mut b, 3, 1, text, FONT_PX, rgb(0, 0, 0), 1, w - 2);
+    b
+}
 const ITEM_H: i32 = 20;
 const SEP_H: i32 = 7;
 const PAD_X: i32 = 22;
