@@ -38,6 +38,15 @@ pub enum WindowKey {
     Playlist,
 }
 
+impl WindowKey {
+    pub const ALL: [WindowKey; 3] = [WindowKey::Main, WindowKey::Eq, WindowKey::Playlist];
+
+    /// The key's place in [`WindowKey::ALL`].
+    pub fn index(self) -> usize {
+        self as usize
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct WindowDef {
     pub key: WindowKey,

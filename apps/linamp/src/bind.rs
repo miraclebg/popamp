@@ -169,6 +169,43 @@ pub fn shaded(model: &Model, key: WindowKey) -> bool {
     }
 }
 
+pub fn title(key: WindowKey) -> &'static str {
+    match key {
+        WindowKey::Main => "Linamp",
+        WindowKey::Eq => "Linamp Equalizer",
+        WindowKey::Playlist => "Linamp Playlist Editor",
+    }
+}
+
+/// Whether the window is on screen: the skin has it and the user opened it.
+pub fn shown(model: &Model, key: WindowKey) -> bool {
+    let s = model.settings();
+    let open = match key {
+        WindowKey::Main => true,
+        WindowKey::Eq => s.eq_open,
+        WindowKey::Playlist => s.pe_open,
+    };
+    open && model.skin.layout.window(key).is_some()
+}
+
+pub fn position(model: &Model, key: WindowKey) -> (i32, i32) {
+    let s = model.settings();
+    match key {
+        WindowKey::Main => (s.wx, s.wy),
+        WindowKey::Eq => (s.eq_wx, s.eq_wy),
+        WindowKey::Playlist => (s.pe_wx, s.pe_wy),
+    }
+}
+
+pub fn set_position(model: &mut Model, key: WindowKey, p: (i32, i32)) {
+    let s = model.settings_mut();
+    match key {
+        WindowKey::Main => (s.wx, s.wy) = p,
+        WindowKey::Eq => (s.eq_wx, s.eq_wy) = p,
+        WindowKey::Playlist => (s.pe_wx, s.pe_wy) = p,
+    }
+}
+
 /// The window's stored size, for resizable dimensions.
 pub fn stored_size(model: &Model, key: WindowKey) -> (i32, i32) {
     let s = model.settings();
@@ -220,6 +257,17 @@ mod tests {
         assert_eq!(window_size(&m, WindowKey::Playlist), (450, 290));
         m.settings_mut().pe_ws = true;
         assert_eq!(window_size(&m, WindowKey::Playlist), (450, 14));
+    }
+
+    #[test]
+    fn windows_show_when_open_and_in_the_skin() {
+        let mut m = Model::for_tests();
+        m.settings_mut().eq_open = true;
+        m.settings_mut().pe_open = false;
+        assert!(shown(&m, WindowKey::Main) && shown(&m, WindowKey::Eq) && !shown(&m, WindowKey::Playlist));
+        m.skin.layout.windows.retain(|w| w.key == WindowKey::Main);
+        assert!(!shown(&m, WindowKey::Eq), "a skin without an equalizer");
+        assert_eq!(window_size(&m, WindowKey::Eq), (0, 0));
     }
 
     #[test]

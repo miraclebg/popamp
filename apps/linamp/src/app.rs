@@ -4,7 +4,7 @@
 use crate::dialogs::{self, DialogResult};
 use crate::font::Font;
 use crate::menu::{self, Layout, MenuItem};
-use crate::model::{AddMode, AppEvent, Model, UiReq, WinKind};
+use crate::model::{AddMode, AppEvent, Model, UiReq};
 use crate::panels::{Panel, PanelKind};
 use crate::platform::{self, Platform, WindowRole};
 use crate::render::present_scaled;
@@ -13,7 +13,7 @@ use crate::ui::{Input, Out};
 use crate::widgets::{self, Event};
 use linamp_audio::PlayState;
 use linamp_core::Command;
-use linamp_skin::layout::WindowKey;
+use linamp_skin::layout::{Placement, WindowKey};
 use linamp_skin::Bitmap;
 use linamp_skin::CursorKind;
 use std::collections::HashMap;
@@ -26,16 +26,6 @@ use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, StartC
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::{CursorIcon, CustomCursor, Window, WindowId, WindowLevel};
-
-const KINDS: [WinKind; 3] = [WinKind::Main, WinKind::Eq, WinKind::Pl];
-
-fn idx(k: WinKind) -> usize {
-    match k {
-        WinKind::Main => 0,
-        WinKind::Eq => 1,
-        WinKind::Pl => 2,
-    }
-}
 
 type Surface = softbuffer::Surface<Arc<Window>, Arc<Window>>;
 
@@ -90,7 +80,7 @@ struct PanelWindow {
 }
 
 enum Drag {
-    Move { group: Vec<(WinKind, (i32, i32))>, start: (i32, i32) },
+    Move { group: Vec<(WindowKey, (i32, i32))>, start: (i32, i32) },
     Resize { start_size: (i32, i32), start: (i32, i32) },
 }
 
@@ -106,10 +96,10 @@ pub struct App {
     /// The skin's cursors, made into window-system cursors.
     cursors: HashMap<CursorKind, CustomCursor>,
     drag: Option<Drag>,
-    capture: Option<WinKind>,
+    capture: Option<WindowKey>,
     mods: ModifiersState,
-    last_click: Option<(WinKind, Instant, (i32, i32))>,
-    drops: Vec<(WinKind, String)>,
+    last_click: Option<(WindowKey, Instant, (i32, i32))>,
+    drops: Vec<(WindowKey, String)>,
     drop_time: Instant,
     seen_pl_dirty: u64,
     next_frame: Instant,
@@ -159,51 +149,36 @@ impl App {
         }
     }
 
-    fn logical_size(&self, k: WinKind) -> (i32, i32) {
-        match k {
-            WinKind::Main => crate::bind::window_size(&self.model, WindowKey::Main),
-            WinKind::Eq => crate::bind::window_size(&self.model, WindowKey::Eq),
-            WinKind::Pl => crate::bind::window_size(&self.model, WindowKey::Playlist),
-        }
+    fn logical_size(&self, k: WindowKey) -> (i32, i32) {
+        crate::bind::window_size(&self.model, k)
     }
 
-    fn wanted_visible(&self, k: WinKind) -> bool {
-        let s = self.model.settings();
-        match k {
-            WinKind::Main => true,
-            WinKind::Eq => s.eq_open,
-            WinKind::Pl => s.pe_open,
-        }
+    fn placement(&self, k: WindowKey) -> Placement {
+        self.model.skin.layout.window(k).map_or(Placement::Docked, |d| d.placement)
     }
 
-    fn saved_pos(&self, k: WinKind) -> (i32, i32) {
-        let s = self.model.settings();
-        match k {
-            WinKind::Main => (s.wx, s.wy),
-            WinKind::Eq => (s.eq_wx, s.eq_wy),
-            WinKind::Pl => (s.pe_wx, s.pe_wy),
-        }
+    fn wanted_visible(&self, k: WindowKey) -> bool {
+        crate::bind::shown(&self.model, k)
     }
 
-    fn store_pos(&mut self, k: WinKind, p: (i32, i32)) {
-        let s = self.model.settings_mut();
-        match k {
-            WinKind::Main => (s.wx, s.wy) = p,
-            WinKind::Eq => (s.eq_wx, s.eq_wy) = p,
-            WinKind::Pl => (s.pe_wx, s.pe_wy) = p,
-        }
+    fn saved_pos(&self, k: WindowKey) -> (i32, i32) {
+        crate::bind::position(&self.model, k)
     }
 
-    fn win(&self, k: WinKind) -> Option<&SkinWindow> {
-        self.wins[idx(k)].as_ref()
+    fn store_pos(&mut self, k: WindowKey, p: (i32, i32)) {
+        crate::bind::set_position(&mut self.model, k, p)
     }
 
-    fn win_mut(&mut self, k: WinKind) -> Option<&mut SkinWindow> {
-        self.wins[idx(k)].as_mut()
+    fn win(&self, k: WindowKey) -> Option<&SkinWindow> {
+        self.wins[k.index()].as_ref()
     }
 
-    fn kind_of(&self, id: WindowId) -> Option<WinKind> {
-        KINDS.into_iter().find(|&k| self.win(k).is_some_and(|w| w.window.id() == id))
+    fn win_mut(&mut self, k: WindowKey) -> Option<&mut SkinWindow> {
+        self.wins[k.index()].as_mut()
+    }
+
+    fn kind_of(&self, id: WindowId) -> Option<WindowKey> {
+        WindowKey::ALL.into_iter().find(|&k| self.win(k).is_some_and(|w| w.window.id() == id))
     }
 
     fn create_windows(&mut self, el: &ActiveEventLoop) {
@@ -211,7 +186,7 @@ impl App {
         // Keep windows on a connected monitor.
         let monitors: Vec<(i32, i32, i32, i32)> =
             el.available_monitors().map(|m| (m.position().x, m.position().y, m.size().width as i32, m.size().height as i32)).collect();
-        for k in KINDS {
+        for k in WindowKey::ALL {
             let (w, h) = self.logical_size(k);
             let mut pos = self.saved_pos(k);
             if self.model.settings().keeponscreen && !monitors.is_empty() {
@@ -220,15 +195,14 @@ impl App {
                     .any(|&(mx, my, mw, mh)| pos.0 + 20 > mx && pos.0 < mx + mw - 20 && pos.1 >= my - 5 && pos.1 < my + mh - 14);
                 if !on_screen {
                     let (mx, my, _, _) = monitors[0];
-                    pos = (mx + 100, my + 100 + idx(k) as i32 * 116 * scale);
+                    pos = (mx + 100, my + 100 + k.index() as i32 * 116 * scale);
                 }
             }
-            let title = match k {
-                WinKind::Main => "Linamp",
-                WinKind::Eq => "Linamp Equalizer",
-                WinKind::Pl => "Linamp Playlist Editor",
+            let title = crate::bind::title(k);
+            let role = match self.placement(k) {
+                Placement::Free => WindowRole::Main,
+                _ => WindowRole::Docked,
             };
-            let role = if k == WinKind::Main { WindowRole::Main } else { WindowRole::Docked };
             let mut attrs = platform::attributes(role)
                 .with_title(title)
                 .with_inner_size(PhysicalSize::new((w * scale) as u32, (h * scale) as u32))
@@ -263,7 +237,7 @@ impl App {
                 }
             };
             window.set_cursor(CursorIcon::Default);
-            self.wins[idx(k)] = Some(SkinWindow {
+            self.wins[k.index()] = Some(SkinWindow {
                 window,
                 surface,
                 pos,
@@ -280,7 +254,7 @@ impl App {
         self.build_cursors(el);
         self.apply_layout();
         if self.start_minimized {
-            for k in KINDS {
+            for k in WindowKey::ALL {
                 if let Some(w) = self.win(k) {
                     w.window.set_minimized(true);
                 }
@@ -293,7 +267,7 @@ impl App {
     fn apply_layout(&mut self) {
         let scale = self.scale();
         type Geometry = (i32, i32, i32, i32, bool);
-        let old: Vec<Option<Geometry>> = KINDS
+        let old: Vec<Option<Geometry>> = WindowKey::ALL
             .iter()
             .map(|&k| {
                 self.win(k).map(|w| {
@@ -302,8 +276,8 @@ impl App {
                 })
             })
             .collect();
-        let mut new_pos: Vec<(i32, i32)> = KINDS.iter().map(|&k| self.win(k).map(|w| w.pos).unwrap_or((0, 0))).collect();
-        for (i, &k) in KINDS.iter().enumerate() {
+        let mut new_pos: Vec<(i32, i32)> = WindowKey::ALL.iter().map(|&k| self.win(k).map(|w| w.pos).unwrap_or((0, 0))).collect();
+        for (i, &k) in WindowKey::ALL.iter().enumerate() {
             let Some((x, y, ow, oh, vis)) = old[i] else { continue };
             let (lw, lh) = self.logical_size(k);
             let (nw, nh) = (lw * scale, lh * scale);
@@ -311,7 +285,7 @@ impl App {
                 continue;
             }
             // Shift windows docked below/right of this one.
-            for (j, &other) in KINDS.iter().enumerate() {
+            for (j, &other) in WindowKey::ALL.iter().enumerate() {
                 if j == i {
                     continue;
                 }
@@ -329,7 +303,7 @@ impl App {
                 let _ = other;
             }
         }
-        for (i, &k) in KINDS.iter().enumerate() {
+        for (i, &k) in WindowKey::ALL.iter().enumerate() {
             let visible = self.wanted_visible(k);
             let (lw, lh) = self.logical_size(k);
             let pos = new_pos[i];
@@ -357,14 +331,14 @@ impl App {
         let regions = &self.model.skin.regions;
         let s = &self.model.config.settings;
         let skin_ptr = &self.model.skin as *const _ as usize;
-        for k in [WinKind::Main, WinKind::Eq] {
+        for k in [WindowKey::Main, WindowKey::Eq] {
             let polys = match k {
-                WinKind::Main if s.windowshade => regions.window_shade.as_ref(),
-                WinKind::Main => regions.normal.as_ref(),
+                WindowKey::Main if s.windowshade => regions.window_shade.as_ref(),
+                WindowKey::Main => regions.normal.as_ref(),
                 _ if s.eq_ws => regions.equalizer_ws.as_ref(),
                 _ => regions.equalizer.as_ref(),
             };
-            let Some(w) = self.wins[idx(k)].as_mut() else { continue };
+            let Some(w) = self.wins[k.index()].as_mut() else { continue };
             let sig = (skin_ptr ^ polys.map(|p| p.len()).unwrap_or(0), w.size.0, w.size.1, scale);
             if w.shape_sig == Some(sig) {
                 continue;
@@ -376,9 +350,9 @@ impl App {
         }
     }
 
-    fn render(&mut self, k: WinKind) {
+    fn render(&mut self, k: WindowKey) {
         let scale = self.scale() as u32;
-        let i = idx(k);
+        let i = k.index();
         let Some(w) = self.wins[i].as_mut() else { return };
         if !w.visible {
             return;
@@ -388,7 +362,7 @@ impl App {
             w.frame = Bitmap::new(lw, lh, 0);
         }
         let active = w.focused;
-        self.skins[idx(k)].draw(&self.model, &mut self.font, &mut w.frame, active);
+        self.skins[k.index()].draw(&self.model, &mut self.font, &mut w.frame, active);
         let (pw, ph) = (lw as u32 * scale, lh as u32 * scale);
         let (Some(nw), Some(nh)) = (NonZeroU32::new(pw), NonZeroU32::new(ph)) else { return };
         if w.surface.resize(nw, nh).is_err() {
@@ -403,7 +377,7 @@ impl App {
     }
 
     fn redraw_all(&mut self) {
-        for k in KINDS {
+        for k in WindowKey::ALL {
             self.render(k);
         }
         for i in 0..self.popups.len() {
@@ -413,7 +387,7 @@ impl App {
 
     // --- pop-up menus ---------------------------------------------------------
 
-    fn cursor_screen(&self, k: WinKind) -> (i32, i32) {
+    fn cursor_screen(&self, k: WindowKey) -> (i32, i32) {
         self.win(k).map(|w| (w.pos.0 + w.cursor.0, w.pos.1 + w.cursor.1)).unwrap_or((100, 100))
     }
 
@@ -424,7 +398,7 @@ impl App {
         let layout = menu::layout(&items, &mut self.font);
         let (mut x, mut y) = at;
         // Keep the menu on the monitor.
-        if let Some(m) = self.win(WinKind::Main).and_then(|w| w.window.current_monitor()) {
+        if let Some(m) = self.win(WindowKey::Main).and_then(|w| w.window.current_monitor()) {
             let (mx, my) = (m.position().x, m.position().y);
             let (mw, mh) = (m.size().width as i32, m.size().height as i32);
             if x + layout.w > mx + mw {
@@ -464,7 +438,7 @@ impl App {
         let panel = Panel::open(kind, &self.model);
         let (w, h) = (panel.form().w, panel.form().h);
         // Centred on the main window's monitor, so the title bar is on screen.
-        let monitor = self.win(WinKind::Main).and_then(|m| m.window.current_monitor());
+        let monitor = self.win(WindowKey::Main).and_then(|m| m.window.current_monitor());
         let (cx, cy) = monitor
             .map(|m| (m.position().x + m.size().width as i32 / 2, m.position().y + m.size().height as i32 / 2))
             .unwrap_or((640, 400));
@@ -560,11 +534,11 @@ impl App {
     }
 
     /// Shows the skin cursor for the control under the mouse in window `k`.
-    fn update_cursor(&mut self, k: WinKind) {
+    fn update_cursor(&mut self, k: WindowKey) {
         let input = self.input(k, false, false);
-        let kind = self.skins[idx(k)].cursor(&self.model, input.x, input.y);
+        let kind = self.skins[k.index()].cursor(&self.model, input.x, input.y);
         let custom = self.cursors.get(&kind).or_else(|| self.cursors.get(&CursorKind::Normal)).cloned();
-        let Some(w) = self.wins[idx(k)].as_mut() else { return };
+        let Some(w) = self.wins[k.index()].as_mut() else { return };
         if w.cursor_kind == Some(kind) {
             return;
         }
@@ -576,12 +550,12 @@ impl App {
     }
 
     /// Starts the tooltip timer when the mouse rests on a new control.
-    fn hover_tooltip(&mut self, k: WinKind, x: i32, y: i32) {
-        if k != WinKind::Main || self.capture.is_some() {
+    fn hover_tooltip(&mut self, k: WindowKey, x: i32, y: i32) {
+        if k != WindowKey::Main || self.capture.is_some() {
             self.tip = None;
             return;
         }
-        let text = self.skins[idx(k)].tooltip(&self.model, x, y).unwrap_or_else(|| format!("Linamp {}", env!("CARGO_PKG_VERSION")));
+        let text = self.skins[k.index()].tooltip(&self.model, x, y).unwrap_or_else(|| format!("Linamp {}", env!("CARGO_PKG_VERSION")));
         if self.tip.as_ref().is_none_or(|t| t.text != text) {
             self.tip = Some(Tooltip { text, since: Instant::now(), shown: None });
         }
@@ -604,7 +578,7 @@ impl App {
         }
         let text = tip.text.clone();
         let frame = menu::tooltip(&text, &mut self.font);
-        let (x, y) = self.cursor_screen(WinKind::Main);
+        let (x, y) = self.cursor_screen(WindowKey::Main);
         let attrs = platform::attributes(WindowRole::Tooltip)
             .with_title(text)
             .with_inner_size(PhysicalSize::new(frame.w as u32, frame.h as u32))
@@ -692,7 +666,7 @@ impl App {
 
     // --- docking & moving -------------------------------------------------------
 
-    fn rect(&self, k: WinKind) -> Option<(i32, i32, i32, i32)> {
+    fn rect(&self, k: WindowKey) -> Option<(i32, i32, i32, i32)> {
         let w = self.win(k)?;
         if !w.visible {
             return None;
@@ -701,7 +675,7 @@ impl App {
         Some((w.pos.0, w.pos.1, w.size.0 * s, w.size.1 * s))
     }
 
-    fn docked_group(&self, root: WinKind) -> Vec<WinKind> {
+    fn docked_group(&self, root: WindowKey) -> Vec<WindowKey> {
         let mut group = vec![root];
         let touching = |a: (i32, i32, i32, i32), b: (i32, i32, i32, i32)| {
             let h_overlap = a.0 < b.0 + b.2 && b.0 < a.0 + a.2;
@@ -712,7 +686,7 @@ impl App {
         let mut changed = true;
         while changed {
             changed = false;
-            for k in KINDS {
+            for k in WindowKey::ALL {
                 if group.contains(&k) {
                     continue;
                 }
@@ -726,23 +700,25 @@ impl App {
         group
     }
 
-    fn begin_move(&mut self, k: WinKind) {
-        let group = if k == WinKind::Main { self.docked_group(k) } else { vec![k] };
+    fn begin_move(&mut self, k: WindowKey) {
+        // A free window takes the windows docked to it along.
+        let group = if self.placement(k) == Placement::Free { self.docked_group(k) } else { vec![k] };
         let start = self.cursor_screen(k);
         let group = group.into_iter().filter_map(|g| self.win(g).map(|w| (g, w.pos))).collect();
         self.drag = Some(Drag::Move { group, start });
     }
 
-    fn snap_delta(&self, group: &[(WinKind, (i32, i32))], dx: i32, dy: i32) -> (i32, i32) {
+    fn snap_delta(&self, group: &[(WindowKey, (i32, i32))], dx: i32, dy: i32) -> (i32, i32) {
         let s = self.model.settings();
         if !s.snap {
             return (dx, dy);
         }
         let snap = s.snaplen;
         let scale = self.scale();
-        let in_group = |k: WinKind| group.iter().any(|(g, _)| *g == k);
-        let mut targets: Vec<(i32, i32, i32, i32)> = KINDS.iter().filter(|&&k| !in_group(k)).filter_map(|&k| self.rect(k)).collect();
-        if let Some(m) = self.win(WinKind::Main).and_then(|w| w.window.current_monitor()) {
+        let in_group = |k: WindowKey| group.iter().any(|(g, _)| *g == k);
+        let mut targets: Vec<(i32, i32, i32, i32)> =
+            WindowKey::ALL.iter().filter(|&&k| !in_group(k)).filter_map(|&k| self.rect(k)).collect();
+        if let Some(m) = self.win(WindowKey::Main).and_then(|w| w.window.current_monitor()) {
             let (mx, my, mw, mh) = (m.position().x, m.position().y, m.size().width as i32, m.size().height as i32);
             // Screen edges as zero-thickness rectangles around the monitor.
             targets.push((mx - 10_000, my - 10_000, 10_000 + mx + mw + 10_000 - mx, 10_000));
@@ -780,7 +756,7 @@ impl App {
         (dx + best_x.unwrap_or(0), dy + best_y.unwrap_or(0))
     }
 
-    fn drag_to(&mut self, k: WinKind) {
+    fn drag_to(&mut self, k: WindowKey) {
         let cursor = self.cursor_screen(k);
         match &self.drag {
             Some(Drag::Move { group, start }) => {
@@ -811,13 +787,13 @@ impl App {
 
     // --- input -----------------------------------------------------------------
 
-    fn input(&self, k: WinKind, right: bool, double: bool) -> Input {
+    fn input(&self, k: WindowKey, right: bool, double: bool) -> Input {
         let s = self.scale();
         let c = self.win(k).map(|w| w.cursor).unwrap_or((0, 0));
         Input { x: c.0.div_euclid(s), y: c.1.div_euclid(s), right, shift: self.mods.shift_key(), ctrl: self.mods.control_key(), double }
     }
 
-    fn handle_out(&mut self, el: &ActiveEventLoop, k: WinKind, out: Out) {
+    fn handle_out(&mut self, el: &ActiveEventLoop, k: WindowKey, out: Out) {
         match out {
             Out::None => {}
             Out::Redraw => self.render(k),
@@ -841,7 +817,7 @@ impl App {
         self.after_model(el);
     }
 
-    fn mouse_down(&mut self, el: &ActiveEventLoop, k: WinKind, button: MouseButton) {
+    fn mouse_down(&mut self, el: &ActiveEventLoop, k: WindowKey, button: MouseButton) {
         self.tip = None;
         if !self.popups.is_empty() {
             self.popups.clear();
@@ -858,11 +834,11 @@ impl App {
             });
         self.last_click = if right || double { None } else { Some((k, Instant::now(), pos)) };
         let input = self.input(k, right, double);
-        let out = self.skins[idx(k)].mouse_down(&mut self.model, &input);
+        let out = self.skins[k.index()].mouse_down(&mut self.model, &input);
         self.handle_out(el, k, out);
     }
 
-    fn mouse_up(&mut self, el: &ActiveEventLoop, k: WinKind) {
+    fn mouse_up(&mut self, el: &ActiveEventLoop, k: WindowKey) {
         if let Some(drag) = self.drag.take() {
             if let Drag::Move { group, .. } = drag {
                 for (g, _) in group {
@@ -875,11 +851,11 @@ impl App {
         }
         let target = self.capture.take().unwrap_or(k);
         let input = self.input(target, false, false);
-        let out = self.skins[idx(target)].mouse_up(&mut self.model, &input);
+        let out = self.skins[target.index()].mouse_up(&mut self.model, &input);
         self.handle_out(el, target, out);
     }
 
-    fn mouse_moved(&mut self, k: WinKind) {
+    fn mouse_moved(&mut self, k: WindowKey) {
         if self.drag.is_some() {
             self.drag_to(k);
             return;
@@ -888,16 +864,16 @@ impl App {
         let target = self.capture.unwrap_or(k);
         let input = self.input(target, false, false);
         self.hover_tooltip(target, input.x, input.y);
-        let changed = self.skins[idx(target)].mouse_move(&mut self.model, input.x, input.y);
+        let changed = self.skins[target.index()].mouse_move(&mut self.model, input.x, input.y);
         if changed {
             self.render(target);
-            if target == WinKind::Eq {
-                self.render(WinKind::Main);
+            if target == WindowKey::Eq {
+                self.render(WindowKey::Main);
             }
         }
     }
 
-    fn key(&mut self, el: &ActiveEventLoop, k: WinKind, ev: &KeyEvent) {
+    fn key(&mut self, el: &ActiveEventLoop, k: WindowKey, ev: &KeyEvent) {
         if ev.state != ElementState::Pressed {
             return;
         }
@@ -906,8 +882,8 @@ impl App {
             self.popup_key(el, code);
             return;
         }
-        if self.skins[idx(k)].popup_open() && code == KeyCode::Escape {
-            self.skins[idx(k)].close_popup();
+        if self.skins[k.index()].popup_open() && code == KeyCode::Escape {
+            self.skins[k.index()].close_popup();
             self.render(k);
             return;
         }
@@ -915,7 +891,7 @@ impl App {
         use Command as C;
         use KeyCode as K;
         // Window-specific keys first.
-        if k == WinKind::Eq && !ctrl && !alt {
+        if k == WindowKey::Eq && !ctrl && !alt {
             const UP: [K; 10] =
                 [K::Digit1, K::Digit2, K::Digit3, K::Digit4, K::Digit5, K::Digit6, K::Digit7, K::Digit8, K::Digit9, K::Digit0];
             const DOWN: [K; 10] = [K::KeyQ, K::KeyW, K::KeyE, K::KeyR, K::KeyT, K::KeyY, K::KeyU, K::KeyI, K::KeyO, K::KeyP];
@@ -951,10 +927,10 @@ impl App {
                 _ => {}
             }
         }
-        if k == WinKind::Eq && ctrl && alt && code == K::KeyS {
+        if k == WindowKey::Eq && ctrl && alt && code == K::KeyS {
             return self.run(el, C::EqPresetLoad);
         }
-        if k == WinKind::Pl {
+        if k == WindowKey::Playlist {
             let nav = match code {
                 K::ArrowUp if !alt => Some(Nav::Up),
                 K::ArrowDown if !alt => Some(Nav::Down),
@@ -965,7 +941,7 @@ impl App {
                 _ => None,
             };
             if let Some(n) = nav {
-                self.skins[idx(WinKind::Pl)].key_nav(&mut self.model, n, shift);
+                self.skins[WindowKey::Playlist.index()].key_nav(&mut self.model, n, shift);
                 return self.redraw_after(el, k);
             }
             let cmd = match code {
@@ -999,7 +975,7 @@ impl App {
                 return self.run(el, c);
             }
         }
-        if k == WinKind::Eq && ctrl && code == K::KeyW {
+        if k == WindowKey::Eq && ctrl && code == K::KeyW {
             return self.run(el, C::ToggleEqShade);
         }
         let cmd = match code {
@@ -1025,7 +1001,7 @@ impl App {
             K::KeyM if alt => Some(C::Minimize),
             K::Digit3 if alt => Some(C::FileInfo),
             K::KeyI if ctrl && alt => Some(C::RemoveBookmark),
-            K::KeyI if alt && k == WinKind::Pl => Some(C::BookmarkSelected),
+            K::KeyI if alt && k == WindowKey::Playlist => Some(C::BookmarkSelected),
             K::KeyI if alt => Some(C::AddBookmark),
             K::KeyF if alt => {
                 let items = self.model.main_menu();
@@ -1070,16 +1046,16 @@ impl App {
         self.redraw_all();
     }
 
-    fn redraw_after(&mut self, el: &ActiveEventLoop, k: WinKind) {
+    fn redraw_after(&mut self, el: &ActiveEventLoop, k: WindowKey) {
         self.after_model(el);
         self.render(k);
-        self.render(WinKind::Main);
+        self.render(WindowKey::Main);
     }
 
-    fn cycle_focus(&mut self, from: WinKind) {
-        let start = idx(from);
+    fn cycle_focus(&mut self, from: WindowKey) {
+        let start = from.index();
         for i in 1..=3 {
-            let k = KINDS[(start + i) % 3];
+            let k = WindowKey::ALL[(start + i) % 3];
             if let Some(w) = self.win(k).filter(|w| w.visible) {
                 w.window.focus_window();
                 return;
@@ -1101,7 +1077,7 @@ impl App {
                 }
                 UiReq::Panel(kind) => self.open_panel(el, kind),
                 UiReq::Menu(items) => {
-                    let at = self.cursor_screen(WinKind::Main);
+                    let at = self.cursor_screen(WindowKey::Main);
                     self.open_popup(el, items, at);
                 }
                 UiReq::Layout => {
@@ -1109,19 +1085,19 @@ impl App {
                     self.redraw_all();
                 }
                 UiReq::Minimize => {
-                    for k in KINDS {
+                    for k in WindowKey::ALL {
                         if let Some(w) = self.win(k).filter(|w| w.visible) {
                             w.window.set_minimized(true);
                         }
                     }
                 }
                 UiReq::Raise => {
-                    for k in KINDS {
+                    for k in WindowKey::ALL {
                         if let Some(w) = self.win(k).filter(|w| w.visible) {
                             w.window.set_minimized(false);
                         }
                     }
-                    if let Some(w) = self.win(WinKind::Main) {
+                    if let Some(w) = self.win(WindowKey::Main) {
                         w.window.focus_window();
                     }
                 }
@@ -1132,7 +1108,7 @@ impl App {
                 UiReq::SkinChanged => {
                     self.font = Font::load(&self.model.skin.pl.font);
                     self.build_cursors(el);
-                    for k in KINDS {
+                    for k in WindowKey::ALL {
                         if let Some(w) = self.win_mut(k) {
                             w.shape_sig = None;
                         }
@@ -1142,12 +1118,12 @@ impl App {
                 }
                 UiReq::AlwaysOnTop => {
                     let level = if self.model.settings().aot { WindowLevel::AlwaysOnTop } else { WindowLevel::Normal };
-                    for k in KINDS {
+                    for k in WindowKey::ALL {
                         if let Some(w) = self.win(k) {
                             w.window.set_window_level(level);
                         }
                     }
-                    self.render(WinKind::Main);
+                    self.render(WindowKey::Main);
                 }
             }
         }
@@ -1165,7 +1141,7 @@ impl App {
                     let _ = cur;
                 }
             }
-            self.render(WinKind::Pl);
+            self.render(WindowKey::Playlist);
         }
     }
 
@@ -1177,10 +1153,10 @@ impl App {
         let k = drops[0].0;
         let files: Vec<String> = drops.into_iter().map(|(_, f)| f).collect();
         match k {
-            WinKind::Pl => {
+            WindowKey::Playlist => {
                 // Insert at the row under the cursor.
-                let input = self.input(WinKind::Pl, false, false);
-                let at = self.skins[idx(WinKind::Pl)].row_at(&self.model, input.y);
+                let input = self.input(WindowKey::Playlist, false, false);
+                let at = self.skins[WindowKey::Playlist.index()].row_at(&self.model, input.y);
                 self.model.add(files, AddMode::Insert(at.min(self.model.playlist.len())));
             }
             _ if self.mods.shift_key() => self.model.add(files, AddMode::Append),
@@ -1202,15 +1178,15 @@ impl App {
         let rate = sh.sample_rate();
         let settings = self.model.settings().clone();
         self.model.vis.analyze(&settings, rate);
-        self.skins[idx(WinKind::Main)].tick(&self.model);
-        self.render(WinKind::Main);
+        self.skins[WindowKey::Main.index()].tick(&self.model);
+        self.render(WindowKey::Main);
         if self.last_slow.elapsed() >= Duration::from_millis(500) {
             self.last_slow = Instant::now();
             if state != PlayState::Stopped || settings.pe_width >= 350 {
-                self.render(WinKind::Pl);
+                self.render(WindowKey::Playlist);
             }
         } else if settings.pe_width >= 350 && state == PlayState::Playing {
-            self.render(WinKind::Pl);
+            self.render(WindowKey::Playlist);
         }
     }
 }
@@ -1277,7 +1253,7 @@ impl ApplicationHandler<AppEvent> for App {
                 if *frames == 8 {
                     let dir = dir.clone();
                     let _ = std::fs::create_dir_all(&dir);
-                    for k in KINDS {
+                    for k in WindowKey::ALL {
                         if let Some(w) = self.win(k).filter(|w| w.visible) {
                             let name = format!("{k:?}.png").to_lowercase();
                             if let Err(e) = w.frame.save_png(&dir.join(name)) {
@@ -1292,7 +1268,7 @@ impl ApplicationHandler<AppEvent> for App {
             if let Some(t) = self.popup_focus_check {
                 if t.elapsed() > Duration::from_millis(150) {
                     self.popup_focus_check = None;
-                    let any_focused = KINDS.iter().any(|&k| self.win(k).is_some_and(|w| w.focused));
+                    let any_focused = WindowKey::ALL.iter().any(|&k| self.win(k).is_some_and(|w| w.focused));
                     if !any_focused {
                         self.popups.clear();
                     }
@@ -1314,10 +1290,10 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::Engine(e) => {
                 self.model.on_engine(e);
                 if let Some(cur) = self.model.playlist.current() {
-                    self.skins[idx(WinKind::Pl)].ensure_visible(&self.model, cur);
+                    self.skins[WindowKey::Playlist.index()].ensure_visible(&self.model, cur);
                 }
-                self.render(WinKind::Main);
-                self.render(WinKind::Pl);
+                self.render(WindowKey::Main);
+                self.render(WindowKey::Playlist);
             }
             AppEvent::Meta(id, m) => self.model.on_meta(id, m),
             AppEvent::Expanded { items, mode } => self.model.on_expanded(items, mode),
@@ -1377,8 +1353,8 @@ impl ApplicationHandler<AppEvent> for App {
                 if !f && !self.popups.is_empty() {
                     self.popup_focus_check = Some(Instant::now());
                 }
-                if !f && self.skins[idx(k)].popup_open() {
-                    self.skins[idx(k)].close_popup();
+                if !f && self.skins[k.index()].popup_open() {
+                    self.skins[k.index()].close_popup();
                 }
                 self.render(k);
             }
@@ -1410,9 +1386,9 @@ impl ApplicationHandler<AppEvent> for App {
                 };
                 if steps != 0 {
                     let input = self.input(k, false, false);
-                    self.skins[idx(k)].wheel(&mut self.model, input.x, input.y, steps);
+                    self.skins[k.index()].wheel(&mut self.model, input.x, input.y, steps);
                     self.render(k);
-                    self.render(WinKind::Main);
+                    self.render(WindowKey::Main);
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => self.key(el, k, &event),

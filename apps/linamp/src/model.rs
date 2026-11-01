@@ -51,13 +51,6 @@ pub enum AddMode {
     Insert(usize),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum WinKind {
-    Main,
-    Eq,
-    Pl,
-}
-
 /// Things only the windowing layer can do.
 #[derive(Debug)]
 pub enum UiReq {
