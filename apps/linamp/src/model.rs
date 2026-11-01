@@ -1315,6 +1315,18 @@ impl Model {
                 self.settings_mut().eq_limiter = v;
                 self.push_eq();
             }
+            MenuAction::Zoom(pct) => {
+                let s = self.settings_mut();
+                s.dsize = pct > 100;
+                if s.dsize {
+                    s.zoom = pct;
+                }
+                self.ui.push(UiReq::Layout);
+            }
+            MenuAction::Scaling(mode) => {
+                self.settings_mut().wsz_scaling = mode;
+                self.ui.push(UiReq::Layout);
+            }
             MenuAction::ReplayGain(mode) => {
                 let s = self.settings_mut();
                 match mode {
@@ -1397,6 +1409,24 @@ impl Model {
         ]
     }
 
+    /// The window sizes and how classic skins are scaled to them.
+    fn size_menu(&self) -> Vec<MenuItem> {
+        use linamp_core::config::{Scaling, ZOOMS};
+        let s = self.settings();
+        let current = if s.dsize { s.zoom } else { 100 };
+        let mut items: Vec<MenuItem> = ZOOMS
+            .iter()
+            .map(|&pct| {
+                let label = format!("×{}", pct as f32 / 100.0);
+                MenuItem::action(&label, "", MenuAction::Zoom(pct)).checked(pct == current)
+            })
+            .collect();
+        items.push(MenuItem::sep());
+        let modes = [(Scaling::Sharp, "Sharp scaling"), (Scaling::Integer, "Whole multiples only"), (Scaling::Nearest, "Nearest pixel")];
+        items.extend(modes.map(|(m, label)| MenuItem::action(label, "", MenuAction::Scaling(m)).checked(s.wsz_scaling == m)));
+        items
+    }
+
     pub fn options_menu(&self) -> Vec<MenuItem> {
         use Command as C;
         let s = self.settings();
@@ -1409,6 +1439,7 @@ impl Model {
             MenuItem::sep(),
             MenuItem::cmd("Always On Top", "Ctrl+A", C::ToggleAlwaysOnTop).checked(s.aot),
             MenuItem::cmd("Double Size", "Ctrl+D", C::ToggleDoubleSize).checked(s.dsize),
+            MenuItem::sub("Size", self.size_menu()),
             MenuItem::cmd("EasyMove", "Ctrl+E", C::ToggleEasyMove).checked(s.easymove),
             MenuItem::cmd("Windowshade", "Ctrl+W", C::ToggleWindowshade).checked(s.windowshade),
             MenuItem::sep(),
@@ -1668,6 +1699,19 @@ mod tests {
 
     fn titles(m: &Model) -> Vec<String> {
         m.bookmarks.iter().map(|b| b.title.clone().unwrap_or_default()).collect()
+    }
+
+    #[test]
+    fn size_menu_sets_double_size_and_its_zoom() {
+        let mut m = Model::for_tests();
+        m.on_menu(MenuAction::Zoom(150));
+        assert!(m.settings().dsize && m.settings().zoom == 150);
+        m.exec(Command::ToggleDoubleSize);
+        assert!(!m.settings().dsize);
+        m.exec(Command::ToggleDoubleSize);
+        assert_eq!(crate::scale::Scale::of(m.settings()).px(100), 150, "Ctrl+D returns to the chosen size");
+        m.on_menu(MenuAction::Zoom(100));
+        assert!(!m.settings().dsize && m.settings().zoom == 150);
     }
 
     #[test]

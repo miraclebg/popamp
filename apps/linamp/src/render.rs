@@ -65,23 +65,3 @@ pub fn time_digits(b: &mut Bitmap, skin: &Skin, secs: Option<u64>, negative: boo
         sprite(b, skin, Sheet::Numbers, main::NUMBERS_MINUS, ox + mx + 2, oy + my + 6);
     }
 }
-
-/// Nearest-neighbour upscale into a softbuffer frame.
-pub fn present_scaled(src: &Bitmap, scale: u32, dst: &mut [u32], dst_w: u32) {
-    let s = scale.max(1) as usize;
-    let dst_w = dst_w as usize;
-    for y in 0..src.h as usize {
-        let row = &src.px[y * src.w as usize..(y + 1) * src.w as usize];
-        for sy in 0..s {
-            let start = (y * s + sy) * dst_w;
-            let Some(out) = dst.get_mut(start..start + src.w as usize * s) else { return };
-            if s == 1 {
-                out.copy_from_slice(row);
-            } else {
-                for (x, &p) in row.iter().enumerate() {
-                    out[x * s..x * s + s].fill(p);
-                }
-            }
-        }
-    }
-}

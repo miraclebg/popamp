@@ -65,6 +65,40 @@ impl IniValue for String {
     }
 }
 
+/// How classic skin pixels are scaled to the screen (`wsz_scaling`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scaling {
+    /// Whole multiples only; a fractional size rounds down.
+    Integer,
+    /// Each screen pixel averages the skin pixels it covers: crisp edges,
+    /// no uneven pixel steps at fractional sizes.
+    Sharp,
+    /// Each screen pixel copies the nearest skin pixel.
+    Nearest,
+}
+
+impl IniValue for Scaling {
+    fn parse_ini(s: &str) -> Option<Self> {
+        match s.trim() {
+            "integer" => Some(Scaling::Integer),
+            "sharp" => Some(Scaling::Sharp),
+            "nearest" => Some(Scaling::Nearest),
+            _ => None,
+        }
+    }
+    fn to_ini(&self) -> String {
+        match self {
+            Scaling::Integer => "integer",
+            Scaling::Sharp => "sharp",
+            Scaling::Nearest => "nearest",
+        }
+        .to_string()
+    }
+}
+
+/// The window sizes offered, in percent.
+pub const ZOOMS: [i32; 7] = [100, 125, 150, 175, 200, 250, 300];
+
 macro_rules! settings {
     ($( $(#[$doc:meta])* $field:ident : $ty:ty = $default:expr ),* $(,)?) => {
         #[derive(Clone, Debug, PartialEq)]
@@ -131,7 +165,11 @@ settings! {
     snaplen: i32 = 10,
     easymove: bool = true,
     aot: bool = false,
+    /// Windows drawn at `zoom` instead of 1x ("Double Size", Ctrl+D).
     dsize: bool = false,
+    /// The size "Double Size" switches to, in percent (125..=300).
+    zoom: i32 = 200,
+    wsz_scaling: Scaling = Scaling::Sharp,
     keeponscreen: bool = true,
     dim_inactive: bool = true,
     // Main window.
@@ -195,6 +233,7 @@ impl Settings {
         self.pe_height = self.pe_height.max(116);
         self.pe_fontsize = self.pe_fontsize.clamp(6, 40);
         self.snaplen = self.snaplen.clamp(0, 100);
+        self.zoom = self.zoom.clamp(125, 300);
         self.vis_fps = self.vis_fps.clamp(1, 70);
         self.sa = self.sa.clamp(0, 2);
         self.buffer_ms = self.buffer_ms.clamp(40, 2000);
@@ -327,7 +366,7 @@ mod tests {
 
     #[test]
     fn defaults_and_round_trip() {
-        let mut s = Settings { volume: 123, titlefmt: "%title%".into(), ..Default::default() };
+        let mut s = Settings { volume: 123, titlefmt: "%title%".into(), zoom: 150, wsz_scaling: Scaling::Nearest, ..Default::default() };
         s.set_eq_bands(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 63]);
         let mut ini = Ini::new();
         s.write_ini(&mut ini);

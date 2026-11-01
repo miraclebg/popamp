@@ -7,7 +7,7 @@ use crate::menu::{self, Layout, MenuItem};
 use crate::model::{AddMode, AppEvent, Model, UiReq};
 use crate::panels::{Panel, PanelKind};
 use crate::platform::{self, Platform, WindowRole};
-use crate::render::present_scaled;
+use crate::scale::Scale;
 use crate::skinwin::{Nav, SkinWin};
 use crate::ui::{Input, Out};
 use crate::widgets::{self, Event};
@@ -141,12 +141,8 @@ impl App {
         }
     }
 
-    fn scale(&self) -> i32 {
-        if self.model.settings().dsize {
-            2
-        } else {
-            1
-        }
+    fn scale(&self) -> Scale {
+        Scale::of(self.model.settings())
     }
 
     fn logical_size(&self, k: WindowKey) -> (i32, i32) {
@@ -195,7 +191,7 @@ impl App {
                     .any(|&(mx, my, mw, mh)| pos.0 + 20 > mx && pos.0 < mx + mw - 20 && pos.1 >= my - 5 && pos.1 < my + mh - 14);
                 if !on_screen {
                     let (mx, my, _, _) = monitors[0];
-                    pos = (mx + 100, my + 100 + k.index() as i32 * 116 * scale);
+                    pos = (mx + 100, my + 100 + scale.px(k.index() as i32 * 116));
                 }
             }
             let title = crate::bind::title(k);
@@ -205,7 +201,7 @@ impl App {
             };
             let mut attrs = platform::attributes(role)
                 .with_title(title)
-                .with_inner_size(PhysicalSize::new((w * scale) as u32, (h * scale) as u32))
+                .with_inner_size(PhysicalSize::new(scale.px(w) as u32, scale.px(h) as u32))
                 .with_position(PhysicalPosition::new(pos.0, pos.1))
                 .with_visible(false)
                 .with_window_icon(window_icon());
@@ -280,7 +276,7 @@ impl App {
         for (i, &k) in WindowKey::ALL.iter().enumerate() {
             let Some((x, y, ow, oh, vis)) = old[i] else { continue };
             let (lw, lh) = self.logical_size(k);
-            let (nw, nh) = (lw * scale, lh * scale);
+            let (nw, nh) = (scale.px(lw), scale.px(lh));
             if !vis || (nw == ow && nh == oh) {
                 continue;
             }
@@ -308,7 +304,7 @@ impl App {
             let (lw, lh) = self.logical_size(k);
             let pos = new_pos[i];
             if let Some(w) = self.win_mut(k) {
-                let _ = w.window.request_inner_size(PhysicalSize::new((lw * scale) as u32, (lh * scale) as u32));
+                let _ = w.window.request_inner_size(PhysicalSize::new(scale.px(lw) as u32, scale.px(lh) as u32));
                 if w.pos != pos {
                     w.window.set_outer_position(PhysicalPosition::new(pos.0, pos.1));
                     w.pos = pos;
@@ -339,7 +335,7 @@ impl App {
                 _ => regions.equalizer.as_ref(),
             };
             let Some(w) = self.wins[k.index()].as_mut() else { continue };
-            let sig = (skin_ptr ^ polys.map(|p| p.len()).unwrap_or(0), w.size.0, w.size.1, scale);
+            let sig = (skin_ptr ^ polys.map(|p| p.len()).unwrap_or(0), w.size.0, w.size.1, scale.px(100));
             if w.shape_sig == Some(sig) {
                 continue;
             }
@@ -351,7 +347,7 @@ impl App {
     }
 
     fn render(&mut self, k: WindowKey) {
-        let scale = self.scale() as u32;
+        let scale = self.scale();
         let i = k.index();
         let Some(w) = self.wins[i].as_mut() else { return };
         if !w.visible {
@@ -363,13 +359,13 @@ impl App {
         }
         let active = w.focused;
         self.skins[k.index()].draw(&self.model, &mut self.font, &mut w.frame, active);
-        let (pw, ph) = (lw as u32 * scale, lh as u32 * scale);
+        let (pw, ph) = (scale.px(lw) as u32, scale.px(lh) as u32);
         let (Some(nw), Some(nh)) = (NonZeroU32::new(pw), NonZeroU32::new(ph)) else { return };
         if w.surface.resize(nw, nh).is_err() {
             return;
         }
         if let Ok(mut buf) = w.surface.buffer_mut() {
-            present_scaled(&w.frame, scale, &mut buf, pw);
+            scale.present(&w.frame, &mut buf, pw as usize, ph as usize);
             if let Err(e) = buf.present() {
                 log::debug!("present failed: {e}");
             }
@@ -672,7 +668,7 @@ impl App {
             return None;
         }
         let s = self.scale();
-        Some((w.pos.0, w.pos.1, w.size.0 * s, w.size.1 * s))
+        Some((w.pos.0, w.pos.1, s.px(w.size.0), s.px(w.size.1)))
     }
 
     fn docked_group(&self, root: WindowKey) -> Vec<WindowKey> {
@@ -732,7 +728,7 @@ impl App {
             if !w.visible {
                 continue;
             }
-            let (gw, gh) = (w.size.0 * scale, w.size.1 * scale);
+            let (gw, gh) = (scale.px(w.size.0), scale.px(w.size.1));
             let (gx, gy) = (start.0 + dx, start.1 + dy);
             for &(tx, ty, tw, th) in &targets {
                 let v_near = gy < ty + th + snap && gy + gh > ty - snap;
@@ -776,7 +772,7 @@ impl App {
             }
             Some(Drag::Resize { start_size, start }) => {
                 let s = self.scale();
-                let (dx, dy) = ((cursor.0 - start.0) / s, (cursor.1 - start.1) / s);
+                let (dx, dy) = (s.skin(cursor.0 - start.0), s.skin(cursor.1 - start.1));
                 if crate::bind::resize(&mut self.model, WindowKey::Playlist, *start_size, dx, dy) {
                     self.apply_layout();
                 }
@@ -790,7 +786,7 @@ impl App {
     fn input(&self, k: WindowKey, right: bool, double: bool) -> Input {
         let s = self.scale();
         let c = self.win(k).map(|w| w.cursor).unwrap_or((0, 0));
-        Input { x: c.0.div_euclid(s), y: c.1.div_euclid(s), right, shift: self.mods.shift_key(), ctrl: self.mods.control_key(), double }
+        Input { x: s.skin(c.0), y: s.skin(c.1), right, shift: self.mods.shift_key(), ctrl: self.mods.control_key(), double }
     }
 
     fn handle_out(&mut self, el: &ActiveEventLoop, k: WindowKey, out: Out) {
@@ -1198,7 +1194,7 @@ fn present_unscaled(surface: &mut Surface, frame: &Bitmap) {
     let (Some(nw), Some(nh)) = (NonZeroU32::new(w), NonZeroU32::new(h)) else { return };
     if surface.resize(nw, nh).is_ok() {
         if let Ok(mut buf) = surface.buffer_mut() {
-            present_scaled(frame, 1, &mut buf, w);
+            Scale::ONE.present(frame, &mut buf, w as usize, h as usize);
             let _ = buf.present();
         }
     }
