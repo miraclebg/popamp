@@ -6,12 +6,11 @@
 //! follows Ferramp's `--render` (see THIRD_PARTY.md).
 
 use crate::font::Font;
-use crate::model::{AddMode, Model, WinKind};
-use crate::ui_eq::EqWin;
-use crate::ui_main::MainWin;
-use crate::ui_pl::PlWin;
+use crate::model::{AddMode, Model};
+use crate::skinwin::SkinWin;
 use linamp_audio::{PlayState, StreamInfo};
 use linamp_core::config::{Config, Paths, Settings};
+use linamp_skin::layout::WindowKey;
 use linamp_skin::{Bitmap, Skin};
 use std::path::{Path, PathBuf};
 
@@ -20,30 +19,30 @@ const PLAY_POS_MS: u64 = 83_000;
 const FALLBACK_LENGTH_MS: u64 = 225_000;
 
 /// A state that needs only settings: window, file name, what to change.
-type Shot = (WinKind, &'static str, fn(&mut Settings));
+type Shot = (WindowKey, &'static str, fn(&mut Settings));
 
 const STOPPED: &[Shot] = &[
-    (WinKind::Main, "main-stopped", |_| {}),
-    (WinKind::Eq, "eq-default", |_| {}),
-    (WinKind::Pl, "playlist-default", |_| {}),
-    (WinKind::Main, "main-toggles", |s| {
+    (WindowKey::Main, "main-stopped", |_| {}),
+    (WindowKey::Eq, "eq-default", |_| {}),
+    (WindowKey::Playlist, "playlist-default", |_| {}),
+    (WindowKey::Main, "main-toggles", |s| {
         s.shuffle = true;
         s.repeat = true;
         s.volume = 77; // 30 %
         s.balance = -51; // 40 % left
     }),
     // Equalizer values: 0 = +12 dB, 63 = -12 dB, 31 = centre.
-    (WinKind::Eq, "eq-values", |s| {
+    (WindowKey::Eq, "eq-values", |s| {
         s.use_eq = true;
         s.autoload_eq = true;
         s.preamp = 0;
         s.eq_data = "63,0,31,63,0,31,63,0,31,63".into();
     }),
-    (WinKind::Main, "main-shade", |s| s.windowshade = true),
-    (WinKind::Eq, "eq-shade", |s| s.eq_ws = true),
-    (WinKind::Pl, "playlist-shade", |s| s.pe_ws = true),
-    (WinKind::Pl, "playlist-small", |s| s.pe_height = 116),
-    (WinKind::Pl, "playlist-wide", |s| s.pe_width = 450),
+    (WindowKey::Main, "main-shade", |s| s.windowshade = true),
+    (WindowKey::Eq, "eq-shade", |s| s.eq_ws = true),
+    (WindowKey::Playlist, "playlist-shade", |s| s.pe_ws = true),
+    (WindowKey::Playlist, "playlist-small", |s| s.pe_height = 116),
+    (WindowKey::Playlist, "playlist-wide", |s| s.pe_width = 450),
 ];
 
 struct Renderer {
@@ -65,24 +64,16 @@ impl Renderer {
         Ok(m)
     }
 
-    fn save(&self, m: &mut Model, k: WinKind, name: &str) -> Result<(), String> {
-        let (w, h) = match k {
-            WinKind::Main => MainWin::size(m),
-            WinKind::Eq => EqWin::size(m),
-            WinKind::Pl => PlWin::size(m),
-        };
+    fn save(&self, m: &mut Model, k: WindowKey, name: &str) -> Result<(), String> {
+        let (w, h) = crate::bind::window_size(m, k);
         let mut b = Bitmap::new(w, h, 0);
-        match k {
-            WinKind::Main => MainWin::new().draw(m, &mut b, true),
-            WinKind::Eq => EqWin::new().draw(m, &mut b, true),
-            WinKind::Pl => PlWin::new().draw(m, &mut Font::load(&m.skin.pl.font), &mut b, true),
-        }
+        SkinWin::new(k).draw(m, &mut Font::load(&m.skin.pl.font), &mut b, true);
         let path = self.dir.join(format!("{name}.png"));
         b.save_png(&path).map_err(|e| format!("{}: {e}", path.display()))
     }
 
     /// Renders after changing the settings with `set`.
-    fn shot(&self, k: WinKind, name: &str, set: &fn(&mut Settings)) -> Result<(), String> {
+    fn shot(&self, k: WindowKey, name: &str, set: &fn(&mut Settings)) -> Result<(), String> {
         let mut m = self.model()?;
         set(m.settings_mut());
         self.save(&mut m, k, name)
@@ -98,14 +89,14 @@ impl Renderer {
 
     fn playing_states(&self) -> Result<(), String> {
         let mut m = self.playing()?;
-        self.save(&mut m, WinKind::Main, "main-playing")?;
-        self.save(&mut m, WinKind::Pl, "playlist-playing")?;
+        self.save(&mut m, WindowKey::Main, "main-playing")?;
+        self.save(&mut m, WindowKey::Playlist, "playlist-playing")?;
         m.settings_mut().sa = 2;
         analyze(&mut m);
-        self.save(&mut m, WinKind::Main, "main-scope")?;
+        self.save(&mut m, WindowKey::Main, "main-scope")?;
         m.settings_mut().sa = 1;
         m.settings_mut().windowshade = true;
-        self.save(&mut m, WinKind::Main, "main-shade-playing")
+        self.save(&mut m, WindowKey::Main, "main-shade-playing")
     }
 
     fn eq_preset(&self) -> Result<(), String> {
@@ -117,7 +108,7 @@ impl Renderer {
             s.preamp = p.preamp as i32;
             s.eq_data = p.bands.map(|b| b.to_string()).join(",");
         }
-        self.save(&mut m, WinKind::Eq, "eq-preset")
+        self.save(&mut m, WindowKey::Eq, "eq-preset")
     }
 
     /// The first track "playing" at a fixed position, with a synthetic
