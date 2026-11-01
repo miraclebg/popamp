@@ -19,3 +19,4 @@ contributors, MIT OR Apache-2.0.
 | `widgets.rs`, `panels.rs` (own dialogs) | the idea of drawing dialogs from a list of simple controls, and Jump to file's word search (`src/ui/dialogs.rs`); the code was written for Linamp |
 | `museum.rs`, `SkinMuseum` in `panels.rs` | the Skin Museum: GraphQL queries, reply parsing, safe file names and the dialog layout (`src/museum.rs`, `src/ui/dialogs.rs`) |
 | `MainWin::tooltip`, tooltip timing in `app.rs` | the tooltip texts, the 0.6 s delay and 7 s timeout (`src/ui/main_win.rs`, `src/app.rs`) |
+| `packaging/build-deb.sh`, `packaging/build-appimage.sh`, `.github/workflows/release.yml` | the package scripts and the release workflow, including the pinned appimagetool checksums (`packaging/linux/`, `.github/workflows/release.yml`) |

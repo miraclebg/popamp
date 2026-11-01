@@ -121,6 +121,28 @@ sudo pacman -S yt-dlp ffmpeg                 # optional, for YouTube
 
 ## Installation
 
+### Packages
+
+Releases on the [Releases page](https://github.com/sayoojkkarun/linamp/releases)
+come with packages for x86_64 and ARM64 (built on Ubuntu 22.04, so they
+need glibc 2.35 or newer):
+
+| System | Package |
+|---|---|
+| Debian / Ubuntu | `sudo apt install ./linamp-<version>-linux-amd64.deb` (ARM64: `-arm64.deb`) |
+| Anything else | `Linamp-<version>-linux-x86_64.AppImage`: `chmod +x` it and run it |
+
+The AppImage uses the system's ALSA, X11 and xkbcommon libraries, which
+nearly every desktop has. To build the packages yourself after
+`cargo build --release`:
+
+```sh
+packaging/build-deb.sh        # needs dpkg-deb and binutils
+packaging/build-appimage.sh   # needs appimagetool
+```
+
+Both write to `dist/`. Or build from source:
+
 ### 1. Get Rust (if you don't have it)
 
 ```sh
@@ -162,7 +184,8 @@ Make sure `~/.local/bin` is on your `PATH`. For a system-wide install, run
 
 ```sh
 rm -f ~/.local/bin/linamp ~/.local/share/applications/linamp.desktop \
-      ~/.local/share/mime/packages/linamp-skin.xml
+      ~/.local/share/mime/packages/linamp-skin.xml \
+      ~/.local/share/metainfo/linamp.metainfo.xml
 rm -f ~/.local/share/icons/hicolor/*/apps/linamp.png \
       ~/.local/share/icons/hicolor/scalable/apps/linamp.svg
 update-mime-database ~/.local/share/mime
