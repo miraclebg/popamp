@@ -639,13 +639,15 @@ impl SkinWin {
         self.pressed = None;
         self.list.drag_row = None;
         if let Some(((_, at), _)) = self.popup {
+            // Released on the button that opened it, even under an item that
+            // covers it: a click, so the popup stays open.
+            if pressed == Some(at) && self.hit(model, ev.x, ev.y) == Some(at) {
+                return Out::Redraw;
+            }
             if let Some((_, item)) = self.popup_hit(model, ev.x, ev.y) {
                 return self.run_popup_item(model, item, ev);
             }
-            // Released on the button that opened it: the popup stays open.
-            if !(pressed == Some(at) && self.hit(model, ev.x, ev.y) == Some(at)) {
-                self.close_popup();
-            }
+            self.close_popup();
             return Out::Redraw;
         }
         let Some(i) = pressed else { return Out::None };
@@ -1040,15 +1042,17 @@ mod tests {
         assert!(matches!(w.mouse_down(&mut m, &input(80, 100)), Out::Capture));
         assert!(w.popup_open());
         w.mouse_up(&mut m, &input(80, 100));
-        assert_eq!(selected(&m), [0, 1, 2], "the bottom item covers the button: Select all");
-        m.playlist.select_all(false);
-        w.mouse_down(&mut m, &input(95, 100));
-        w.mouse_up(&mut m, &input(95, 100));
-        assert!(w.popup_open(), "released on the button beside the items: stays open");
-        assert!(w.mouse_move(&mut m, 80, 86 - 36 + 5), "hovering an item redraws");
-        w.mouse_down(&mut m, &input(80, 86 - 36 + 5));
+        assert!(w.popup_open(), "released on its own button: a click leaves it open");
+        assert_eq!(selected(&m), [] as [usize; 0], "the item over the button did not run");
+        w.mouse_down(&mut m, &input(80, 100));
         assert!(!w.popup_open());
-        assert_eq!(selected(&m), [0, 1, 2], "Invert selection");
+        assert_eq!(selected(&m), [0, 1, 2], "a second click on the bottom item: Select all");
+        m.playlist.select_all(false);
+        w.mouse_down(&mut m, &input(80, 100));
+        assert!(w.mouse_move(&mut m, 80, 86 - 36 + 5), "hovering an item redraws");
+        w.mouse_up(&mut m, &input(80, 86 - 36 + 5));
+        assert!(!w.popup_open());
+        assert_eq!(selected(&m), [0, 1, 2], "held and released on Invert selection");
         // Dragged off and released elsewhere: closed, nothing run.
         w.mouse_down(&mut m, &input(80, 100));
         w.mouse_up(&mut m, &input(200, 40));

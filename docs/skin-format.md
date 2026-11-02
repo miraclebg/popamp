@@ -227,9 +227,10 @@ What a button does is one of:
 - `press = "command"`, run as soon as the button goes down;
 - `menu_press = "menu"` or `menu_release = "menu"`, opening a menu.
 
-A popup's items stack upward. The first one covers the button, as in
-Winamp, so a quick click runs it. With `above = true` they start above the
-button, and a click leaves the column open.
+A popup's items stack upward, the first one over the button, as in
+Winamp. A click leaves the column open; so does holding the button and
+letting go on an item, which runs that item. With `above = true` the items
+start above the button and leave it in sight.
 
 A slider:
 
