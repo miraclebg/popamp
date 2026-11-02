@@ -238,7 +238,7 @@ impl Model {
             playlist: Playlist::new(),
             engine,
             format,
-            skin: Skin::builtin(),
+            skin: Skin::builtin_vector(),
             skin_path: None,
             skin_changed_at: None,
             status: Status::default(),
@@ -727,7 +727,7 @@ impl Model {
 
     pub fn set_skin(&mut self, path: Option<PathBuf>) {
         match &path {
-            None => self.skin = Skin::builtin(),
+            None => self.skin = Skin::builtin_vector(),
             Some(p) => match Skin::load(p) {
                 Ok(s) => self.skin = s,
                 Err(e) => {

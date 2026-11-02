@@ -2,6 +2,7 @@
 //! geometry. No artwork from any other product is used.
 
 use crate::bitmap::{mix, rgb, Bitmap};
+use crate::pen::Pen;
 use crate::sprites::{eq, main, pl, r, Rect, Sheet};
 use crate::textcfg::{PlColors, GLYPH_H, GLYPH_W};
 
@@ -93,7 +94,7 @@ fn glyph(c: char) -> Option<[&'static str; 5]> {
 }
 
 /// Draws text with the built-in 4x5 font (5 px advance).
-pub fn draw_text(b: &mut Bitmap, x: i32, y: i32, text: &str, color: u32) {
+pub fn draw_text(b: &mut impl Pen, x: i32, y: i32, text: &str, color: u32) {
     for (i, c) in text.chars().enumerate() {
         let c = c.to_lowercase().next().unwrap_or(c);
         if let Some(rows) = glyph(c) {
@@ -112,35 +113,35 @@ fn text_width(text: &str) -> i32 {
     text.chars().count() as i32 * GLYPH_W - 1
 }
 
-fn draw_text_centered(b: &mut Bitmap, rect: Rect, text: &str, color: u32) {
+fn draw_text_centered(b: &mut impl Pen, rect: Rect, text: &str, color: u32) {
     let x = rect.x + (rect.w - text_width(text)) / 2;
     let y = rect.y + (rect.h - 5) / 2;
     draw_text(b, x, y, text, color);
 }
 
-fn lcd_box(b: &mut Bitmap, x: i32, y: i32, w: i32, h: i32) {
+fn lcd_box(b: &mut impl Pen, x: i32, y: i32, w: i32, h: i32) {
     b.fill(x, y, w, h, LCD);
     b.bevel(x - 1, y - 1, w + 2, h + 2, PANEL_LO, PANEL_HI);
 }
 
-fn panel(b: &mut Bitmap, x: i32, y: i32, w: i32, h: i32) {
+fn panel(b: &mut impl Pen, x: i32, y: i32, w: i32, h: i32) {
     b.vgradient(x, y, w, h, PANEL_HI, PANEL);
     b.bevel(x, y, w, h, mix(PANEL_HI, ICON, 0.25), PANEL_LO);
 }
 
-fn button(b: &mut Bitmap, rect: Rect, pressed: bool) {
+fn button(b: &mut impl Pen, rect: Rect, pressed: bool) {
     let (top, bot) = if pressed { (mix(BTN_BOT, PANEL_LO, 0.4), BTN_BOT) } else { (BTN_TOP, BTN_BOT) };
     b.vgradient(rect.x, rect.y, rect.w, rect.h, top, bot);
     let (light, dark) = if pressed { (PANEL_LO, BTN_TOP) } else { (mix(BTN_TOP, ICON, 0.35), PANEL_LO) };
     b.bevel(rect.x, rect.y, rect.w, rect.h, light, dark);
 }
 
-fn led(b: &mut Bitmap, x: i32, y: i32, on: bool) {
+fn led(b: &mut impl Pen, x: i32, y: i32, on: bool) {
     b.fill(x, y, 3, 3, if on { ACCENT } else { PANEL_LO });
 }
 
 /// Title bar with grip lines and a centred label.
-fn title_bar(b: &mut Bitmap, rect: Rect, label: &str, active: bool, buttons: bool) {
+fn title_bar(b: &mut impl Pen, rect: Rect, label: &str, active: bool, buttons: bool) {
     let (top, bot) = if active { (TITLE_TOP, TITLE_BOT) } else { (TITLE_IN_TOP, TITLE_IN_BOT) };
     b.vgradient(rect.x, rect.y, rect.w, rect.h, top, bot);
     b.bevel(rect.x, rect.y, rect.w, rect.h, mix(top, ICON, 0.3), PANEL_LO);
@@ -156,7 +157,7 @@ fn title_bar(b: &mut Bitmap, rect: Rect, label: &str, active: bool, buttons: boo
     draw_text(b, cx - tw / 2, rect.y + (rect.h - 5) / 2, label, text_color);
 }
 
-fn small_button(b: &mut Bitmap, x: i32, y: i32, pressed: bool, icon: &str) {
+fn small_button(b: &mut impl Pen, x: i32, y: i32, pressed: bool, icon: &str) {
     button(b, r(x, y, 9, 9), pressed);
     let c = ICON;
     match icon {
@@ -183,9 +184,9 @@ fn small_button(b: &mut Bitmap, x: i32, y: i32, pressed: bool, icon: &str) {
     }
 }
 
-fn gen_text() -> Bitmap {
+fn gen_text<P: Pen>() -> P {
     let (w, h) = Sheet::Text.size();
-    let mut b = Bitmap::new(w, h, LCD);
+    let mut b = P::blank(w, h, LCD);
     let rows = ["abcdefghijklmnopqrstuvwxyz\"@", "0123456789….:()-'!_+\\/[]^&%,=$#", "åöä?*"];
     for (ry, row) in rows.iter().enumerate() {
         for (cx, c) in row.chars().enumerate() {
@@ -196,7 +197,7 @@ fn gen_text() -> Bitmap {
 }
 
 /// Seven-segment digit in a 9x13 cell.
-fn seven_seg(b: &mut Bitmap, x: i32, y: i32, digit: Option<u8>) {
+fn seven_seg(b: &mut impl Pen, x: i32, y: i32, digit: Option<u8>) {
     // Segments: a b c d e f g
     const MAP: [[bool; 7]; 10] = [
         [true, true, true, true, true, true, false],
@@ -221,10 +222,10 @@ fn seven_seg(b: &mut Bitmap, x: i32, y: i32, digit: Option<u8>) {
     b.fill(x + 2, y + 5, 5, 2, col(segs[6])); // g (row 6 doubles as the minus sign)
 }
 
-fn gen_numbers(ex: bool) -> Bitmap {
+fn gen_numbers<P: Pen>(ex: bool) -> P {
     let sheet = if ex { Sheet::NumsEx } else { Sheet::Numbers };
     let (w, h) = sheet.size();
-    let mut b = Bitmap::new(w, h, LCD);
+    let mut b = P::blank(w, h, LCD);
     for d in 0..10u8 {
         seven_seg(&mut b, d as i32 * 9, 0, Some(d));
     }
@@ -236,9 +237,9 @@ fn gen_numbers(ex: bool) -> Bitmap {
     b
 }
 
-fn gen_titlebar() -> Bitmap {
+fn gen_titlebar<P: Pen>() -> P {
     let (w, h) = Sheet::TitleBar.size();
-    let mut b = Bitmap::new(w, h, PANEL);
+    let mut b = P::blank(w, h, PANEL);
     small_button(&mut b, 0, 0, false, "menu");
     small_button(&mut b, 0, 9, true, "menu");
     small_button(&mut b, 9, 0, false, "min");
@@ -284,7 +285,7 @@ fn gen_titlebar() -> Bitmap {
     b
 }
 
-fn transport_icon(b: &mut Bitmap, rect: Rect, kind: usize) {
+fn transport_icon(b: &mut impl Pen, rect: Rect, kind: usize) {
     let cx = rect.x as f32 + rect.w as f32 / 2.0;
     let cy = rect.y as f32 + rect.h as f32 / 2.0;
     let c = ICON;
@@ -311,9 +312,9 @@ fn transport_icon(b: &mut Bitmap, rect: Rect, kind: usize) {
     }
 }
 
-fn gen_cbuttons() -> Bitmap {
+fn gen_cbuttons<P: Pen>() -> P {
     let (w, h) = Sheet::CButtons.size();
-    let mut b = Bitmap::new(w, h, PANEL);
+    let mut b = P::blank(w, h, PANEL);
     let buttons = [main::PREV, main::PLAY, main::PAUSE, main::STOP, main::NEXT, main::EJECT];
     for (i, btn) in buttons.iter().enumerate() {
         for (rect, pressed) in [(btn.normal, false), (btn.pressed, true)] {
@@ -324,9 +325,9 @@ fn gen_cbuttons() -> Bitmap {
     b
 }
 
-fn gen_shufrep() -> Bitmap {
+fn gen_shufrep<P: Pen>() -> P {
     let (w, h) = Sheet::ShufRep.size();
-    let mut b = Bitmap::new(w, h, PANEL);
+    let mut b = P::blank(w, h, PANEL);
     for (toggle, label) in [(main::REPEAT, "rep"), (main::SHUFFLE, "shuffle"), (main::EQ, "eq"), (main::PL, "pl")] {
         for on in [false, true] {
             for pressed in [false, true] {
@@ -341,9 +342,9 @@ fn gen_shufrep() -> Bitmap {
     b
 }
 
-fn gen_playpaus() -> Bitmap {
+fn gen_playpaus<P: Pen>() -> P {
     let (w, h) = Sheet::PlayPaus.size();
-    let mut b = Bitmap::new(w, h, LCD);
+    let mut b = P::blank(w, h, LCD);
     b.polygon(&[(2.0, 1.0), (2.0, 8.0), (8.0, 4.5)], LCD_ON);
     b.fill(10, 1, 2, 7, ACCENT);
     b.fill(14, 1, 2, 7, ACCENT);
@@ -354,9 +355,9 @@ fn gen_playpaus() -> Bitmap {
     b
 }
 
-fn gen_monoster() -> Bitmap {
+fn gen_monoster<P: Pen>() -> P {
     let (w, h) = Sheet::MonoSter.size();
-    let mut b = Bitmap::new(w, h, LCD);
+    let mut b = P::blank(w, h, LCD);
     for (rect, label, on) in [
         (main::STEREO_ON, "stereo", true),
         (main::STEREO_OFF, "stereo", false),
@@ -369,9 +370,9 @@ fn gen_monoster() -> Bitmap {
     b
 }
 
-fn gen_posbar() -> Bitmap {
+fn gen_posbar<P: Pen>() -> P {
     let (w, h) = Sheet::PosBar.size();
-    let mut b = Bitmap::new(w, h, PANEL);
+    let mut b = P::blank(w, h, PANEL);
     b.fill(0, 0, 248, 10, PANEL_LO);
     b.bevel(0, 0, 248, 10, PANEL_LO, PANEL_HI);
     b.hline(2, 5, 244, LCD_DIM);
@@ -386,9 +387,9 @@ fn gen_posbar() -> Bitmap {
 }
 
 /// Volume/balance frames: a filled meter whose colour runs green → amber → red.
-fn gen_slider(balance: bool) -> Bitmap {
+fn gen_slider<P: Pen>(balance: bool) -> P {
     let (w, h) = Sheet::Volume.size();
-    let mut b = Bitmap::new(w, h, PANEL);
+    let mut b = P::blank(w, h, PANEL);
     let (x0, fw) = if balance { (main::BALANCE_SRC_X, 38) } else { (0, 68) };
     for k in 0..main::SLIDER_FRAMES {
         let y = k * main::SLIDER_FRAME_STEP;
@@ -419,9 +420,9 @@ fn gen_slider(balance: bool) -> Bitmap {
     b
 }
 
-fn gen_main() -> Bitmap {
+fn gen_main<P: Pen>() -> P {
     let (w, h) = main::SIZE;
-    let mut b = Bitmap::new(w, h, PANEL);
+    let mut b = P::blank(w, h, PANEL);
     panel(&mut b, 0, 0, w, h);
     // Display block: clutter bar, status, time, vis.
     lcd_box(&mut b, 9, 21, 94, 40);
@@ -456,9 +457,9 @@ fn gen_main() -> Bitmap {
     b
 }
 
-fn gen_eqmain() -> Bitmap {
+fn gen_eqmain<P: Pen>() -> P {
     let (w, h) = Sheet::EqMain.size();
-    let mut b = Bitmap::new(w, h, PANEL);
+    let mut b = P::blank(w, h, PANEL);
     panel(&mut b, 0, 0, 275, 116);
     // Graph, scale labels and band labels.
     draw_text(&mut b, 44, 37, "+12", mix(ICON, PANEL, 0.3));
@@ -520,9 +521,9 @@ fn gen_eqmain() -> Bitmap {
     b
 }
 
-fn gen_eq_ex() -> Bitmap {
+fn gen_eq_ex<P: Pen>() -> P {
     let (w, h) = Sheet::EqEx.size();
-    let mut b = Bitmap::new(w, h, PANEL);
+    let mut b = P::blank(w, h, PANEL);
     for (rect, active) in [(eq::SHADE_ACTIVE, true), (eq::SHADE_INACTIVE, false)] {
         let (top, bot) = if active { (TITLE_TOP, TITLE_BOT) } else { (TITLE_IN_TOP, TITLE_IN_BOT) };
         b.vgradient(rect.x, rect.y, rect.w, rect.h, top, bot);
@@ -536,9 +537,9 @@ fn gen_eq_ex() -> Bitmap {
     b
 }
 
-fn gen_pledit() -> Bitmap {
+fn gen_pledit<P: Pen>() -> P {
     let (w, h) = Sheet::PlEdit.size();
-    let mut b = Bitmap::new(w, h, PANEL);
+    let mut b = P::blank(w, h, PANEL);
     for (row, active) in [(0usize, true), (1usize, false)] {
         let pick = |p: (Rect, Rect)| if row == 0 { p.0 } else { p.1 };
         let (top, bot) = if active { (TITLE_TOP, TITLE_BOT) } else { (TITLE_IN_TOP, TITLE_IN_BOT) };
@@ -684,7 +685,16 @@ fn gen_pledit() -> Bitmap {
     b
 }
 
-pub fn sheet(sheet: Sheet) -> Bitmap {
+pub fn sheet(s: Sheet) -> Bitmap {
+    draw(s)
+}
+
+/// The sheet as an SVG drawing, for the vector version of the skin.
+pub fn svg_sheet(s: Sheet) -> String {
+    draw::<crate::pen::Svg>(s).finish()
+}
+
+fn draw<P: Pen>(sheet: Sheet) -> P {
     match sheet {
         Sheet::Main => gen_main(),
         Sheet::CButtons => gen_cbuttons(),

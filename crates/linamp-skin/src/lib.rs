@@ -7,6 +7,7 @@ pub mod cursors;
 pub mod default_skin;
 pub mod layout;
 mod names;
+pub mod pen;
 pub mod sprites;
 pub mod svg;
 pub mod textcfg;
@@ -69,6 +70,20 @@ impl Skin {
             pl_font: None,
         }
         .with_layout(Regions::default())
+    }
+
+    /// Linamp's own skin drawn in SVG: the design of [`Skin::builtin`],
+    /// sharp at any scale. The player's default skin.
+    pub fn builtin_vector() -> Skin {
+        let mut skin = Skin::builtin();
+        for s in Sheet::ALL {
+            match skin.svgs.add(default_skin::svg_sheet(s).as_bytes()) {
+                Ok(id) => drop(skin.sheet_svgs.insert(s, id)),
+                Err(e) => log::warn!("built-in {}: {e}", s.file_name()),
+            }
+        }
+        skin.vector = true;
+        skin
     }
 
     /// Builds the classic layout for the skin's bitmaps and window shapes.
