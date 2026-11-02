@@ -28,6 +28,7 @@ pub fn load(files: &HashMap<String, Vec<u8>>) -> Result<Skin, String> {
     }
     build.skin.name = file.meta.name.clone();
     build.skin.vector = true;
+    build.texts(&file)?;
     for w in &file.windows {
         let def = build.window(w)?;
         build.skin.layout.windows.retain(|old| old.key != def.key);
@@ -51,6 +52,10 @@ fn at(text: &str, span: Option<std::ops::Range<usize>>, msg: &str) -> String {
 #[serde(deny_unknown_fields)]
 struct SkinFile {
     meta: Meta,
+    text: Option<TextFile>,
+    clock: Option<TextFile>,
+    playlist: Option<PlaylistFile>,
+    vis: Option<VisFile>,
     #[serde(default, rename = "window")]
     windows: Vec<WindowFile>,
 }
@@ -63,6 +68,49 @@ struct Meta {
     #[allow(dead_code)] // Shown by the skin browser later.
     author: String,
     format_version: Spanned<u32>,
+}
+
+/// A text style; without `font` the system's sans-serif font is used.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TextFile {
+    font: Option<Spanned<String>>,
+    size: i32,
+    color: Color,
+}
+
+/// Playlist colours; the classic ones stand in for those left out.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlaylistFile {
+    font: Option<Spanned<String>>,
+    normal: Option<Color>,
+    current: Option<Color>,
+    normal_bg: Option<Color>,
+    selected_bg: Option<Color>,
+}
+
+/// The visualization colours in classic `viscolor.txt` order: background,
+/// dots, 16 spectrum colours from the top, 5 scope colours, peaks.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VisFile {
+    colors: [Color; 24],
+}
+
+/// A colour written `#rrggbb`.
+#[derive(Clone, Copy)]
+struct Color(u32);
+
+impl<'de> Deserialize<'de> for Color {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        let ok = s.len() == 7 && s.starts_with('#');
+        ok.then(|| crate::textcfg::parse_color(&s))
+            .flatten()
+            .map(Color)
+            .ok_or_else(|| de::Error::custom(format!("`{s}` is not a colour; write it #rrggbb")))
+    }
 }
 
 #[derive(Deserialize)]
@@ -327,6 +375,41 @@ struct Builder<'a> {
 }
 
 impl Builder<'_> {
+    fn texts(&mut self, file: &SkinFile) -> Result<(), String> {
+        self.skin.text = file.text.as_ref().map(|t| self.style(t)).transpose()?;
+        self.skin.clock = file.clock.as_ref().map(|t| self.style(t)).transpose()?;
+        if let Some(pl) = &file.playlist {
+            let classic = crate::PlColors::default();
+            let pick = |c: Option<Color>, or: u32| c.map_or(or, |c| c.0);
+            self.skin.pl_font = pl.font.as_ref().map(|f| self.font(f)).transpose()?;
+            self.skin.pl = crate::PlColors {
+                normal: pick(pl.normal, classic.normal),
+                current: pick(pl.current, classic.current),
+                normal_bg: pick(pl.normal_bg, classic.normal_bg),
+                selected_bg: pick(pl.selected_bg, classic.selected_bg),
+                font: "sans-serif".into(),
+            };
+        }
+        if let Some(vis) = &file.vis {
+            self.skin.viscolor = vis.colors.map(|c| c.0);
+        }
+        Ok(())
+    }
+
+    fn style(&self, t: &TextFile) -> Result<crate::TextStyle, String> {
+        Ok(crate::TextStyle { font: t.font.as_ref().map(|f| self.font(f)).transpose()?, size: t.size, color: t.color.0 })
+    }
+
+    /// The bytes of a font file in the skin, checked to be a font.
+    fn font(&self, file: &Spanned<String>) -> Result<Vec<u8>, String> {
+        let fail = |msg: String| at(self.text, Some(file.span()), &msg);
+        let name = file.get_ref();
+        let data = self.files.get(name).ok_or_else(|| fail(format!("no file `{name}` in the skin")))?;
+        fontdue::Font::from_bytes(data.as_slice(), fontdue::FontSettings::default())
+            .map_err(|e| fail(format!("{name}: not a font: {e}")))?;
+        Ok(data.clone())
+    }
+
     fn window(&mut self, w: &WindowFile) -> Result<WindowDef, String> {
         Ok(WindowDef {
             key: w.key.0,
@@ -625,6 +708,35 @@ edges = [12, 20, \"end-20\", \"end-38\"]
         );
         assert_eq!(error("type = \"toggle\"\nrect = [0, 0, 1, 1]"), "skin.toml, line 8: a toggle needs a `flag` to show");
         assert!(error("type = \"image\"\nrect = [0, 0, 1, 1]\ncolour = 1").starts_with("skin.toml, line 11: unknown field `colour`"));
+    }
+
+    #[test]
+    fn text_styles_and_colours() {
+        let s = skin(&format!(
+            "{HEAD}
+[text]
+size = 7
+color = \"#00e000\"
+[playlist]
+current = \"#ffffff\"
+[vis]
+colors = [{}]
+",
+            vec!["\"#010203\""; 24].join(", ")
+        ))
+        .unwrap();
+        assert_eq!(s.text, Some(crate::TextStyle { font: None, size: 7, color: 0x00e000 }));
+        assert_eq!(s.clock, None);
+        assert_eq!((s.pl.current, s.pl.normal), (0xffffff, crate::PlColors::default().normal));
+        assert_eq!(s.viscolor, [0x010203; 24]);
+    }
+
+    #[test]
+    fn bad_colours_and_fonts_are_errors() {
+        let e = skin(&format!("{HEAD}[text]\nsize = 7\ncolor = \"green\"\n")).err().unwrap();
+        assert_eq!(e, "skin.toml, line 6: `green` is not a colour; write it #rrggbb");
+        let e = skin(&format!("{HEAD}[clock]\nfont = \"play.svg\"\nsize = 13\ncolor = \"#00ff00\"\n")).err().unwrap();
+        assert!(e.starts_with("skin.toml, line 5: play.svg: not a font"), "{e}");
     }
 
     #[test]

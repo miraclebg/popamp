@@ -3,7 +3,7 @@
 
 use crate::canvas::Canvas;
 use crate::dialogs::{self, DialogResult};
-use crate::font::Font;
+use crate::font::Fonts;
 use crate::menu::{self, Layout, MenuItem};
 use crate::model::{AddMode, AppEvent, Model, UiReq};
 use crate::panels::{Panel, PanelKind};
@@ -87,7 +87,7 @@ enum Drag {
 
 pub struct App {
     pub model: Model,
-    font: Font,
+    fonts: Fonts,
     /// The skinned windows, by `idx`.
     skins: [SkinWin; 3],
     wins: [Option<SkinWindow>; 3],
@@ -117,11 +117,11 @@ pub struct App {
 
 impl App {
     pub fn new(model: Model, start_minimized: bool, mpris: Option<crate::mpris::Mpris>) -> App {
-        let font = Font::load(&model.skin.pl.font);
+        let fonts = Fonts::for_skin(&model.skin);
         let shown_scale = Scale::of(model.settings());
         App {
             model,
-            font,
+            fonts,
             skins: [SkinWin::new(WindowKey::Main), SkinWin::new(WindowKey::Eq), SkinWin::new(WindowKey::Playlist)],
             wins: [None, None, None],
             popups: Vec::new(),
@@ -347,7 +347,7 @@ impl App {
             w.frame = Bitmap::new(fw, fh, 0);
         }
         let active = w.focused;
-        self.skins[k.index()].draw(&self.model, &mut self.font, &mut Canvas::new(&mut w.frame, drawn), active);
+        self.skins[k.index()].draw(&self.model, &mut self.fonts, &mut Canvas::new(&mut w.frame, drawn), active);
         let (pw, ph) = (scale.px(lw) as u32, scale.px(lh) as u32);
         let (Some(nw), Some(nh)) = (NonZeroU32::new(pw), NonZeroU32::new(ph)) else { return };
         if w.surface.resize(nw, nh).is_err() {
@@ -380,7 +380,7 @@ impl App {
         if items.is_empty() {
             return;
         }
-        let layout = menu::layout(&items, &mut self.font);
+        let layout = menu::layout(&items, &mut self.fonts.list);
         let (mut x, mut y) = at;
         // Keep the menu on the monitor.
         if let Some(m) = self.win(WindowKey::Main).and_then(|w| w.window.current_monitor()) {
@@ -407,7 +407,7 @@ impl App {
 
     fn render_popup(&mut self, i: usize) {
         let Some(p) = self.popups.get_mut(i) else { return };
-        menu::draw(&mut p.frame, &p.items, &p.layout, p.hover, &mut self.font);
+        menu::draw(&mut p.frame, &p.items, &p.layout, p.hover, &mut self.fonts.list);
         present_unscaled(&mut p.surface, &p.frame);
     }
 
@@ -449,7 +449,7 @@ impl App {
 
     fn render_panel(&mut self, i: usize) {
         let Some(p) = self.panels.get_mut(i) else { return };
-        p.panel.form().draw(&mut p.frame, &mut self.font);
+        p.panel.form().draw(&mut p.frame, &mut self.fonts.list);
         present_unscaled(&mut p.surface, &p.frame);
     }
 
@@ -562,7 +562,7 @@ impl App {
             return;
         }
         let text = tip.text.clone();
-        let frame = menu::tooltip(&text, &mut self.font);
+        let frame = menu::tooltip(&text, &mut self.fonts.list);
         let (x, y) = self.cursor_screen(WindowKey::Main);
         let attrs = platform::attributes(WindowRole::Tooltip)
             .with_title(text)
@@ -580,7 +580,7 @@ impl App {
 
     fn render_tooltip(&mut self) {
         let Some(Tooltip { text, shown: Some((_, surface)), .. }) = &mut self.tip else { return };
-        let frame = menu::tooltip(text, &mut self.font);
+        let frame = menu::tooltip(text, &mut self.fonts.list);
         present_unscaled(surface, &frame);
     }
 
@@ -1091,7 +1091,7 @@ impl App {
                     el.exit();
                 }
                 UiReq::SkinChanged => {
-                    self.font = Font::load(&self.model.skin.pl.font);
+                    self.fonts = Fonts::for_skin(&self.model.skin);
                     self.build_cursors(el);
                     for k in WindowKey::ALL {
                         if let Some(w) = self.win_mut(k) {
@@ -1163,7 +1163,7 @@ impl App {
         let rate = sh.sample_rate();
         let settings = self.model.settings().clone();
         self.model.vis.analyze(&settings, rate);
-        self.skins[WindowKey::Main.index()].tick(&self.model);
+        self.skins[WindowKey::Main.index()].tick(&self.model, &mut self.fonts);
         self.render(WindowKey::Main);
         if self.last_slow.elapsed() >= Duration::from_millis(500) {
             self.last_slow = Instant::now();

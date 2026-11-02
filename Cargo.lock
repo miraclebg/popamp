@@ -1286,6 +1286,7 @@ dependencies = [
 name = "linamp-skin"
 version = "0.1.0"
 dependencies = [
+ "fontdue",
  "image",
  "linamp-core",
  "log",

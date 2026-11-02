@@ -1,51 +1,117 @@
-//! TrueType text for the playlist and menus (fontdue + fontconfig lookup).
+//! TrueType text for the playlist, menus and vector skins (fontdue).
+//! Characters the font lacks come from a system font that has them,
+//! found through fontconfig.
 
 use linamp_skin::bitmap::mix;
-use linamp_skin::Bitmap;
+use linamp_skin::{Bitmap, Skin, TextStyle};
 use std::collections::HashMap;
+use std::path::PathBuf;
+
+/// The fonts the windows draw with.
+pub struct Fonts {
+    /// The playlist's, also used for menus and dialogs.
+    pub list: Font,
+    /// A vector skin's small texts.
+    pub text: Option<Font>,
+    /// A vector skin's play time.
+    pub clock: Option<Font>,
+}
+
+impl Fonts {
+    pub fn for_skin(skin: &Skin) -> Fonts {
+        let of = |data: Option<&Vec<u8>>, family: &str| data.map_or_else(|| Font::load(family), |d| Font::from_data(d));
+        let style = |s: &Option<TextStyle>| s.as_ref().map(|s| of(s.font.as_ref(), "sans-serif"));
+        Fonts { list: of(skin.pl_font.as_ref(), &skin.pl.font), text: style(&skin.text), clock: style(&skin.clock) }
+    }
+}
 
 pub struct Font {
-    font: Option<fontdue::Font>,
+    /// The font itself first, then system fonts picked up for missing
+    /// characters.
+    faces: Vec<fontdue::Font>,
+    /// The system font files already among `faces`.
+    files: HashMap<PathBuf, usize>,
+    /// Which face draws each character met so far; `None` when none can.
+    face_of: HashMap<char, Option<usize>>,
     cache: HashMap<(char, u32), (fontdue::Metrics, Vec<u8>)>,
 }
 
-/// Finds a font file for `family` through `fc-match`.
-fn find_font_file(family: &str) -> Option<std::path::PathBuf> {
-    let out = std::process::Command::new("fc-match").args(["-f", "%{file}", family]).output().ok()?;
+/// Finds a font file through `fc-match`: a family name, or a pattern
+/// such as `:charset=4e2d` for a font with that character.
+fn find_font_file(pattern: &str) -> Option<PathBuf> {
+    let out = std::process::Command::new("fc-match").args(["-f", "%{file}", pattern]).output().ok()?;
     let path = String::from_utf8(out.stdout).ok()?;
-    let path = std::path::PathBuf::from(path.trim());
+    let path = PathBuf::from(path.trim());
     path.is_file().then_some(path)
 }
 
+fn parse(data: Vec<u8>, what: &str) -> Option<fontdue::Font> {
+    fontdue::Font::from_bytes(data, fontdue::FontSettings::default()).map_err(|e| log::warn!("cannot parse font {what}: {e}")).ok()
+}
+
 impl Font {
-    pub fn load(family: &str) -> Font {
-        let font = [family, "sans-serif", "DejaVu Sans"].iter().find_map(|f| {
-            let path = find_font_file(f)?;
-            let data = std::fs::read(&path).ok()?;
-            match fontdue::Font::from_bytes(data, fontdue::FontSettings::default()) {
-                Ok(font) => Some(font),
-                Err(e) => {
-                    log::warn!("cannot parse font {}: {e}", path.display());
-                    None
-                }
-            }
-        });
-        if font.is_none() {
-            log::warn!("no usable TrueType font found; playlist text will be blank");
+    fn new(face: Option<fontdue::Font>) -> Font {
+        if face.is_none() {
+            log::warn!("no usable TrueType font found; text will be blank");
         }
-        Font { font, cache: HashMap::new() }
+        Font { faces: face.into_iter().collect(), files: HashMap::new(), face_of: HashMap::new(), cache: HashMap::new() }
+    }
+
+    pub fn load(family: &str) -> Font {
+        Font::new([family, "sans-serif", "DejaVu Sans"].iter().find_map(|f| {
+            let path = find_font_file(f)?;
+            parse(std::fs::read(&path).ok()?, &path.display().to_string())
+        }))
+    }
+
+    /// A font from a font file's bytes, or the system's sans-serif font.
+    pub fn from_data(data: &[u8]) -> Font {
+        match parse(data.to_vec(), "from the skin") {
+            Some(face) => Font::new(Some(face)),
+            None => Font::load("sans-serif"),
+        }
+    }
+
+    /// The face that draws `c`, looking for a system font the first time
+    /// the font itself lacks it.
+    fn face(&mut self, c: char) -> Option<usize> {
+        if let Some(&f) = self.face_of.get(&c) {
+            return f;
+        }
+        let f = self.faces.iter().position(|f| f.lookup_glyph_index(c) != 0).or_else(|| self.system_face(c));
+        self.face_of.insert(c, f);
+        f
+    }
+
+    fn system_face(&mut self, c: char) -> Option<usize> {
+        if c.is_control() || self.faces.is_empty() {
+            return None;
+        }
+        let path = find_font_file(&format!(":charset={:x}", c as u32))?;
+        let i = match self.files.get(&path) {
+            Some(&i) => i,
+            None => {
+                let face = parse(std::fs::read(&path).ok()?, &path.display().to_string())?;
+                self.faces.push(face);
+                self.files.insert(path, self.faces.len() - 1);
+                self.faces.len() - 1
+            }
+        };
+        (self.faces[i].lookup_glyph_index(c) != 0).then_some(i)
     }
 
     fn glyph(&mut self, c: char, px: u32) -> Option<&(fontdue::Metrics, Vec<u8>)> {
-        let font = self.font.as_ref()?;
+        // A character no font has still takes the font's own (blank) glyph.
+        let i = self.face(c).or((!self.faces.is_empty()).then_some(0))?;
+        let face = &self.faces[i];
         if self.cache.len() > 4096 {
             self.cache.clear();
         }
-        Some(self.cache.entry((c, px)).or_insert_with(|| font.rasterize(c, px as f32)))
+        Some(self.cache.entry((c, px)).or_insert_with(|| face.rasterize(c, px as f32)))
     }
 
     pub fn ascent(&self, px: u32) -> i32 {
-        self.font.as_ref().and_then(|f| f.horizontal_line_metrics(px as f32)).map(|m| m.ascent.round() as i32).unwrap_or(px as i32)
+        self.faces.first().and_then(|f| f.horizontal_line_metrics(px as f32)).map(|m| m.ascent.round() as i32).unwrap_or(px as i32)
     }
 
     pub fn width(&mut self, text: &str, px: u32) -> i32 {

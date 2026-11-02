@@ -1,6 +1,7 @@
 //! Skin drawing helpers shared by the windows.
 
 use crate::canvas::Canvas;
+use crate::font::Fonts;
 use linamp_skin::sprites::{main, Rect};
 use linamp_skin::textcfg::{glyph_cell, GLYPH_H, GLYPH_W};
 use linamp_skin::{Picture, Sheet, Skin};
@@ -53,6 +54,44 @@ pub fn skin_text_width(text: &str) -> i32 {
     text.chars().count() as i32 * GLYPH_W
 }
 
+/// Draws a small text into `area`, `offset` pixels into it (for
+/// scrolling): in a vector skin's font, or with the classic `text.bmp`.
+pub fn text(b: &mut Canvas, skin: &Skin, fonts: &mut Fonts, area: Rect, text: &str, offset: i32) {
+    match (&skin.text, fonts.text.as_mut()) {
+        (Some(st), Some(font)) => {
+            let y = area.y + (area.h - st.size) / 2;
+            b.text(font, area.x - offset, y, text, st.size as u32, st.color, area);
+        }
+        _ => skin_text(b, skin, area, text, offset),
+    }
+}
+
+/// The width of a small text in skin pixels.
+pub fn text_width(skin: &Skin, fonts: &mut Fonts, text: &str) -> i32 {
+    match (&skin.text, fonts.text.as_mut()) {
+        (Some(st), Some(font)) => font.width(text, st.size as u32),
+        _ => skin_text_width(text),
+    }
+}
+
+/// The play time as a vector skin writes it: `-m:ss` or ` m:ss`.
+fn clock_text(secs: u64, negative: bool) -> String {
+    let m = (secs / 60).min(99);
+    format!("{}{m:02}:{:02}", if negative { '-' } else { ' ' }, secs % 60)
+}
+
+/// The big play time in `r` (the clock element), from a vector skin's
+/// font or the classic digit bitmaps.
+pub fn clock(b: &mut Canvas, skin: &Skin, fonts: &mut Fonts, r: Rect, secs: u64, negative: bool) {
+    match (&skin.clock, fonts.clock.as_mut()) {
+        (Some(st), Some(font)) => {
+            let y = r.y + (r.h - st.size) / 2;
+            b.text(font, r.x, y, &clock_text(secs, negative), st.size as u32, st.color, r);
+        }
+        _ => time_digits(b, skin, Some(secs), negative, r.x - main::TIME_AREA.x, r.y - main::TIME_AREA.y),
+    }
+}
+
 /// Draws the big `m:ss` time display; `negative` shows a minus sign.
 pub fn time_digits(b: &mut Canvas, skin: &Skin, secs: Option<u64>, negative: bool, ox: i32, oy: i32) {
     let sheet = if skin.has_nums_ex { Sheet::NumsEx } else { Sheet::Numbers };
@@ -78,5 +117,17 @@ pub fn time_digits(b: &mut Canvas, skin: &Skin, secs: Option<u64>, negative: boo
         sprite(b, skin, sheet, src, ox + mx, oy + my);
     } else if negative {
         sprite(b, skin, Sheet::Numbers, main::NUMBERS_MINUS, ox + mx + 2, oy + my + 6);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vector_clocks_write_minutes_and_seconds() {
+        assert_eq!(clock_text(65, false), " 01:05");
+        assert_eq!(clock_text(600, true), "-10:00");
+        assert_eq!(clock_text(100 * 60 + 40, false), " 99:40", "minutes stop at 99");
     }
 }

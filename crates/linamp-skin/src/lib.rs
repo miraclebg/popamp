@@ -16,7 +16,7 @@ pub use bitmap::{Bitmap, Rgba};
 pub use cursors::{CursorImage, CursorKind};
 pub use layout::{Layout, Picture};
 pub use sprites::{Rect, Sheet};
-pub use textcfg::{PlColors, Regions};
+pub use textcfg::{PlColors, Regions, TextStyle};
 
 use std::collections::HashMap;
 use std::io::Read;
@@ -38,6 +38,14 @@ pub struct Skin {
     pub svgs: svg::Svgs,
     /// Drawn at screen size rather than scaled up from x1.
     pub vector: bool,
+    /// A vector skin's small texts (title, kbps...); classic skins use
+    /// `text.bmp`.
+    pub text: Option<TextStyle>,
+    /// A vector skin's play time; classic skins use their digit bitmaps.
+    pub clock: Option<TextStyle>,
+    /// A vector skin's playlist font file; otherwise `pl.font` names a
+    /// system font.
+    pub pl_font: Option<Vec<u8>>,
 }
 
 impl Skin {
@@ -54,6 +62,9 @@ impl Skin {
             layout: Layout::default(),
             svgs: svg::Svgs::default(),
             vector: false,
+            text: None,
+            clock: None,
+            pl_font: None,
         }
         .with_layout()
     }

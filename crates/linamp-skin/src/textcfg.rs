@@ -48,6 +48,16 @@ impl Default for PlColors {
     }
 }
 
+/// How a vector skin writes a text: in a TrueType font from the skin,
+/// or the system's sans-serif font when `font` is `None`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextStyle {
+    pub font: Option<Vec<u8>>,
+    /// Height in skin pixels.
+    pub size: i32,
+    pub color: u32,
+}
+
 pub fn parse_color(s: &str) -> Option<u32> {
     let hex = s.trim().trim_start_matches('#');
     let hex: String = hex.chars().take_while(|c| c.is_ascii_hexdigit()).collect();
