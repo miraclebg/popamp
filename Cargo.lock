@@ -1238,65 +1238,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "linamp"
-version = "0.1.0"
-dependencies = [
- "crossbeam-channel",
- "env_logger",
- "fastrand",
- "fontdue",
- "image",
- "linamp-audio",
- "linamp-core",
- "linamp-skin",
- "log",
- "parking_lot",
- "rustfft",
- "serde_json",
- "softbuffer",
- "winit",
- "x11rb",
- "zbus",
- "zip",
-]
-
-[[package]]
-name = "linamp-audio"
-version = "0.1.0"
-dependencies = [
- "crossbeam-channel",
- "libloading",
- "linamp-core",
- "log",
- "parking_lot",
- "serde_json",
- "symphonia",
- "ureq",
-]
-
-[[package]]
-name = "linamp-core"
-version = "0.1.0"
-dependencies = [
- "fastrand",
- "log",
-]
-
-[[package]]
-name = "linamp-skin"
-version = "0.1.0"
-dependencies = [
- "fontdue",
- "image",
- "linamp-core",
- "log",
- "resvg",
- "serde",
- "toml",
- "zip",
-]
-
-[[package]]
 name = "linux-raw-sys"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1885,6 +1826,65 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "50596ddc09eb5ad5f75cacd40209568e66df71baf86e1499a0e99c4cff12a5a6"
 dependencies = [
  "arrayvec",
+]
+
+[[package]]
+name = "popamp"
+version = "0.1.0"
+dependencies = [
+ "crossbeam-channel",
+ "env_logger",
+ "fastrand",
+ "fontdue",
+ "image",
+ "log",
+ "parking_lot",
+ "popamp-audio",
+ "popamp-core",
+ "popamp-skin",
+ "rustfft",
+ "serde_json",
+ "softbuffer",
+ "winit",
+ "x11rb",
+ "zbus",
+ "zip",
+]
+
+[[package]]
+name = "popamp-audio"
+version = "0.1.0"
+dependencies = [
+ "crossbeam-channel",
+ "libloading",
+ "log",
+ "parking_lot",
+ "popamp-core",
+ "serde_json",
+ "symphonia",
+ "ureq",
+]
+
+[[package]]
+name = "popamp-core"
+version = "0.1.0"
+dependencies = [
+ "fastrand",
+ "log",
+]
+
+[[package]]
+name = "popamp-skin"
+version = "0.1.0"
+dependencies = [
+ "fontdue",
+ "image",
+ "log",
+ "popamp-core",
+ "resvg",
+ "serde",
+ "toml",
+ "zip",
 ]
 
 [[package]]

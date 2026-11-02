@@ -1,7 +1,7 @@
 # Vector skin format
 
 A vector skin is drawn in SVG, so it stays sharp at every window size,
-including fractional ones such as x1.25 or x1.5. Linamp's own default skin
+including fractional ones such as x1.25 or x1.5. Popamp's own default skin
 is a vector skin.
 
 A vector skin is a folder, or a `.zip` archive, with a file named
@@ -13,7 +13,7 @@ Coordinates are in **skin pixels**: the classic main window is 275 x 116 of
 them, whatever size the window is shown at. An SVG drawn 23 units wide
 covers 23 skin pixels.
 
-While a skin is in use, Linamp checks its files twice a second and loads
+While a skin is in use, Popamp checks its files twice a second and loads
 it again after you save a change. If the change breaks the skin, the
 current look stays and the title display shows the error.
 
@@ -41,7 +41,7 @@ main = "main.svg"
 cbuttons = "cbuttons.svg"
 ```
 
-Sheets you leave out, and anything else missing, come from Linamp's
+Sheets you leave out, and anything else missing, come from Popamp's
 default skin.
 
 ## `[meta]`

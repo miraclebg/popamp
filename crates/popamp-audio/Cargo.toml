@@ -1,0 +1,22 @@
+[package]
+name = "popamp-audio"
+description = "Decoding, DSP and ALSA output for Popamp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+popamp-core.workspace = true
+symphonia.workspace = true
+libloading.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+ureq.workspace = true
+serde_json.workspace = true
+log.workspace = true
+
+[dev-dependencies]
