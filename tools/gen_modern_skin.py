@@ -524,7 +524,7 @@ def pills_on(s, items):
 
 def bottom_left(s):
     s.add(f'<path d="M0.5 0 V31 a6.5 6.5 0 0 0 6.5 6.5" fill="none" stroke="{EDGE}"/>')
-    pills_on(s, ((14, "ADD"), (43, "REM"), (72, "SEL"), (101, "MISC")))
+    pills_on(s, ((12, "ADD"), (40, "REM"), (68, "SEL"), (96, "MISC")))
 
 
 def bottom_right(s):
@@ -552,13 +552,13 @@ def item(name, text):
 
 
 PL_MENUS = (
-    ("add", 14, [("file", "FILE", {"click": "pl-add-files"}), ("dir", "DIR", {"click": "pl-add-folder"}),
+    ("add", 12, [("file", "FILE", {"click": "pl-add-files"}), ("dir", "DIR", {"click": "pl-add-folder"}),
                  ("url", "URL", {"click": "pl-add-url"})]),
-    ("rem", 43, [("rmisc", "MISC", {"menu_release": "playlist-remove-misc"}), ("rsel", "SEL", {"click": "pl-remove-selected"}),
+    ("rem", 40, [("rmisc", "MISC", {"menu_release": "playlist-remove-misc"}), ("rsel", "SEL", {"click": "pl-remove-selected"}),
                  ("crop", "CROP", {"click": "pl-crop-selected"}), ("rall", "ALL", {"click": "clear-playlist"})]),
-    ("sel", 72, [("sall", "ALL", {"click": "select-all"}), ("snone", "NONE", {"click": "select-none"}),
+    ("sel", 68, [("sall", "ALL", {"click": "select-all"}), ("snone", "NONE", {"click": "select-none"}),
                  ("sinv", "INV", {"click": "invert-selection"})]),
-    ("misc", 101, [("mopt", "OPTS", {"menu_release": "playlist-misc"}), ("minfo", "INFO", {"click": "file-info"}),
+    ("misc", 96, [("mopt", "OPTS", {"menu_release": "playlist-misc"}), ("minfo", "INFO", {"click": "file-info"}),
                    ("msort", "SORT", {"menu_release": "playlist-sort"})]),
     ("list", None, [("lnew", "NEW", {"click": "clear-playlist"}), ("lsave", "SAVE", {"click": "playlist-save"}),
                     ("lload", "LOAD", {"click": "playlist-open"})]),
