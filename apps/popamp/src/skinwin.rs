@@ -160,7 +160,7 @@ impl SkinWin {
     fn marquee_width(&self, model: &Model) -> Option<i32> {
         let c = self.current(model)?;
         c.mode.elements.iter().find_map(|el| match el.kind {
-            Kind::Marquee { area, .. } => Some(area.w),
+            Kind::Marquee { area, .. } => Some(marquee_rect(area, el.at.resolve(c.w, c.h)).w),
             _ => None,
         })
     }
@@ -398,7 +398,7 @@ impl SkinWin {
                         render::text(b, skin, fonts, r, &text, 0);
                     }
                 }
-                Kind::Marquee { area, .. } => self.draw_marquee(model, fonts, b, Rect { x: r.x + area.x, y: r.y + area.y, ..*area }),
+                Kind::Marquee { area, .. } => self.draw_marquee(model, fonts, b, marquee_rect(*area, r)),
                 Kind::Clock => self.draw_clock(model, fonts, b, r),
                 Kind::Vis => model.vis.draw(b, r.x, r.y, r.w, r.h, model.settings(), &skin.viscolor),
                 Kind::EqGraph => draw_eq_graph(model, b, r),
@@ -789,6 +789,11 @@ fn draw_eq_graph(model: &Model, b: &mut Canvas, r: Rect) {
         }
         prev = Some(y);
     }
+}
+
+/// Where a marquee in `r` writes the title.
+fn marquee_rect(area: Option<Rect>, r: Rect) -> Rect {
+    area.map_or(r, |a| Rect { x: r.x + a.x, y: r.y + a.y, ..a })
 }
 
 #[cfg(test)]

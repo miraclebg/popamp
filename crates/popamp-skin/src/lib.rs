@@ -410,6 +410,15 @@ mod tests {
     }
 
     #[test]
+    fn the_bar_example_skin_loads() {
+        let skin = Skin::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../skins/bar")).unwrap();
+        assert_eq!(skin.name, "Popamp Bar");
+        let main = skin.layout.window(WindowKey::Main).unwrap();
+        assert_eq!(main.placement, layout::Placement::Bar(popamp_core::config::BarEdge::Bottom));
+        assert!(skin.layout.window(WindowKey::Playlist).is_some() && skin.layout.window(WindowKey::Eq).is_some());
+    }
+
+    #[test]
     fn lists_both_kinds_of_skin_archives() {
         let dir = std::env::temp_dir().join(format!("popamp-skin-list-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("folder")).unwrap();

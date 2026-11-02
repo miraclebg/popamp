@@ -3,8 +3,9 @@
 A vector skin is drawn in SVG, so it stays sharp at every window size,
 including fractional ones such as x1.25 or x1.5. Popamp's own default skin
 is a vector skin: `skins/default/` in Popamp's source is a complete example
-that draws every classic sheet, and `skins/modern/` one that describes its
-own windows.
+that draws every classic sheet, `skins/modern/` one that describes its
+own windows, and `skins/bar/` one whose main window is a bar across the
+screen.
 
 A vector skin is a folder, or a `.psz` archive (a zip file under another
 name), with a file named `skin.toml` at its top. Opening a `.psz` file in
@@ -135,7 +136,8 @@ the peak dots.
 ```toml
 [[window]]
 key = "main"                 # main, eq or playlist
-placement = "free"           # free (moves the docked group) or docked
+placement = "free"           # free (moves the docked group), docked,
+                             # bar-top or bar-bottom (main window only)
 empty_press = "move"         # nothing, move or move-if-easy
 wheel_volume = 8             # volume change per mouse wheel step
 # wheel_scrolls_list = true  # the wheel scrolls the list instead
@@ -163,6 +165,13 @@ click = "play"
 shift = "open-file"
 tip = "Play"
 ```
+
+A main window placed `bar-top` or `bar-bottom` is a bar: a strip as wide
+as the screen at that edge, which other windows keep out of like a
+taskbar. Its `size` gives the height and the narrowest width; place its
+elements with `edges` so they follow the width. The playlist and the
+equalizer sit against the bar at the screen's right end and do not move;
+the main menu's "Bar position" puts the bar at the other edge.
 
 `[window.shade]` describes the shade mode the same way. Elements are drawn
 in the order they are listed; the mouse goes to the last one under it.
@@ -211,7 +220,7 @@ hit = "play.svg"       # only the round part is the button
 | `toggle` | A button showing a state | `normal`, `pressed`, `on`, `on_pressed`, `flag`, and what it does |
 | `slider` | A slider | `value`, `vertical`, `track`, `thumb`, `thumb_len`, `live`, `reset`, `wheel_step`, `detent` |
 | `text` | A text | `text` |
-| `marquee` | The scrolling song title | `area` (the text's place inside the element), `double` |
+| `marquee` | The scrolling song title | `area` (the text's place inside the element; all of it when left out), `double` |
 | `clock` | The play time | |
 | `vis` | Spectrum analyzer or oscilloscope | |
 | `eq-graph` | The equalizer curve | |

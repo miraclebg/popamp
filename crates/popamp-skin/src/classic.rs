@@ -145,7 +145,7 @@ fn main_normal(volume_h: i32, balance_h: i32) -> Mode {
     v.push(
         Element::new(
             Place::fixed(mq.x - 2, 24, mq.w + 4, 12),
-            Kind::Marquee { area: r(2, mq.y - 24, mq.w, mq.h), double: Some(Command::FileInfo) },
+            Kind::Marquee { area: Some(r(2, mq.y - 24, mq.w, mq.h)), double: Some(Command::FileInfo) },
         )
         .cursor(C::SongName)
         .tip("Song Title (right-click for options)")

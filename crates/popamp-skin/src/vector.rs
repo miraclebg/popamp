@@ -476,10 +476,18 @@ impl Builder<'_> {
     }
 
     fn window(&mut self, w: &WindowFile) -> Result<WindowDef, String> {
+        let mut normal = self.mode(&w.normal)?;
+        if let Placement::Bar(_) = w.placement.0 {
+            if w.key.0 != WindowKey::Main {
+                return Err(format!("{}: only the main window can be a bar", w.key.0.name()));
+            }
+            // As wide as the screen; `size` is the narrowest it gets.
+            normal.width = Dim::Free { min: w.normal.size[0], step: 1 };
+        }
         Ok(WindowDef {
             key: w.key.0,
             placement: w.placement.0,
-            normal: self.mode(&w.normal)?,
+            normal,
             shade: w.shade.as_ref().map(|m| self.mode(m)).transpose()?,
             empty_press: w.empty_press.0,
             wheel: if w.wheel_scrolls_list { Wheel::ScrollList } else { Wheel::Volume(w.wheel_volume) },
@@ -506,18 +514,18 @@ impl Builder<'_> {
         let f = e.get_ref();
         let kind_name = check_fields(f).map_err(fail)?;
         let place = place(f).map_err(fail)?;
-        let kind = self.kind(kind_name, f, place).map_err(|x| at(self.text, x.span.or(Some(e.span())), &x.msg))?;
+        let kind = self.kind(kind_name, f).map_err(|x| at(self.text, x.span.or(Some(e.span())), &x.msg))?;
         let show = show(f).map_err(fail)?;
         let hit = self.paint(f.hit.as_ref()).map_err(|x| at(self.text, x.span, &x.msg))?;
         Ok(Element { at: place, kind, show, cursor: f.cursor.map(|c| c.0), tip: f.tip.clone(), menu: f.menu.map(|m| m.0), hit })
     }
 
-    fn kind(&mut self, name: &str, f: &ElementFile, at: Place) -> Result<Kind, Fault> {
+    fn kind(&mut self, name: &str, f: &ElementFile) -> Result<Kind, Fault> {
         Ok(match name {
             "image" | "button" | "toggle" => self.pictured(name, f)?,
             "slider" => Kind::Slider(self.slider(f)?),
             "text" => Kind::Text(f.text.ok_or("a text needs `text`: what it shows")?.0),
-            "marquee" => Kind::Marquee { area: marquee_area(f.area, at)?, double: f.double.map(|x| x.0) },
+            "marquee" => Kind::Marquee { area: f.area.map(|[x, y, w, h]| Rect { x, y, w, h }), double: f.double.map(|x| x.0) },
             "list-scroll" => Kind::ListScroll { thumb: self.thumb(f)? },
             "popup" => {
                 let items = f.items.iter().map(|i| self.item(i)).collect::<Result<_, _>>()?;
@@ -651,17 +659,6 @@ fn show(f: &ElementFile) -> Result<Cond, String> {
         (None, Some(h), None) => Ok(Cond::Unless(h.0)),
         (None, None, Some(w)) => Ok(Cond::MinWidth(w)),
         _ => Err("use only one of `show`, `hide` and `min_width`".into()),
-    }
-}
-
-/// The marquee's text area inside it: `area`, or all of a fixed element.
-fn marquee_area(area: Option<[i32; 4]>, at: Place) -> Result<Rect, String> {
-    match (area, at) {
-        (Some([x, y, w, h]), _) => Ok(Rect { x, y, w, h }),
-        (None, Place { left: Pos::Start(l), top: Pos::Start(t), right: Pos::Start(r), bottom: Pos::Start(b) }) => {
-            Ok(Rect { x: 0, y: 0, w: r - l, h: b - t })
-        }
-        _ => Err("a marquee with `edges` needs an `area`".into()),
     }
 }
 
@@ -829,6 +826,18 @@ edges = [12, 20, \"end-20\", \"end-38\"]
         let pl = s.layout.window(WindowKey::Playlist).unwrap();
         assert_eq!(pl.normal.width, Dim::Free { min: 275, step: 25 });
         assert_eq!(pl.normal.elements[0].at.resolve(300, 145), Rect { x: 12, y: 20, w: 268, h: 87 });
+    }
+
+    #[test]
+    fn a_bar_spans_the_screen_and_only_the_main_window_is_one() {
+        let bar = |key: &str| skin(&format!("{HEAD}[[window]]\nkey = \"{key}\"\nplacement = \"bar-top\"\nnormal.size = [400, 28]\n"));
+        let s = bar("main").unwrap();
+        let main = s.layout.window(WindowKey::Main).unwrap();
+        assert_eq!(main.placement, Placement::Bar(popamp_core::config::BarEdge::Top));
+        assert_eq!(main.normal.width, Dim::Free { min: 400, step: 1 }, "as wide as the screen, at least 400");
+        assert_eq!(main.normal.height, Dim::Fixed(28));
+        let e = bar("eq").err().unwrap();
+        assert!(e.contains("only the main window can be a bar"), "{e}");
     }
 
     fn error(body: &str) -> String {

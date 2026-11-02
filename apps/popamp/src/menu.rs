@@ -22,6 +22,7 @@ pub enum MenuAction {
     /// Window size in percent; 100 turns "Double Size" off.
     Zoom(i32),
     Scaling(popamp_core::config::Scaling),
+    BarEdge(popamp_core::config::BarEdge),
     TitleFormat(String),
     EqPreset(usize, bool),
     EqDialog(DialogKind),

@@ -5,6 +5,7 @@
 use crate::cursors::CursorKind;
 use crate::layout::{EmptyPress, Fill, Flag, FrameMap, MenuRef, Placement, Text, Value, WindowKey};
 use crate::sprites::Sheet;
+use popamp_core::config::BarEdge;
 use popamp_core::Command;
 use serde::de::{Deserialize, Deserializer, Error};
 
@@ -61,7 +62,22 @@ named!(WindowKey, "window", WindowKey::ALL);
 named!(Fill, "fill", [Fill::Once, Fill::Tile]);
 named!(FrameMap, "frame order", [FrameMap::Rising, FrameMap::Falling, FrameMap::FromMiddle]);
 named!(EmptyPress, "empty-spot action", [EmptyPress::Nothing, EmptyPress::Move, EmptyPress::MoveIfEasy]);
-named!(Placement, "placement", [Placement::Free, Placement::Docked]);
+impl Named for Placement {
+    const WHAT: &'static str = "placement";
+    fn all() -> Vec<Self> {
+        vec![Placement::Free, Placement::Docked, Placement::Bar(BarEdge::Top), Placement::Bar(BarEdge::Bottom)]
+    }
+    fn name(self) -> String {
+        match self {
+            Placement::Free => "free",
+            Placement::Docked => "docked",
+            Placement::Bar(BarEdge::Top) => "bar-top",
+            Placement::Bar(BarEdge::Bottom) => "bar-bottom",
+        }
+        .into()
+    }
+}
+
 named!(Text, "text", [Text::Kbps, Text::Khz, Text::ShortTime, Text::Title, Text::PlaylistTime, Text::PlaylistClock]);
 named!(
     Flag,

@@ -6,8 +6,9 @@ use winit::platform::x11::{WindowAttributesExtX11, WindowType};
 use winit::window::{Window, WindowAttributes};
 use x11rb::connection::{Connection, RequestConnection};
 use x11rb::protocol::shape::{self, ConnectionExt as _, SK, SO};
-use x11rb::protocol::xproto::{ClipOrdering, Rectangle};
+use x11rb::protocol::xproto::{AtomEnum, ClipOrdering, ConnectionExt as _, PropMode, Rectangle};
 use x11rb::rust_connection::RustConnection;
+use x11rb::wrapper::ConnectionExt as _;
 
 /// What a window is for, which decides how the window manager treats it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,6 +17,8 @@ pub enum WindowRole {
     Main,
     /// Equalizer and playlist: tool windows docked to the main one.
     Docked,
+    /// A bar skin's main window: a panel at a screen edge.
+    Bar,
     /// Pop-up menus: placed and stacked by us, not the window manager.
     Popup,
     /// Tooltips: like menus, but never focused.
@@ -30,6 +33,7 @@ pub fn attributes(role: WindowRole) -> WindowAttributes {
     match role {
         WindowRole::Main => attrs,
         WindowRole::Docked => attrs.with_x11_window_type(vec![WindowType::Utility]),
+        WindowRole::Bar => attrs.with_x11_window_type(vec![WindowType::Dock]),
         WindowRole::Popup => attrs.with_override_redirect(true).with_x11_window_type(vec![WindowType::PopupMenu]),
         WindowRole::Tooltip => attrs.with_override_redirect(true).with_active(false).with_x11_window_type(vec![WindowType::Tooltip]),
         WindowRole::Dialog => attrs.with_decorations(true).with_x11_window_type(vec![WindowType::Dialog]),
@@ -62,6 +66,27 @@ impl Platform {
         conn.shape_rectangles(SO::SET, SK::BOUNDING, ClipOrdering::UNSORTED, xid, 0, 0, &rects).map_err(|e| err(&e))?;
         conn.flush().map_err(|e| err(&e))?;
         Ok(())
+    }
+
+    /// Reserves the strip a bar takes (`_NET_WM_STRUT_PARTIAL`, see
+    /// [`crate::bar::strut`]) for `window`.
+    pub fn set_strut(&self, window: &Window, strut: [u32; 12]) -> Result<(), String> {
+        let (Some(conn), Some(xid)) = (&self.x11, x11_window_id(window)) else { return Ok(()) };
+        let err = |e: &dyn std::fmt::Display| e.to_string();
+        let atom = |name: &str| -> Result<u32, String> {
+            Ok(conn.intern_atom(false, name.as_bytes()).map_err(|e| err(&e))?.reply().map_err(|e| err(&e))?.atom)
+        };
+        // The old four-number form for window managers without the partial one.
+        for (name, values) in [("_NET_WM_STRUT_PARTIAL", &strut[..]), ("_NET_WM_STRUT", &strut[..4])] {
+            conn.change_property32(PropMode::REPLACE, xid, atom(name)?, AtomEnum::CARDINAL, values).map_err(|e| err(&e))?;
+        }
+        conn.flush().map_err(|e| err(&e))?;
+        Ok(())
+    }
+
+    /// The height of the X screen all monitors are part of.
+    pub fn root_height(&self) -> Option<i32> {
+        Some(self.x11.as_ref()?.setup().roots.first()?.height_in_pixels as i32)
     }
 }
 

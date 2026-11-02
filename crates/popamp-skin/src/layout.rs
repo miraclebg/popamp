@@ -4,7 +4,7 @@
 //!
 //! Terms:
 //! - *window*: one top-level window of a skin (main, equalizer, playlist;
-//!   later a screen-edge bar). It has a normal mode and may have a shade
+//!   or a bar along a screen edge). It has a normal mode and may have a shade
 //!   mode, each with its own size and elements.
 //! - *element*: a rectangle in a window that draws something and may react
 //!   to the mouse: an image, button, toggle, slider, text...
@@ -19,6 +19,7 @@
 
 use crate::cursors::CursorKind;
 use crate::sprites::{Rect, Sheet};
+use popamp_core::config::BarEdge;
 use popamp_core::Command;
 
 #[derive(Debug, Clone, Default)]
@@ -77,24 +78,10 @@ pub enum Placement {
     Free,
     /// Placed by the user; joins the group of the window it touches.
     Docked,
-    /// A strip along a screen edge.
-    ScreenBar { edge: ScreenEdge, hide: BarHide },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScreenEdge {
-    Top,
-    Bottom,
-    Left,
-    Right,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BarHide {
-    /// Other windows keep out of the bar's strip, like a taskbar.
-    Reserve,
-    /// Slides away after a delay; comes back when the mouse touches the edge.
-    AutoHide,
+    /// A strip across the screen at this edge, by default; other windows
+    /// keep out of it, like a taskbar's. Equalizer and playlist sit
+    /// against it.
+    Bar(BarEdge),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -343,9 +330,9 @@ pub enum Kind {
     /// Text in the skin's bitmap font, clipped to the element.
     Text(Text),
     /// The song title, scrolling and draggable, drawn in `area` (relative
-    /// to the element).
+    /// to the element), or in all of it at any size.
     Marquee {
-        area: Rect,
+        area: Option<Rect>,
         double: Option<Command>,
     },
     /// The big `m:ss` play time in the skin's digits.
