@@ -38,6 +38,8 @@ pub struct Skin {
     pub svgs: svg::Svgs,
     /// Drawn at screen size rather than scaled up from x1.
     pub vector: bool,
+    /// A vector skin's drawings of classic sheets, used in their place.
+    pub sheet_svgs: HashMap<Sheet, u16>,
     /// A vector skin's small texts (title, kbps...); classic skins use
     /// `text.bmp`.
     pub text: Option<TextStyle>,
@@ -61,6 +63,7 @@ impl Skin {
             layout: Layout::default(),
             svgs: svg::Svgs::default(),
             vector: false,
+            sheet_svgs: HashMap::new(),
             text: None,
             clock: None,
             pl_font: None,
@@ -69,7 +72,7 @@ impl Skin {
     }
 
     /// Builds the classic layout for the skin's bitmaps and window shapes.
-    fn with_layout(mut self, regions: Regions) -> Skin {
+    pub(crate) fn with_layout(mut self, regions: Regions) -> Skin {
         self.layout = classic::layout(self.sheet(Sheet::Volume).h, self.sheet(Sheet::Balance).h);
         let shapes = [(WindowKey::Main, regions.normal, regions.window_shade), (WindowKey::Eq, regions.equalizer, regions.equalizer_ws)];
         for (key, normal, shade) in shapes {

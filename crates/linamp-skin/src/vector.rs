@@ -4,8 +4,8 @@
 
 use crate::cursors::CursorKind;
 use crate::layout::*;
-use crate::names::N;
-use crate::sprites::Rect;
+use crate::names::{Named, N};
+use crate::sprites::{Rect, Sheet};
 use crate::Skin;
 use linamp_core::Command;
 use serde::de::{self, Deserializer};
@@ -28,6 +28,8 @@ pub fn load(files: &HashMap<String, Vec<u8>>) -> Result<Skin, String> {
     }
     build.skin.name = file.meta.name.clone();
     build.skin.vector = true;
+    build.sheets(&file.sheets)?;
+    build.shapes(&file.shapes)?;
     build.texts(&file)?;
     for w in &file.windows {
         let def = build.window(w)?;
@@ -52,6 +54,13 @@ fn at(text: &str, span: Option<std::ops::Range<usize>>, msg: &str) -> String {
 #[serde(deny_unknown_fields)]
 struct SkinFile {
     meta: Meta,
+    /// SVG drawings of classic skin sheets (`main = "main.svg"`), drawn
+    /// with the classic layout wherever the sheet would be.
+    #[serde(default)]
+    sheets: HashMap<String, Spanned<String>>,
+    /// Window shapes for the classic layout (`main`, `main_shade`, `eq`...).
+    #[serde(default)]
+    shapes: HashMap<String, Spanned<PaintFile>>,
     text: Option<TextFile>,
     clock: Option<TextFile>,
     playlist: Option<PlaylistFile>,
@@ -377,6 +386,50 @@ struct Builder<'a> {
 }
 
 impl Builder<'_> {
+    fn sheets(&mut self, sheets: &HashMap<String, Spanned<String>>) -> Result<(), String> {
+        for (name, file) in sheets {
+            let fail = |msg: String| at(self.text, Some(file.span()), &msg);
+            let sheet = Sheet::all().into_iter().find(|s| s.name() == *name).ok_or_else(|| {
+                let names: Vec<_> = Sheet::all().into_iter().map(Sheet::name).collect();
+                fail(format!("unknown sheet `{name}`; it can be one of: {}", names.join(", ")))
+            })?;
+            let (id, (w, h)) = self.svg(file.get_ref()).map_err(fail)?;
+            self.skin.sheet_svgs.insert(sheet, id);
+            // The x1 picture too, for what reads sheet pixels directly.
+            if let Some(r) = self.skin.svgs.raster(id, Rect { x: 0, y: 0, w, h }, w, h) {
+                let mut b = crate::Bitmap::new(w, h, 0);
+                b.overlay(&r, 0, 0, (0, 0, w, h));
+                self.skin.sheets.insert(sheet, b);
+            }
+            self.skin.has_nums_ex |= sheet == Sheet::NumsEx;
+        }
+        self.skin = std::mem::replace(&mut self.skin, Skin::builtin()).with_layout(crate::Regions::default());
+        Ok(())
+    }
+
+    fn shapes(&mut self, shapes: &HashMap<String, Spanned<PaintFile>>) -> Result<(), String> {
+        for (name, file) in shapes {
+            let fail = |msg: &str| at(self.text, Some(file.span()), msg);
+            let (key, shade) = match name.strip_suffix("_shade") {
+                Some(k) => (k, true),
+                None => (name.as_str(), false),
+            };
+            let key = WindowKey::all().into_iter().find(|w| w.name() == key);
+            let window = key.and_then(|k| self.skin.layout.windows.iter().position(|w| w.key == k));
+            let Some(window) = window else {
+                return Err(fail(&format!("unknown window `{name}`; it can be main, eq, playlist, or one of them with _shade")));
+            };
+            let paint = self.paint(Some(file)).map_err(|e| at(self.text, e.span, &e.msg))?.map(Shape::Picture);
+            let w = &mut self.skin.layout.windows[window];
+            match (shade, &mut w.shade) {
+                (false, _) => w.normal.shape = paint,
+                (true, Some(mode)) => mode.shape = paint,
+                (true, None) => return Err(fail(&format!("window `{}` has no shade mode", key.map(Named::name).unwrap_or_default()))),
+            }
+        }
+        Ok(())
+    }
+
     fn texts(&mut self, file: &SkinFile) -> Result<(), String> {
         self.skin.text = file.text.as_ref().map(|t| self.style(t)).transpose()?;
         self.skin.clock = file.clock.as_ref().map(|t| self.style(t)).transpose()?;
@@ -429,7 +482,7 @@ impl Builder<'_> {
             None => Dim::Fixed(m.size[i]),
         };
         let elements = m.elements.iter().map(|e| self.element(e)).collect::<Result<_, _>>()?;
-        let shape = self.paint(&m.shape).map_err(|e| at(self.text, e.span, &e.msg))?.map(Shape::Picture);
+        let shape = self.paint(m.shape.as_ref()).map_err(|e| at(self.text, e.span, &e.msg))?.map(Shape::Picture);
         Ok(Mode { width: dim(0), height: dim(1), cursor: m.cursor.map_or(CursorKind::Normal, |c| c.0), elements, shape })
     }
 
@@ -452,7 +505,7 @@ impl Builder<'_> {
             "list-scroll" => Kind::ListScroll { thumb: self.thumb(f)? },
             "popup" => {
                 let items = f.items.iter().map(|i| self.item(i)).collect::<Result<_, _>>()?;
-                Kind::Popup { items, bar: self.paint(&f.bar)? }
+                Kind::Popup { items, bar: self.paint(f.bar.as_ref())? }
             }
             "drag" => Kind::Drag { double: f.double.map(|x| x.0) },
             "clock" => Kind::Clock,
@@ -479,11 +532,11 @@ impl Builder<'_> {
 
     fn look(&mut self, f: &ElementFile) -> Result<Look, Fault> {
         Ok(Look {
-            normal: self.paint(&f.normal)?,
-            pressed: self.paint(&f.pressed)?,
-            on: self.paint(&f.on)?,
-            on_pressed: self.paint(&f.on_pressed)?,
-            inactive: self.paint(&f.inactive)?,
+            normal: self.paint(f.normal.as_ref())?,
+            pressed: self.paint(f.pressed.as_ref())?,
+            on: self.paint(f.on.as_ref())?,
+            on_pressed: self.paint(f.on_pressed.as_ref())?,
+            inactive: self.paint(f.inactive.as_ref())?,
         })
     }
 
@@ -511,11 +564,11 @@ impl Builder<'_> {
 
     fn thumb(&mut self, f: &ElementFile) -> Result<Look, Fault> {
         let Some(t) = &f.thumb else { return Ok(Look::default()) };
-        Ok(Look { normal: self.paint(&t.normal)?, pressed: self.paint(&t.pressed)?, ..Look::default() })
+        Ok(Look { normal: self.paint(t.normal.as_ref())?, pressed: self.paint(t.pressed.as_ref())?, ..Look::default() })
     }
 
     fn item(&mut self, i: &ItemFile) -> Result<PopupItem, Fault> {
-        let look = Look { normal: self.paint(&i.normal)?, pressed: self.paint(&i.pressed)?, ..Look::default() };
+        let look = Look { normal: self.paint(i.normal.as_ref())?, pressed: self.paint(i.pressed.as_ref())?, ..Look::default() };
         let action = action(i.click, i.shift, i.ctrl, i.press, i.menu_press, i.menu_release)?;
         Ok(PopupItem { look, action })
     }
@@ -534,7 +587,7 @@ impl Builder<'_> {
         })
     }
 
-    fn paint(&mut self, p: &Option<Spanned<PaintFile>>) -> Result<Option<Paint>, Fault> {
+    fn paint(&mut self, p: Option<&Spanned<PaintFile>>) -> Result<Option<Paint>, Fault> {
         let Some(p) = p else { return Ok(None) };
         let (file, area, offset) = match p.get_ref() {
             PaintFile::Whole(file) => (file, None, None),
@@ -668,6 +721,21 @@ shift = \"stop\"
         assert_eq!(look.normal.unwrap().picture, look.pressed.unwrap().picture, "one file is parsed once");
         assert_eq!(*action, Action::Click { plain: Command::Play, shift: Some(Command::Stop), ctrl: None });
         assert!(s.layout.window(WindowKey::Eq).is_some(), "missing windows come from the built-in skin");
+    }
+
+    #[test]
+    fn sheets_replace_classic_bitmaps() {
+        let s = skin(&format!("{HEAD}[sheets]\nmain = \"play.svg\"\n[shapes]\nmain_shade = \"play.svg\"\n")).unwrap();
+        assert!(s.vector);
+        assert_eq!(s.sheet_svgs.keys().collect::<Vec<_>>(), [&Sheet::Main]);
+        assert_eq!((s.sheet(Sheet::Main).w, s.sheet(Sheet::Main).px[0]), (23, 0x00ff00), "an x1 copy for pixel reads");
+        let main = s.layout.window(WindowKey::Main).unwrap();
+        assert!(matches!(main.mode(true).shape, Some(Shape::Picture(_))));
+        assert_eq!(main.normal.shape, None);
+        let e = skin(&format!("{HEAD}[sheets]\nmian = \"play.svg\"\n")).err().unwrap();
+        assert!(e.starts_with("skin.toml, line 5: unknown sheet `mian`; it can be one of: main, cbuttons"), "{e}");
+        let e = skin(&format!("{HEAD}[shapes]\nlist = \"play.svg\"\n")).err().unwrap();
+        assert!(e.starts_with("skin.toml, line 5: unknown window `list`"), "{e}");
     }
 
     #[test]

@@ -11,7 +11,12 @@ pub fn sprite(b: &mut Canvas, skin: &Skin, sheet: Sheet, src: Rect, x: i32, y: i
 }
 
 /// Draws area `src` of a picture at `(clip.x, clip.y)`, cut to `clip`'s size.
+/// A sheet a vector skin has drawn comes from its SVG.
 pub fn picture(b: &mut Canvas, skin: &Skin, pic: Picture, src: Rect, clip: Rect) {
+    let pic = match pic {
+        Picture::Sheet(s) => skin.sheet_svgs.get(&s).map_or(pic, |&id| Picture::Svg(id)),
+        svg => svg,
+    };
     match pic {
         Picture::Sheet(s) => b.blit(skin.sheet(s), src.x, src.y, clip.w.min(src.w), clip.h.min(src.h), clip.x, clip.y),
         Picture::Svg(id) => {

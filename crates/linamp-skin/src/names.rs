@@ -4,6 +4,7 @@
 
 use crate::cursors::CursorKind;
 use crate::layout::{EmptyPress, Fill, Flag, FrameMap, MenuRef, Placement, Text, Value, WindowKey};
+use crate::sprites::Sheet;
 use linamp_core::Command;
 use serde::de::{Deserialize, Deserializer, Error};
 
@@ -115,6 +116,17 @@ impl Named for CursorKind {
     }
     fn name(self) -> String {
         self.file_name().trim_end_matches(".cur").to_string()
+    }
+}
+
+/// Sheets by their classic file name without `.bmp`.
+impl Named for Sheet {
+    const WHAT: &'static str = "sheet";
+    fn all() -> Vec<Self> {
+        Sheet::ALL.to_vec()
+    }
+    fn name(self) -> String {
+        self.file_name().trim_end_matches(".bmp").to_string()
     }
 }
 
