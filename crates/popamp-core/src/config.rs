@@ -96,6 +96,33 @@ impl IniValue for Scaling {
     }
 }
 
+/// The screen edge a bar skin's main window sits at (`bar_edge`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BarEdge {
+    Top,
+    Bottom,
+}
+
+/// Unset: the edge the skin chose.
+impl IniValue for Option<BarEdge> {
+    fn parse_ini(s: &str) -> Option<Self> {
+        match s.trim() {
+            "" => Some(None),
+            "top" => Some(Some(BarEdge::Top)),
+            "bottom" => Some(Some(BarEdge::Bottom)),
+            _ => None,
+        }
+    }
+    fn to_ini(&self) -> String {
+        match self {
+            None => "",
+            Some(BarEdge::Top) => "top",
+            Some(BarEdge::Bottom) => "bottom",
+        }
+        .to_string()
+    }
+}
+
 /// The window sizes offered, in percent.
 pub const ZOOMS: [i32; 7] = [100, 125, 150, 175, 200, 250, 300];
 
@@ -171,6 +198,8 @@ settings! {
     zoom: i32 = 200,
     wsz_scaling: Scaling = Scaling::Sharp,
     keeponscreen: bool = true,
+    /// Where a bar skin's bar is; the skin's own edge when unset.
+    bar_edge: Option<BarEdge> = None,
     dim_inactive: bool = true,
     // Main window.
     timeleftmode: bool = false,
@@ -366,7 +395,14 @@ mod tests {
 
     #[test]
     fn defaults_and_round_trip() {
-        let mut s = Settings { volume: 123, titlefmt: "%title%".into(), zoom: 150, wsz_scaling: Scaling::Nearest, ..Default::default() };
+        let mut s = Settings {
+            volume: 123,
+            titlefmt: "%title%".into(),
+            zoom: 150,
+            wsz_scaling: Scaling::Nearest,
+            bar_edge: Some(BarEdge::Top),
+            ..Default::default()
+        };
         s.set_eq_bands(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 63]);
         let mut ini = Ini::new();
         s.write_ini(&mut ini);

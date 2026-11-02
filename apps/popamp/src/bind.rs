@@ -3,6 +3,7 @@
 
 use crate::menu::MenuItem;
 use crate::model::Model;
+use crate::scale::Scale;
 use popamp_audio::PlayState;
 use popamp_core::text::format_duration_ms;
 use popamp_core::Command;
@@ -211,6 +212,8 @@ pub fn stored_size(model: &Model, key: WindowKey) -> (i32, i32) {
     let s = model.settings();
     match key {
         WindowKey::Playlist => (s.pe_width, s.pe_height),
+        // A bar covers its monitor's width.
+        WindowKey::Main => (model.screen.map_or(0, |m| Scale::of(s).skin_up(m.w)), 0),
         _ => (0, 0),
     }
 }
@@ -237,7 +240,7 @@ pub fn window_size(model: &Model, key: WindowKey) -> (i32, i32) {
     let (sw, sh) = stored_size(model, key);
     let len = |d: Dim, stored: i32| match d {
         Dim::Fixed(n) => n,
-        Dim::Free { .. } => stored,
+        Dim::Free { min, .. } => stored.max(min),
     };
     (len(mode.width, sw), len(mode.height, sh))
 }
@@ -257,6 +260,20 @@ mod tests {
         assert_eq!(window_size(&m, WindowKey::Playlist), (450, 290));
         m.settings_mut().pe_ws = true;
         assert_eq!(window_size(&m, WindowKey::Playlist), (450, 14));
+    }
+
+    #[test]
+    fn a_bar_is_as_wide_as_its_monitor_at_the_window_size() {
+        let mut m = Model::for_tests();
+        m.skin.layout.windows[0].normal.width = Dim::Free { min: 400, step: 1 };
+        assert_eq!(window_size(&m, WindowKey::Main).0, 400, "no monitor yet: the narrowest");
+        m.screen = Some(crate::bar::Screen { x: 0, y: 0, w: 1920, h: 1080 });
+        assert_eq!(window_size(&m, WindowKey::Main).0, 1920);
+        m.settings_mut().dsize = true;
+        m.settings_mut().zoom = 150;
+        assert_eq!(window_size(&m, WindowKey::Main).0, 1280);
+        m.settings_mut().zoom = 175;
+        assert_eq!(window_size(&m, WindowKey::Main).0, 1098, "covers the monitor: 1097 would leave a pixel");
     }
 
     #[test]

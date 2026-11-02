@@ -8,7 +8,7 @@ use crate::vis::Vis;
 use popamp_audio::youtube;
 use popamp_audio::{Engine, EngineCmd, EngineEvent, EqSettings, PlayState, ReplayGainSettings, StreamInfo};
 use popamp_core::atf::Format;
-use popamp_core::config::{Config, Paths, Settings};
+use popamp_core::config::{BarEdge, Config, Paths, Settings};
 use popamp_core::eqf::{self, Preset};
 use popamp_core::meta::TrackMeta;
 use popamp_core::playlist::{is_url, Entry, Playlist, SortKey};
@@ -102,6 +102,8 @@ pub struct Model {
     pub last_dir: Option<PathBuf>,
     /// Increments when anything visible in the playlist changes.
     pub pl_dirty: u64,
+    /// The monitor the main window is on; a bar spans it.
+    pub screen: Option<crate::bar::Screen>,
 }
 
 /// How a bookmark shows in menus and lists: its title, else its location.
@@ -259,6 +261,7 @@ impl Model {
             skin_changed_at: None,
             status: Status::default(),
             stop_after_current: false,
+            screen: None,
             transient: None,
             eq_presets,
             eq_auto,
@@ -1371,6 +1374,10 @@ impl Model {
                 self.settings_mut().wsz_scaling = mode;
                 self.ui.push(UiReq::Layout);
             }
+            MenuAction::BarEdge(edge) => {
+                self.settings_mut().bar_edge = Some(edge);
+                self.ui.push(UiReq::Layout);
+            }
             MenuAction::ReplayGain(mode) => {
                 let s = self.settings_mut();
                 match mode {
@@ -1405,7 +1412,7 @@ impl Model {
         use Command as C;
         let s = self.settings();
         let st = self.state();
-        vec![
+        let mut items = vec![
             MenuItem::cmd("About Popamp…", "Ctrl+F1", C::About),
             MenuItem::sep(),
             MenuItem::sub(
@@ -1422,6 +1429,15 @@ impl Model {
             MenuItem::cmd("Main Window", "Alt+W", C::ToggleMainWindow),
             MenuItem::cmd("Playlist Editor", "Alt+E", C::TogglePlaylistWindow).checked(s.pe_open),
             MenuItem::cmd("Equalizer", "Alt+G", C::ToggleEqWindow).checked(s.eq_open),
+        ];
+        if let Some(edge) = crate::bar::edge(self) {
+            let at = |label: &str, e: BarEdge| MenuItem::action(label, "", MenuAction::BarEdge(e)).checked(edge == e);
+            items.push(MenuItem::sub(
+                "Bar position",
+                vec![at("Top of the screen", BarEdge::Top), at("Bottom of the screen", BarEdge::Bottom)],
+            ));
+        }
+        items.extend([
             MenuItem::sep(),
             MenuItem::sub("Options", self.options_menu()),
             MenuItem::sub(
@@ -1450,7 +1466,8 @@ impl Model {
             MenuItem::sub("Skins", self.skins_menu()),
             MenuItem::sep(),
             MenuItem::cmd("Exit", "Alt+F4", C::Exit),
-        ]
+        ]);
+        items
     }
 
     /// The window sizes and how classic skins are scaled to them.
@@ -1790,6 +1807,19 @@ mod tests {
         m.reload_skin_if_changed();
         assert_eq!(m.skin.name, "Second", "a broken edit keeps the skin");
         assert!(m.transient.as_ref().is_some_and(|t| t.0.starts_with("SKIN ERROR: ")));
+    }
+
+    #[test]
+    fn a_bar_skin_offers_the_edge_in_the_main_menu() {
+        let mut m = Model::for_tests();
+        let edge_menu = |m: &Model| m.main_menu().into_iter().find(|i| i.label == "Bar position");
+        assert!(edge_menu(&m).is_none(), "no bar, no choice");
+        m.skin.layout.windows[0].placement = popamp_skin::layout::Placement::Bar(BarEdge::Bottom);
+        let items = edge_menu(&m).unwrap().sub;
+        assert!(items[1].checked && !items[0].checked, "the skin's edge");
+        m.on_menu(items[0].action.clone().unwrap());
+        assert_eq!(crate::bar::edge(&m), Some(BarEdge::Top));
+        assert!(matches!(m.ui.last(), Some(UiReq::Layout)));
     }
 
     #[test]

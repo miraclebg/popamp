@@ -1,6 +1,7 @@
 //! Popamp: a Winamp-style skinnable audio player for Linux.
 
 mod app;
+mod bar;
 mod bind;
 mod canvas;
 mod cli;

@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- A menu that does not fit below the mouse opens above it instead of
+  over it, so a second click on the button that opened it closes it.
 - The project is now Popamp, a separate project grown from
   [Linamp](https://github.com/sayoojkkarun/linamp) 0.1.0. The program,
   crates, packages and settings folders (`~/.config/popamp`,
@@ -15,6 +17,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Bar skins: `placement = "bar-bottom"` (or `"bar-top"`) makes a vector
+  skin's main window a strip across the screen at that edge. Its strip is
+  reserved like a taskbar's, the playlist and the equalizer sit against it
+  at the right end, and the main menu's "Bar position" moves it to the
+  other edge. `skins/bar/`, Popamp Bar, is Popamp Modern with such a bar;
+  `tools/gen_modern_skin.py skins/bar bar` regenerates it.
+- A marquee without `area` writes the title in all of its element, so it
+  can stretch with a resizable window.
 - `see_through = true` in a vector skin's window: the window shows only
   where its images are opaque (and its list, vis and EQ graph), so a
   resizable window can have rounded corners.
