@@ -6,9 +6,11 @@ mod classic;
 pub mod cursors;
 pub mod default_skin;
 pub mod layout;
+mod names;
 pub mod sprites;
 pub mod svg;
 pub mod textcfg;
+pub mod vector;
 
 pub use bitmap::{Bitmap, Rgba};
 pub use cursors::{CursorImage, CursorKind};
@@ -34,6 +36,8 @@ pub struct Skin {
     pub layout: Layout,
     /// A vector skin's pictures.
     pub svgs: svg::Svgs,
+    /// Drawn at screen size rather than scaled up from x1.
+    pub vector: bool,
 }
 
 impl Skin {
@@ -49,6 +53,7 @@ impl Skin {
             cursors: HashMap::new(),
             layout: Layout::default(),
             svgs: svg::Svgs::default(),
+            vector: false,
         }
         .with_layout()
     }
@@ -63,11 +68,15 @@ impl Skin {
         &self.sheets[&s]
     }
 
-    /// Loads a skin archive or directory.
+    /// Loads a skin archive or directory: a vector skin when it has a
+    /// `skin.toml`, a classic one otherwise.
     pub fn load(path: &Path) -> Result<Skin, String> {
-        let files = if path.is_dir() { read_dir_files(path)? } else { read_zip_files(path)? };
+        let read = |key: Key| if path.is_dir() { read_dir_files(path, key) } else { read_zip_files(path, key) };
+        if is_vector(path) {
+            return read(vector_key).and_then(|files| vector::load(&files)).map_err(|e| format!("{}: {e}", path.display()));
+        }
         let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        Ok(Self::from_files(name, &files))
+        Ok(Self::from_files(name, &read(classic_key)?))
     }
 
     /// Builds a skin from lower-cased basename → bytes.
@@ -135,20 +144,42 @@ fn wanted(name: &str) -> bool {
     name.ends_with(".bmp") || name.ends_with(".png") || name.ends_with(".txt") || name.ends_with(".cur")
 }
 
-fn read_zip_files(path: &Path) -> Result<HashMap<String, Vec<u8>>, String> {
+fn is_vector(path: &Path) -> bool {
+    if path.is_dir() {
+        return path.join(vector::FILE).is_file();
+    }
+    let zip = std::fs::File::open(path).ok().and_then(|f| zip::ZipArchive::new(f).ok());
+    zip.is_some_and(|mut z| z.by_name(vector::FILE).is_ok())
+}
+
+/// The name a file inside a skin is known by, or `None` to skip it.
+type Key = fn(&str) -> Option<String>;
+
+/// Classic skins: the lower-case base name, wherever the file is.
+fn classic_key(path: &str) -> Option<String> {
+    let base = path.rsplit(['/', '\\']).next().unwrap_or("").to_ascii_lowercase();
+    wanted(&base).then_some(base)
+}
+
+/// Vector skins: the path from the skin's top folder.
+fn vector_key(path: &str) -> Option<String> {
+    Some(path.replace('\\', "/"))
+}
+
+fn read_zip_files(path: &Path, key: Key) -> Result<HashMap<String, Vec<u8>>, String> {
     let file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    read_zip(file).map_err(|e| format!("{}: {e}", path.display()))
+    read_zip(file, key).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Checks downloaded bytes before they are saved as a skin: a zip archive
 /// whose main window bitmap decodes.
 pub fn check_archive(bytes: &[u8]) -> Result<(), String> {
-    let files = read_zip(std::io::Cursor::new(bytes))?;
+    let files = read_zip(std::io::Cursor::new(bytes), classic_key)?;
     let main = files.get(Sheet::Main.file_name()).ok_or("no main window bitmap in the archive")?;
     Bitmap::decode(main).map(drop)
 }
 
-fn read_zip(file: impl Read + std::io::Seek) -> Result<HashMap<String, Vec<u8>>, String> {
+fn read_zip(file: impl Read + std::io::Seek, key: Key) -> Result<HashMap<String, Vec<u8>>, String> {
     let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("not a skin archive: {e}"))?;
     let mut out = HashMap::new();
     for i in 0..zip.len() {
@@ -156,10 +187,7 @@ fn read_zip(file: impl Read + std::io::Seek) -> Result<HashMap<String, Vec<u8>>,
         if entry.is_dir() || entry.size() > MAX_FILE {
             continue;
         }
-        let base = entry.name().rsplit(['/', '\\']).next().unwrap_or("").to_ascii_lowercase();
-        if !wanted(&base) || out.contains_key(&base) {
-            continue;
-        }
+        let Some(base) = key(entry.name()).filter(|k| !out.contains_key(k)) else { continue };
         let mut data = Vec::with_capacity(entry.size() as usize);
         if entry.by_ref().take(MAX_FILE).read_to_end(&mut data).is_ok() {
             out.insert(base, data);
@@ -168,7 +196,7 @@ fn read_zip(file: impl Read + std::io::Seek) -> Result<HashMap<String, Vec<u8>>,
     Ok(out)
 }
 
-fn read_dir_files(dir: &Path) -> Result<HashMap<String, Vec<u8>>, String> {
+fn read_dir_files(dir: &Path, key: Key) -> Result<HashMap<String, Vec<u8>>, String> {
     let mut out = HashMap::new();
     let mut stack = vec![(dir.to_path_buf(), 0)];
     while let Some((d, depth)) = stack.pop() {
@@ -181,8 +209,9 @@ fn read_dir_files(dir: &Path) -> Result<HashMap<String, Vec<u8>>, String> {
                 }
                 continue;
             }
-            let base = entry.file_name().to_string_lossy().to_ascii_lowercase();
-            if wanted(&base) && !out.contains_key(&base) && entry.metadata().map(|m| m.len() <= MAX_FILE).unwrap_or(false) {
+            let inside = p.strip_prefix(dir).unwrap_or(&p).to_string_lossy();
+            let Some(base) = key(&inside).filter(|k| !out.contains_key(k)) else { continue };
+            if entry.metadata().map(|m| m.len() <= MAX_FILE).unwrap_or(false) {
                 if let Ok(data) = std::fs::read(&p) {
                     out.insert(base, data);
                 }

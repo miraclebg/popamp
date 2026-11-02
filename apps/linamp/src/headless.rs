@@ -95,12 +95,17 @@ impl Renderer {
     fn scaled(&self) -> Result<(), String> {
         let m = self.playing()?;
         let (w, h) = crate::bind::window_size(&m, WindowKey::Main);
+        let mut font = Font::load(&m.skin.pl.font);
         let mut b = Bitmap::new(w, h, 0);
-        SkinWin::new(WindowKey::Main).draw(&m, &mut Font::load(&m.skin.pl.font), &mut Canvas::new(&mut b, Scale::ONE), true);
+        SkinWin::new(WindowKey::Main).draw(&m, &mut font, &mut Canvas::new(&mut b, Scale::ONE), true);
         for (mode, name) in [(Scaling::Sharp, "main-x1.5-sharp"), (Scaling::Nearest, "main-x1.5-nearest")] {
             let s = Scale::new(150, mode);
             let mut out = Bitmap::new(s.px(w), s.px(h), 0);
-            s.present(&b, &mut out.px, out.w as usize, out.h as usize);
+            if m.skin.vector {
+                SkinWin::new(WindowKey::Main).draw(&m, &mut font, &mut Canvas::new(&mut out, s), true);
+            } else {
+                s.present(&b, &mut out.px, out.w as usize, out.h as usize);
+            }
             let path = self.dir.join(format!("{name}.png"));
             out.save_png(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         }

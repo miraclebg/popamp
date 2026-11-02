@@ -340,11 +340,14 @@ impl App {
             return;
         }
         let (lw, lh) = w.size;
-        if w.frame.w != lw || w.frame.h != lh {
-            w.frame = Bitmap::new(lw, lh, 0);
+        // Vector skins are drawn at screen size, classic ones at x1 and scaled.
+        let drawn = if self.model.skin.vector { scale } else { Scale::ONE };
+        let (fw, fh) = (drawn.px(lw), drawn.px(lh));
+        if w.frame.w != fw || w.frame.h != fh {
+            w.frame = Bitmap::new(fw, fh, 0);
         }
         let active = w.focused;
-        self.skins[k.index()].draw(&self.model, &mut self.font, &mut Canvas::new(&mut w.frame, Scale::ONE), active);
+        self.skins[k.index()].draw(&self.model, &mut self.font, &mut Canvas::new(&mut w.frame, drawn), active);
         let (pw, ph) = (scale.px(lw) as u32, scale.px(lh) as u32);
         let (Some(nw), Some(nh)) = (NonZeroU32::new(pw), NonZeroU32::new(ph)) else { return };
         if w.surface.resize(nw, nh).is_err() {
