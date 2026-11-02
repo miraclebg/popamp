@@ -6,8 +6,8 @@
 <linearGradient id="g4" x1="0" y1="0" x2="0" y2="1"><stop offset="0.0" stop-color="#fdfdfe"/><stop offset="1.0" stop-color="#c3c9d1"/></linearGradient>
 <linearGradient id="g5" x1="0" y1="0" x2="0" y2="1"><stop offset="0.0" stop-color="#fdfdfe"/><stop offset="1.0" stop-color="#c3c9d1"/></linearGradient>
 </defs>
-<rect x="0" y="0" width="125" height="38" fill="url(#g1)"/>
-<line x1="0" y1="37.5" x2="125" y2="37.5" stroke="#56606c"/>
+<path d="M0 0 H125 V38 H7 A7 7 0 0 1 0 31 Z" fill="url(#g1)"/>
+<line x1="7" y1="37.5" x2="125" y2="37.5" stroke="#56606c"/>
 <line x1="0" y1="0.5" x2="125" y2="0.5" stroke="#ffffff" opacity="0.7"/>
 <path d="M0.5 0 V31 a6.5 6.5 0 0 0 6.5 6.5" fill="none" stroke="#56606c"/>
 <rect x="14.5" y="8.5" width="24" height="18" rx="4" fill="url(#g2)" stroke="#66707c" stroke-width="1"/>

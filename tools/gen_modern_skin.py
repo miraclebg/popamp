@@ -202,10 +202,15 @@ def fill_frames(name, w, h, count, vertical):
     svg.save(name)
 
 
-def shape(name, w, h, r=7):
-    svg = Svg(w, h)
-    svg.add(rrect(0, 0, w, h, r, "#000000"))
-    svg.save(name)
+def cornered(w, h, corner, r=7):
+    """Path of a w x h rectangle with one rounded corner: tl, tr, bl or br."""
+    return {
+        "tl": f"M0 {h} V{r} A{r} {r} 0 0 1 {r} 0 H{w} V{h} Z",
+        "tr": f"M0 0 H{w - r} A{r} {r} 0 0 1 {w} {r} V{h} H0 Z",
+        "bl": f"M0 0 H{w} V{h} H{r} A{r} {r} 0 0 1 0 {h - r} Z",
+        "br": f"M0 0 H{w} V{h - r} A{r} {r} 0 0 1 {w - r} {h} H0 Z",
+        None: f"M0 0 H{w} V{h} H0 Z",
+    }[corner]
 
 
 # --- toml ------------------------------------------------------------------------
@@ -305,7 +310,6 @@ def main_art():
     svg.add(label("BAL", 249, 85, 6, "#59636f"))
     svg.add(rrect(158.5, 76.5, 108, 32, 5, "none", "#9aa2ac", 1, ' opacity="0.6"'))
     svg.save("main/bg.svg")
-    shape("main/shape.svg", W, H)
 
     for name, d, s in (("prev", 22, 9), ("play", 28, 12), ("pause", 22, 9), ("stop", 22, 8), ("next", 22, 9), ("eject", 18, 8)):
         round_button(f"main/{name}.svg", d, name, s)
@@ -336,7 +340,7 @@ def main_toml():
     W, H = MAIN_W, MAIN_H
     T.lines.append("\n# --- main window ---")
     T.table("[[window]]", key="main", placement="free", empty_press="move")
-    T.table("[window.normal]", size=[W, H], shape="main/shape.svg")
+    T.table("[window.normal]", size=[W, H], see_through=True)
     n = "normal"
     T.el(n, type="image", rect=[0, 0, W, H], normal="main/bg.svg")
     T.el(n, type="drag", rect=[0, 0, W, 14], double="toggle-windowshade", cursor="titlebar")
@@ -404,10 +408,7 @@ def main_shade():
     s.add(rrect(0.5, 0.5, W - 1, 15, 6, s.grad(BODY), EDGE))
     s.add(rrect(70, 3, 132, 10, 2, s.grad(LCD), "#3a4450"))
     s.save("main/shade.svg")
-    sh = Svg(W, 16)
-    sh.add(rrect(0, 0, W, 16, 6, "#000000"))
-    sh.save("main/shade-shape.svg")
-    T.table("[window.shade]", size=[W, 16], shape="main/shade-shape.svg")
+    T.table("[window.shade]", size=[W, 16], see_through=True)
     m = "shade"
     T.el(m, type="image", rect=[0, 0, W, 16], normal="main/shade.svg")
     T.el(m, type="drag", rect=[0, 0, W, 16], double="toggle-windowshade", cursor="wsnormal")
@@ -450,7 +451,7 @@ def eq_window():
 
     T.lines.append("\n# --- equalizer ---")
     T.table("[[window]]", key="eq", placement="docked", empty_press="move")
-    T.table("[window.normal]", size=[W, H], shape="main/shape.svg", cursor="eqnormal")
+    T.table("[window.normal]", size=[W, H], see_through=True, cursor="eqnormal")
     n = "normal"
     T.el(n, type="image", rect=[0, 0, W, H], normal="eq/bg.svg")
     T.el(n, type="drag", rect=[0, 0, W, 14], cursor="eqtitle")
@@ -476,7 +477,8 @@ def eq_window():
 
 def top_piece(name, w, text=None, left=False, right=False):
     s = Svg(w, 20)
-    s.add(f'<rect x="0" y="0" width="{w}" height="20" fill="{s.grad(TITLE)}"/>')
+    corner = "tl" if left else "tr" if right else None
+    s.add(f'<path d="{cornered(w, 20, corner)}" fill="{s.grad(TITLE)}"/>')
     if left:
         s.add(f'<path d="M0.5 20 V7 a6.5 6.5 0 0 1 6.5 -6.5 H{w}" fill="none" stroke="{EDGE}"/>')
     elif right:
@@ -503,10 +505,11 @@ def side(name, w, groove):
     s.save(f"pl/{name}.svg")
 
 
-def bottom(name, w, draw=None):
+def bottom(name, w, draw=None, corner=None):
     s = Svg(w, 38)
-    s.add(f'<rect x="0" y="0" width="{w}" height="38" fill="{s.grad(BODY[1:])}"/>')
-    s.add(f'<line x1="0" y1="37.5" x2="{w}" y2="37.5" stroke="{EDGE}"/>')
+    s.add(f'<path d="{cornered(w, 38, corner)}" fill="{s.grad(BODY[1:])}"/>')
+    x0, x1 = (7 if corner == "bl" else 0), (w - 7 if corner == "br" else w)
+    s.add(f'<line x1="{x0}" y1="37.5" x2="{x1}" y2="37.5" stroke="{EDGE}"/>')
     s.add(f'<line x1="0" y1="0.5" x2="{w}" y2="0.5" stroke="#ffffff" opacity="0.7"/>')
     if draw:
         draw(s)
@@ -569,9 +572,9 @@ def playlist_window():
     top_piece("top-right", 25, right=True)
     side("left", 12, False)
     side("right", 20, True)
-    bottom("bottom-left", 125, bottom_left)
+    bottom("bottom-left", 125, bottom_left, "bl")
     bottom("bottom-tile", 25)
-    bottom("bottom-right", 150, bottom_right)
+    bottom("bottom-right", 150, bottom_right, "br")
     thumb("pl/scroll-thumb.svg", 8, 18)
     for _, _, items in PL_MENUS:
         for key, text, _ in items:
@@ -582,7 +585,7 @@ def playlist_window():
 def playlist_toml():
     T.lines.append("\n# --- playlist ---")
     T.table("[[window]]", key="playlist", placement="docked", empty_press="nothing", wheel_scrolls_list=True)
-    T.table("[window.normal]", size=[275, 116], resize_step=[25, 29], cursor="pnormal")
+    T.table("[window.normal]", size=[275, 116], resize_step=[25, 29], see_through=True, cursor="pnormal")
     n = "normal"
     T.el(n, type="image", edges=[0, 0, 25, 20], normal="pl/top-left.svg")
     T.el(n, type="image", edges=[25, 0, "end-25", 20], normal="pl/top-tile.svg", fill="tile")

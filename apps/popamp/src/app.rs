@@ -14,10 +14,10 @@ use crate::ui::{Input, Out};
 use crate::widgets::{self, Event};
 use popamp_audio::PlayState;
 use popamp_core::Command;
-use popamp_skin::layout::{Paint, Placement, Shape, WindowKey};
+use popamp_skin::layout::{Mode, Paint, Placement, Shape, WindowKey};
 use popamp_skin::textcfg::region_mask;
 use popamp_skin::CursorKind;
-use popamp_skin::{Bitmap, Picture, Skin};
+use popamp_skin::{Bitmap, Picture};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -321,7 +321,8 @@ impl App {
                 continue;
             }
             w.shape_sig = Some(sig);
-            let mask = shape.and_then(|s| shape_mask(&self.model.skin, s, w.size, scale));
+            let mode = def.map(|d| d.mode(crate::bind::shaded(&self.model, k)));
+            let mask = shape.zip(mode).and_then(|(s, mode)| shape_mask(&self.model, mode, s, w.size, scale));
             if let Err(e) = self.platform.set_shape(&w.window, mask.as_ref(), size) {
                 log::debug!("shape: {e}");
             }
@@ -1391,8 +1392,8 @@ impl ApplicationHandler<AppEvent> for App {
 }
 
 /// The pixels of a window `size` skin pixels big that `shape` shows.
-fn shape_mask(skin: &Skin, shape: &Shape, size: (i32, i32), scale: Scale) -> Option<Mask> {
-    let (w, h) = size;
+fn shape_mask(model: &Model, mode: &Mode, shape: &Shape, size: (i32, i32), scale: Scale) -> Option<Mask> {
+    let (w, h, skin) = (size.0, size.1, &model.skin);
     match shape {
         Shape::Polygons(polys) => Some(Mask { w, h, on: region_mask(polys, w, h), scale }),
         Shape::Picture(Paint { picture: Picture::Svg(id), src, .. }) => {
@@ -1401,6 +1402,7 @@ fn shape_mask(skin: &Skin, shape: &Shape, size: (i32, i32), scale: Scale) -> Opt
             Some(Mask { w: pw, h: ph, on: r.px.iter().map(|p| p >> 24 >= 128).collect(), scale: Scale::ONE })
         }
         Shape::Picture(_) => None,
+        Shape::Pictures => Some(crate::skinwin::image_mask(model, mode, size, if skin.vector { scale } else { Scale::ONE }, scale)),
     }
 }
 

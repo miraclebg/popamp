@@ -131,6 +131,8 @@ pub enum Shape {
     Polygons(Vec<Vec<(i32, i32)>>),
     /// The opaque part of a picture stretched over the window.
     Picture(Paint),
+    /// Where the mode's images are at least half opaque, at any size.
+    Pictures,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

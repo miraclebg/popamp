@@ -15,6 +15,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `see_through = true` in a vector skin's window: the window shows only
+  where its images are opaque (and its list, vis and EQ graph), so a
+  resizable window can have rounded corners.
 - `skins/modern/`: Popamp Modern, a silver vector skin with its own
   layout, round buttons that take clicks only on their shape (the new
   `hit` key) and rounded windows. `tools/gen_modern_skin.py` regenerates it.

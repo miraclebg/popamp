@@ -32,7 +32,7 @@ empty_press = "move"
 
 [window.normal]
 size = [275, 116]
-shape = "main/shape.svg"
+see_through = true
 
 [[window.normal.element]]
 type = "image"
@@ -314,7 +314,7 @@ tip = "Balance"
 
 [window.shade]
 size = [275, 16]
-shape = "main/shade-shape.svg"
+see_through = true
 
 [[window.shade.element]]
 type = "image"
@@ -397,7 +397,7 @@ empty_press = "move"
 
 [window.normal]
 size = [275, 116]
-shape = "main/shape.svg"
+see_through = true
 cursor = "eqnormal"
 
 [[window.normal.element]]
@@ -604,6 +604,7 @@ wheel_scrolls_list = true
 [window.normal]
 size = [275, 116]
 resize_step = [25, 29]
+see_through = true
 cursor = "pnormal"
 
 [[window.normal.element]]
