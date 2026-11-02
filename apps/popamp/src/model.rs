@@ -341,7 +341,7 @@ impl Model {
     pub fn add(&mut self, locations: Vec<String>, mode: AddMode) {
         // Skin archives are installed, not queued.
         let (skins, locations): (Vec<String>, Vec<String>) =
-            locations.into_iter().partition(|l| !is_url(l) && l.to_ascii_lowercase().ends_with(".wsz"));
+            locations.into_iter().partition(|l| !is_url(l) && popamp_skin::is_skin_archive(Path::new(l)));
         if let Some(skin) = skins.last() {
             self.install_skin(Path::new(skin));
         }
@@ -858,9 +858,12 @@ impl Model {
                 rows.push("<Install skin from file…>".into());
                 Request::List { title: "Skin browser".into(), column: "Skin".into(), rows }
             }
-            DialogKind::InstallSkin => {
-                Request::Files { title: "Install skin".into(), multiple: false, filter: vec!["*.wsz".into(), "*.zip".into()], start }
-            }
+            DialogKind::InstallSkin => Request::Files {
+                title: "Install skin".into(),
+                multiple: false,
+                filter: popamp_skin::ARCHIVE_EXTENSIONS.iter().chain(&["zip"]).map(|e| format!("*.{e}")).collect(),
+                start,
+            },
             // A message carries its own text: see `C::About`.
             DialogKind::Info => return,
             DialogKind::ConfirmPhysicalRemove { paths } => Request::Question {
@@ -1323,7 +1326,7 @@ impl Model {
             C::ToggleVis => self.exec(C::CycleVisMode),
             C::About => {
                 let text = format!(
-                    "Popamp {}\n\nA Winamp-style audio player for Linux, written in Rust.\nDecoding by Symphonia. Classic skins (.wsz) supported.\n\nConfig: {}",
+                    "Popamp {}\n\nA Winamp-style audio player for Linux, written in Rust.\nDecoding by Symphonia. Classic (.wsz) and vector (.psz) skins.\n\nConfig: {}",
                     env!("CARGO_PKG_VERSION"),
                     self.config.path().display()
                 );
@@ -1750,6 +1753,21 @@ mod tests {
         std::fs::write(dir.join("bookmarks.m3u8"), "#EXTM3U\n").unwrap();
         drop(m);
         assert!(!dir.exists(), "{dir:?} left behind");
+    }
+
+    #[test]
+    fn an_opened_vector_skin_archive_is_installed_not_queued() {
+        let mut m = Model::for_tests();
+        let src = m.paths.config_dir.join("Mine.psz");
+        std::fs::create_dir_all(&m.paths.config_dir).unwrap();
+        let mut w = zip::ZipWriter::new(std::fs::File::create(&src).unwrap());
+        w.start_file("skin.toml", zip::write::SimpleFileOptions::default()).unwrap();
+        std::io::Write::write_all(&mut w, b"[meta]\nname = \"Mine\"\nformat_version = 1\n").unwrap();
+        w.finish().unwrap();
+        m.add(vec![src.to_string_lossy().into_owned()], AddMode::Append);
+        assert_eq!(m.skin.name, "Mine");
+        assert!(m.paths.skins_dir().join("Mine.psz").is_file());
+        assert_eq!(m.playlist.len(), 0);
     }
 
     #[test]

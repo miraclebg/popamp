@@ -272,17 +272,28 @@ pub fn changed_at(path: &Path) -> Option<std::time::SystemTime> {
     Some(newest)
 }
 
-/// Lists installable skins in `dir` (archives and sub-directories).
+/// Skin archives: classic `.wsz` and Popamp's vector `.psz`. Both are zip
+/// files; what is inside tells which kind a skin is.
+pub const ARCHIVE_EXTENSIONS: [&str; 2] = ["wsz", "psz"];
+
+fn has_extension(path: &Path, exts: &[&str]) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| exts.iter().any(|x| e.eq_ignore_ascii_case(x)))
+}
+
+/// A file that is a skin by its name, so opening it installs the skin.
+pub fn is_skin_archive(path: &Path) -> bool {
+    has_extension(path, &ARCHIVE_EXTENSIONS)
+}
+
+/// Lists installable skins in `dir`: archives, plain `.zip` files and
+/// sub-directories.
 pub fn list_skins(dir: &Path) -> Vec<std::path::PathBuf> {
     let mut v: Vec<_> = std::fs::read_dir(dir)
         .into_iter()
         .flatten()
         .flatten()
         .map(|e| e.path())
-        .filter(|p| {
-            p.is_dir()
-                || p.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("wsz") || e.eq_ignore_ascii_case("zip"))
-        })
+        .filter(|p| p.is_dir() || is_skin_archive(p) || has_extension(p, &["zip"]))
         .collect();
     v.sort_by(|a, b| popamp_core::text::natural_cmp(&a.to_string_lossy(), &b.to_string_lossy()));
     v
@@ -345,6 +356,26 @@ mod tests {
             w.write_all(data).unwrap();
         }
         w.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn lists_both_kinds_of_skin_archives() {
+        let dir = std::env::temp_dir().join(format!("popamp-skin-list-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("folder")).unwrap();
+        for f in ["a.wsz", "b.psz", "c.ZIP", "notes.txt"] {
+            std::fs::write(dir.join(f), b"").unwrap();
+        }
+        let names: Vec<String> = list_skins(&dir).iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(names, ["a.wsz", "b.psz", "c.ZIP", "folder"]);
+    }
+
+    #[test]
+    fn skin_archives_are_told_by_their_extension() {
+        assert!(is_skin_archive(Path::new("/x/Bento.WSZ")));
+        assert!(is_skin_archive(Path::new("my.psz")));
+        assert!(!is_skin_archive(Path::new("music.zip")), "a zip may be anything");
+        assert!(!is_skin_archive(Path::new("song.mp3")));
     }
 
     #[test]

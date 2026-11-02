@@ -5,4 +5,9 @@
     <sub-class-of type="application/zip"/>
     <glob pattern="*.wsz"/>
   </mime-type>
+  <mime-type type="application/x-popamp-vector-skin">
+    <comment>Popamp vector skin</comment>
+    <sub-class-of type="application/zip"/>
+    <glob pattern="*.psz"/>
+  </mime-type>
 </mime-info>
