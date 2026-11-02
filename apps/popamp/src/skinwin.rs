@@ -6,7 +6,9 @@ use crate::bind;
 use crate::canvas::Canvas;
 use crate::font::Fonts;
 use crate::model::Model;
+use crate::platform::Mask;
 use crate::render::{self, picture, sprite};
+use crate::scale::Scale;
 use crate::ui::{Input, Out};
 use popamp_audio::PlayState;
 use popamp_core::text::format_duration_ms;
@@ -15,7 +17,7 @@ use popamp_skin::layout::{
     Action, Element, EmptyPress, Fill, Kind, Look, MenuRef, Mode, Paint, PopupItem, Slider, Value, Wheel, WindowDef, WindowKey,
 };
 use popamp_skin::sprites::{eq as e, Rect};
-use popamp_skin::{CursorKind, Sheet, Skin};
+use popamp_skin::{Bitmap, CursorKind, Sheet, Skin};
 use std::time::{Duration, Instant};
 
 const MARQUEE_STEP: Duration = Duration::from_millis(180);
@@ -710,6 +712,31 @@ fn thumb_offset(s: &Slider, r: Rect, v: i64, min: i64, max: i64) -> i32 {
     ((v - min).clamp(0, (max - min).max(0)) * range / (max - min).max(1)) as i32
 }
 
+/// Where `mode` covers a `size` window at least half, drawn at `drawn` for
+/// a window shown at `shown`: its images, and the list, vis and EQ graph,
+/// which paint all of their rectangle. The images are drawn on black and on
+/// white: a pixel they cover comes out (nearly) the same on both.
+pub fn image_mask(model: &Model, mode: &Mode, size: (i32, i32), drawn: Scale, shown: Scale) -> Mask {
+    let (w, h) = size;
+    let paint = |bg: u32| {
+        let mut bitmap = Bitmap::new(drawn.px(w), drawn.px(h), bg);
+        let mut b = Canvas::new(&mut bitmap, drawn);
+        for el in mode.elements.iter().filter(|el| bind::holds(model, el.show, w)) {
+            let r = el.at.resolve(w, h);
+            match &el.kind {
+                Kind::Image { look: Look { normal: Some(p), .. }, fill, .. } => draw_paint(&mut b, &model.skin, *p, r, *fill),
+                Kind::List | Kind::Vis | Kind::EqGraph => b.fill(r.x, r.y, r.w, r.h, 0x808080),
+                _ => {}
+            }
+        }
+        bitmap
+    };
+    let (black, white) = (paint(0), paint(0xffffff));
+    let green = |c: u32| (c >> 8) & 0xff;
+    let on = black.px.iter().zip(&white.px).map(|(&k, &w)| green(w).saturating_sub(green(k)) < 128).collect();
+    Mask { w: black.w, h: black.h, on, scale: if drawn.is_one() { shown } else { Scale::ONE } }
+}
+
 fn draw_paint(b: &mut Canvas, skin: &Skin, p: Paint, r: Rect, fill: Fill) {
     match fill {
         Fill::Once => picture(b, skin, p.picture, p.src, Rect { x: r.x + p.dx, y: r.y + p.dy, ..p.src }),
@@ -813,6 +840,25 @@ mod tests {
         let w = SkinWin::new(WindowKey::Main);
         assert_eq!(w.tooltip(&m, 20, 20).as_deref(), Some("Play"));
         assert_eq!(w.tooltip(&m, 11, 11), None, "the corner is not the button");
+    }
+
+    #[test]
+    fn a_see_through_window_shows_where_its_images_are() {
+        let mut m = Model::for_tests();
+        let dot = br##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="10"/></svg>"##;
+        let toml = "[meta]\nname = \"Round\"\nformat_version = 1\n[[window]]\nkey = \"main\"\n[window.normal]\nsize = [40, 20]\n\
+            see_through = true\n[[window.normal.element]]\ntype = \"image\"\nrect = [0, 0, 40, 20]\nnormal = \"dot.svg\"\nfill = \"tile\"\n\
+            [[window.normal.element]]\ntype = \"list\"\nrect = [20, 0, 4, 4]\n";
+        let files = [("skin.toml".to_string(), toml.as_bytes().to_vec()), ("dot.svg".to_string(), dot.to_vec())].into();
+        m.skin = popamp_skin::vector::load(&files).unwrap();
+        let mode = &m.skin.layout.window(WindowKey::Main).unwrap().normal;
+        let x2 = Scale::new(200, popamp_core::config::Scaling::Sharp);
+        let mask = image_mask(&m, mode, (40, 20), x2, x2);
+        assert_eq!((mask.w, mask.h), (80, 40), "drawn at screen size");
+        let on = |x: i32, y: i32| mask.on[(y * mask.w + x) as usize];
+        assert!(on(20, 20) && on(60, 20), "the middles of both tiles");
+        assert!(!on(1, 1) && !on(78, 38), "their corners");
+        assert!(on(41, 1), "a list paints all of its rectangle");
     }
 
     #[test]

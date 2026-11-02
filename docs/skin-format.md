@@ -144,7 +144,10 @@ wheel_volume = 8             # volume change per mouse wheel step
 size = [275, 116]
 # resize_step = [25, 29]     # makes the window resizable in these steps
 cursor = "normal"            # the default mouse cursor (see Words)
-shape = "shape.svg"          # optional window shape
+shape = "shape.svg"          # optional window shape, stretched over the window
+# see_through = true         # or: the window shows only where its images,
+                             # list, vis and EQ graph are; right for windows
+                             # that resize
 
 [[window.normal.element]]
 type = "image"

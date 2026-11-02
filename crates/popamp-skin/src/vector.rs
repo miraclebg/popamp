@@ -166,6 +166,9 @@ struct ModeFile {
     cursor: Option<N<CursorKind>>,
     /// A picture whose opaque part is the visible window.
     shape: Option<Spanned<PaintFile>>,
+    /// The window shows only where its images are opaque.
+    #[serde(default)]
+    see_through: bool,
     #[serde(default, rename = "element")]
     elements: Vec<Spanned<ElementFile>>,
 }
@@ -487,7 +490,12 @@ impl Builder<'_> {
             None => Dim::Fixed(m.size[i]),
         };
         let elements = m.elements.iter().map(|e| self.element(e)).collect::<Result<_, _>>()?;
-        let shape = self.paint(m.shape.as_ref()).map_err(|e| at(self.text, e.span, &e.msg))?.map(Shape::Picture);
+        let shape = match (self.paint(m.shape.as_ref()).map_err(|e| at(self.text, e.span, &e.msg))?, m.see_through) {
+            (Some(_), true) => return Err(at(self.text, m.shape.as_ref().map(|s| s.span()), "use `shape` or `see_through`, not both")),
+            (Some(p), false) => Some(Shape::Picture(p)),
+            (None, true) => Some(Shape::Pictures),
+            (None, false) => None,
+        };
         Ok(Mode { width: dim(0), height: dim(1), cursor: m.cursor.map_or(CursorKind::Normal, |c| c.0), elements, shape })
     }
 
@@ -764,6 +772,15 @@ click = \"play\"
         assert!(s.opaque(hit, 10, 10), "the middle");
         assert!(!s.opaque(hit, 1, 1), "a corner");
         assert!(!s.opaque(hit, 25, 10), "beside the picture");
+    }
+
+    #[test]
+    fn a_see_through_window_is_shaped_by_its_pictures() {
+        let mode = |extra: &str| format!("{HEAD}[[window]]\nkey = \"playlist\"\n[window.normal]\nsize = [275, 116]\n{extra}");
+        let s = skin(&mode("see_through = true\n")).unwrap();
+        assert_eq!(s.layout.window(WindowKey::Playlist).unwrap().normal.shape, Some(Shape::Pictures));
+        let e = skin(&mode("see_through = true\nshape = \"play.svg\"\n")).err().unwrap();
+        assert!(e.contains("`shape` or `see_through`"), "{e}");
     }
 
     #[test]
