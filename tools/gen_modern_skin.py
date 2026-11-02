@@ -610,7 +610,7 @@ def playlist_toml():
         T.el(n, type="button", edges=[f"end-{144 - i * 9}", "end-16", f"end-{136 - i * 9}", "end-8"], click=cmd)
     for name, left, items in PL_MENUS:
         l, r = ((left, left + 25) if left is not None else ("end-44", "end-19"))
-        T.el(n, type="popup", edges=[l, "end-30", r, "end-12"])
+        T.el(n, type="popup", edges=[l, "end-30", r, "end-12"], above=True)
         for key, _, act in items:
             T.lines.append("[[window.normal.element.item]]")
             T.lines.append(f'normal = {val(part(f"pl/item-{key}.svg", 0, 0, 22, 18))}')
