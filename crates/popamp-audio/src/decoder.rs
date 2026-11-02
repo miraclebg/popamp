@@ -1,0 +1,313 @@
+//! Symphonia-based decoding to interleaved stereo `f32`, plus tag reading.
+
+use popamp_core::meta::{parse_gain, TrackMeta};
+use std::path::Path;
+use symphonia::core::audio::SampleBuffer;
+use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::errors::Error as SymError;
+use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo};
+use symphonia::core::io::{MediaSource, MediaSourceStream};
+use symphonia::core::meta::{MetadataOptions, MetadataRevision, StandardTagKey};
+use symphonia::core::probe::Hint;
+use symphonia::core::units::Time;
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct StreamInfo {
+    pub sample_rate: u32,
+    /// Channels in the source (output is always stereo).
+    pub channels: u16,
+    pub length_ms: Option<u64>,
+    pub bitrate_kbps: Option<u32>,
+    pub codec: String,
+    pub seekable: bool,
+}
+
+pub enum Status {
+    Data,
+    Eof,
+}
+
+/// Anything the engine can play: produces interleaved stereo `f32`.
+pub trait AudioSource: Send {
+    fn info(&self) -> &StreamInfo;
+    /// Appends the next chunk of samples to `out`.
+    fn next(&mut self, out: &mut Vec<f32>) -> Result<Status, String>;
+    /// Seeks to `ms`, returns the position actually reached.
+    fn seek(&mut self, ms: u64) -> Result<u64, String>;
+}
+
+impl AudioSource for Decoder {
+    fn info(&self) -> &StreamInfo {
+        &self.info
+    }
+    fn next(&mut self, out: &mut Vec<f32>) -> Result<Status, String> {
+        Decoder::next(self, out)
+    }
+    fn seek(&mut self, ms: u64) -> Result<u64, String> {
+        Decoder::seek(self, ms)
+    }
+}
+
+pub struct Decoder {
+    reader: Box<dyn FormatReader>,
+    codec: Box<dyn symphonia::core::codecs::Decoder>,
+    track_id: u32,
+    pub info: StreamInfo,
+    sample_buf: Option<SampleBuffer<f32>>,
+    skip_frames: u64,
+    byte_len: Option<u64>,
+    // Running bitrate estimate.
+    bytes_acc: u64,
+    frames_acc: u64,
+    packets_seen: u64,
+    length_known: bool,
+}
+
+fn hint_for(ext: Option<&str>) -> Hint {
+    let mut hint = Hint::new();
+    if let Some(e) = ext {
+        hint.with_extension(e);
+    }
+    hint
+}
+
+fn apply_tags(meta: &mut TrackMeta, rev: &MetadataRevision) {
+    for tag in rev.tags() {
+        let value = tag.value.to_string();
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+        let set = |slot: &mut Option<String>| {
+            if slot.is_none() {
+                *slot = Some(value.to_string());
+            }
+        };
+        match tag.std_key {
+            Some(StandardTagKey::TrackTitle) => set(&mut meta.title),
+            Some(StandardTagKey::Artist) => set(&mut meta.artist),
+            Some(StandardTagKey::Album) => set(&mut meta.album),
+            Some(StandardTagKey::AlbumArtist) => set(&mut meta.album_artist),
+            Some(StandardTagKey::Date) | Some(StandardTagKey::OriginalDate) => set(&mut meta.year),
+            Some(StandardTagKey::Genre) => set(&mut meta.genre),
+            Some(StandardTagKey::TrackNumber) => set(&mut meta.track),
+            Some(StandardTagKey::DiscNumber) => set(&mut meta.disc),
+            Some(StandardTagKey::Comment) => set(&mut meta.comment),
+            Some(StandardTagKey::Composer) => set(&mut meta.composer),
+            Some(StandardTagKey::ReplayGainTrackGain) => meta.replaygain_track_gain = meta.replaygain_track_gain.or(parse_gain(value)),
+            Some(StandardTagKey::ReplayGainAlbumGain) => meta.replaygain_album_gain = meta.replaygain_album_gain.or(parse_gain(value)),
+            Some(StandardTagKey::ReplayGainTrackPeak) => meta.replaygain_track_peak = meta.replaygain_track_peak.or(parse_gain(value)),
+            Some(StandardTagKey::ReplayGainAlbumPeak) => meta.replaygain_album_peak = meta.replaygain_album_peak.or(parse_gain(value)),
+            _ => {}
+        }
+    }
+}
+
+impl Decoder {
+    /// Opens a local file. Returns the decoder and the tags found while probing.
+    pub fn open_file(path: &Path) -> Result<(Decoder, TrackMeta), String> {
+        let file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let ext = path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
+        Self::open_source(Box::new(file), ext.as_deref(), true)
+    }
+
+    pub fn open_source(source: Box<dyn MediaSource>, ext: Option<&str>, seekable: bool) -> Result<(Decoder, TrackMeta), String> {
+        let byte_len = source.byte_len();
+        let mss = MediaSourceStream::new(source, Default::default());
+        let fmt_opts = FormatOptions { enable_gapless: true, ..Default::default() };
+        let mut probed = symphonia::default::get_probe()
+            .format(&hint_for(ext), mss, &fmt_opts, &MetadataOptions::default())
+            .map_err(|e| format!("unsupported format: {e}"))?;
+        let mut meta = TrackMeta::default();
+        if let Some(rev) = probed.metadata.get().as_ref().and_then(|m| m.current()) {
+            apply_tags(&mut meta, rev);
+        }
+        let mut reader = probed.format;
+        if let Some(rev) = reader.metadata().current() {
+            apply_tags(&mut meta, rev);
+        }
+        let track = reader.tracks().iter().find(|t| t.codec_params.codec != CODEC_TYPE_NULL).ok_or("no audio track")?.clone();
+        let params = &track.codec_params;
+        let codec =
+            symphonia::default::get_codecs().make(params, &DecoderOptions::default()).map_err(|e| format!("unsupported codec: {e}"))?;
+        let sample_rate = params.sample_rate.unwrap_or(44_100);
+        let channels = params.channels.map(|c| c.count() as u16).unwrap_or(2);
+        // `n_frames` is in time-base units (milliseconds for Matroska), not samples.
+        let length_ms = params.n_frames.map(|n| match params.time_base {
+            Some(tb) => {
+                let t = tb.calc_time(n);
+                t.seconds * 1000 + (t.frac * 1000.0) as u64
+            }
+            None => n * 1000 / sample_rate as u64,
+        });
+        let codec_name = symphonia::default::get_codecs().get_codec(params.codec).map(|d| d.short_name.to_uppercase()).unwrap_or_default();
+        let bitrate_kbps = match (params.bits_per_sample, length_ms, byte_len) {
+            // Lossless/PCM: average over the file is the honest figure.
+            (_, Some(l), Some(b)) if l > 0 => Some((b * 8 / l) as u32),
+            _ => None,
+        };
+        meta.length_ms = length_ms;
+        meta.sample_rate = Some(sample_rate);
+        meta.channels = Some(channels);
+        meta.codec = Some(codec_name.clone());
+        meta.bitrate_kbps = bitrate_kbps;
+        let info = StreamInfo { sample_rate, channels, length_ms, bitrate_kbps, codec: codec_name, seekable };
+        Ok((
+            Decoder {
+                reader,
+                codec,
+                track_id: track.id,
+                info,
+                sample_buf: None,
+                skip_frames: 0,
+                byte_len,
+                bytes_acc: 0,
+                frames_acc: 0,
+                packets_seen: 0,
+                length_known: length_ms.is_some(),
+            },
+            meta,
+        ))
+    }
+
+    /// Appends the next chunk of interleaved stereo samples to `out`.
+    pub fn next(&mut self, out: &mut Vec<f32>) -> Result<Status, String> {
+        loop {
+            let packet = match self.reader.next_packet() {
+                Ok(p) => p,
+                Err(SymError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(Status::Eof),
+                Err(SymError::ResetRequired) => {
+                    self.codec.reset();
+                    continue;
+                }
+                Err(e) => return Err(format!("read error: {e}")),
+            };
+            if packet.track_id() != self.track_id {
+                continue;
+            }
+            self.track_bitrate(packet.data.len() as u64, packet.dur);
+            let decoded = match self.codec.decode(&packet) {
+                Ok(d) => d,
+                Err(SymError::DecodeError(e)) => {
+                    log::debug!("skipping corrupt packet: {e}");
+                    continue;
+                }
+                Err(SymError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(Status::Eof),
+                Err(e) => return Err(format!("decode error: {e}")),
+            };
+            let spec = *decoded.spec();
+            let frames = decoded.frames();
+            if frames == 0 {
+                continue;
+            }
+            if spec.rate != self.info.sample_rate {
+                self.info.sample_rate = spec.rate;
+            }
+            let buf = match &mut self.sample_buf {
+                Some(b) if b.capacity() >= decoded.capacity() * spec.channels.count() => b,
+                slot => slot.insert(SampleBuffer::new(decoded.capacity() as u64, spec)),
+            };
+            buf.copy_interleaved_ref(decoded);
+            let ch = spec.channels.count().max(1);
+            let samples = &buf.samples()[..frames * ch];
+            let skip = (self.skip_frames as usize).min(frames);
+            self.skip_frames -= skip as u64;
+            to_stereo(&samples[skip * ch..], ch, out);
+            if out.is_empty() {
+                continue;
+            }
+            return Ok(Status::Data);
+        }
+    }
+
+    fn track_bitrate(&mut self, bytes: u64, dur: u64) {
+        self.packets_seen += 1;
+        self.bytes_acc += bytes;
+        self.frames_acc += dur;
+        // Re-evaluate about twice a second of audio.
+        if self.frames_acc >= self.info.sample_rate as u64 / 2 && self.frames_acc > 0 {
+            let kbps = (self.bytes_acc * 8 * self.info.sample_rate as u64 / self.frames_acc / 1000) as u32;
+            if !self.length_known {
+                if let (Some(len), true) = (self.byte_len, kbps > 0) {
+                    self.info.length_ms = Some(len * 8 / kbps as u64);
+                }
+            }
+            if self.info.codec != "FLAC" && !self.info.codec.starts_with("PCM") {
+                self.info.bitrate_kbps = Some(kbps);
+            }
+            self.bytes_acc = 0;
+            self.frames_acc = 0;
+        }
+    }
+
+    /// Seeks to `ms`, returns the position actually reached.
+    pub fn seek(&mut self, ms: u64) -> Result<u64, String> {
+        let time = Time::new(ms / 1000, (ms % 1000) as f64 / 1000.0);
+        let seeked = self
+            .reader
+            .seek(SeekMode::Accurate, SeekTo::Time { time, track_id: Some(self.track_id) })
+            .map_err(|e| format!("seek failed: {e}"))?;
+        self.codec.reset();
+        self.skip_frames = seeked.required_ts.saturating_sub(seeked.actual_ts);
+        let tb = self.reader.tracks().iter().find(|t| t.id == self.track_id).and_then(|t| t.codec_params.time_base);
+        let reached = match tb {
+            Some(tb) => {
+                let t = tb.calc_time(seeked.required_ts);
+                t.seconds * 1000 + (t.frac * 1000.0) as u64
+            }
+            None => ms,
+        };
+        Ok(reached)
+    }
+}
+
+/// Converts interleaved `ch`-channel audio to stereo and appends it.
+fn to_stereo(samples: &[f32], ch: usize, out: &mut Vec<f32>) {
+    match ch {
+        1 => out.extend(samples.iter().flat_map(|&s| [s, s])),
+        2 => out.extend_from_slice(samples),
+        _ => {
+            // Simple fold-down: front L/R plus the rest spread to both sides.
+            for frame in samples.chunks_exact(ch) {
+                let rest: f32 = frame[2..].iter().sum::<f32>() * (0.5 / (ch - 2) as f32);
+                out.push((frame[0] + rest) * 0.7);
+                out.push((frame[1] + rest) * 0.7);
+            }
+        }
+    }
+}
+
+/// Reads tags and stream properties without decoding the audio.
+pub fn read_meta(path: &Path) -> Result<TrackMeta, String> {
+    let (mut dec, mut meta) = Decoder::open_file(path)?;
+    if meta.length_ms.is_none() {
+        // No frame count in the header (e.g. CBR MP3 without Xing): estimate from a few packets.
+        let mut scratch = Vec::new();
+        for _ in 0..40 {
+            scratch.clear();
+            match dec.next(&mut scratch) {
+                Ok(Status::Data) if dec.info.length_ms.is_some() => break,
+                Ok(Status::Data) => {}
+                _ => break,
+            }
+        }
+        meta.length_ms = dec.info.length_ms;
+    }
+    meta.bitrate_kbps = meta.bitrate_kbps.or(dec.info.bitrate_kbps);
+    Ok(meta)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stereo_conversion() {
+        let mut out = vec![];
+        to_stereo(&[0.1, 0.2], 1, &mut out);
+        assert_eq!(out, [0.1, 0.1, 0.2, 0.2]);
+        out.clear();
+        to_stereo(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0], 6, &mut out);
+        assert_eq!(out, [0.7, 0.0]);
+    }
+}

@@ -1,25 +1,25 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/linamp-core",
-    "crates/linamp-audio",
-    "crates/linamp-skin",
-    "apps/linamp",
+    "crates/popamp-core",
+    "crates/popamp-audio",
+    "crates/popamp-skin",
+    "apps/popamp",
 ]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.89"
-authors = ["Sayooj K Karun <sayoojkkarun@gmail.com>"]
+authors = ["Gunyakov <web@gunyakov.pro>", "Sayooj K Karun <sayoojkkarun@gmail.com>"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/sayoojkkarun/linamp"
-homepage = "https://github.com/sayoojkkarun/linamp"
+repository = "https://github.com/popamp/popamp"
+homepage = "https://github.com/popamp/popamp"
 
 [workspace.dependencies]
-linamp-core = { path = "crates/linamp-core" }
-linamp-audio = { path = "crates/linamp-audio" }
-linamp-skin = { path = "crates/linamp-skin" }
+popamp-core = { path = "crates/popamp-core" }
+popamp-audio = { path = "crates/popamp-audio" }
+popamp-skin = { path = "crates/popamp-skin" }
 symphonia = { version = "0.5", features = ["all", "opt-simd"] }
 libloading = "0.8"
 rustfft = "6"

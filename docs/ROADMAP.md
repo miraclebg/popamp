@@ -8,7 +8,7 @@ open an issue first for larger items.
 - **Hands-on testing:** verify mouse interaction, docking, menus, dialogs,
   drag & drop and double size across desktops (GNOME, KDE, Xfce, i3) and
   distributions.
-- **Golden-image tests in CI:** render windows with `LINAMP_SNAPSHOT` under
+- **Golden-image tests in CI:** render windows with `POPAMP_SNAPSHOT` under
   Xvfb and compare against committed PNGs.
 - **Non-blocking YouTube startup:** resolve with `yt-dlp` off the audio
   thread so Stop works while connecting.

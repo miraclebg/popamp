@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The project is now Popamp, a separate project grown from
+  [Linamp](https://github.com/sayoojkkarun/linamp) 0.1.0. The program,
+  crates, packages and settings folders (`~/.config/popamp`,
+  `~/.local/share/popamp`) carry the new name.
+
 ### Added
 
 - `.deb` and AppImage packages for x86_64 and ARM64, built by a release
@@ -20,17 +27,17 @@ All notable changes to this project are documented here. The format follows
   the tooltip shows the program name.
 - Skin cursors: the skin's `*.cur` files (including animated ones, first
   frame) replace the mouse pointer over the matching controls, as in the
-  original. `usecursors=0` in `linamp.ini` turns them off.
+  original. `usecursors=0` in `popamp.ini` turns them off.
 - Bookmarks: `Alt+I` bookmarks the playing track (in the playlist: the
   selected ones), the main menu's Bookmarks submenu plays or removes them
-  (`Ctrl+Alt+I`). They are kept in `bookmarks.m3u8` next to `linamp.ini`.
+  (`Ctrl+Alt+I`). They are kept in `bookmarks.m3u8` next to `popamp.ini`.
   Remote command ids 50021–50023.
 - Equalizer Presets > Load/Save > Default: keep your own default curve and
   return to it in one click (ids 50024/50025).
 - Playlist MISC > Misc options > Generate HTML playlist… saves the playlist
   as a web page with titles, lengths and the total (id 50026). The general
   options stay reachable there as a submenu.
-- Linamp's own dialog windows, drawn like its menus and no longer needing
+- Popamp's own dialog windows, drawn like its menus and no longer needing
   `zenity`:
   - Jump to file (`J`) filters the playlist as you type; the arrows pick,
     Enter plays.
@@ -80,5 +87,5 @@ First release.
 - **Packaging:** desktop entry, `.wsz` MIME type, icons and a per-user
   install script.
 
-[Unreleased]: https://github.com/sayoojkkarun/linamp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/popamp/popamp/commits/main
 [0.1.0]: https://github.com/sayoojkkarun/linamp/releases/tag/v0.1.0

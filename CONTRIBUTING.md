@@ -1,4 +1,4 @@
-# Contributing to Linamp
+# Contributing to Popamp
 
 Thanks for helping! Bug reports, testing on other distributions and pull
 requests are all welcome.
@@ -8,9 +8,9 @@ requests are all welcome.
 Please include:
 
 - distribution, desktop and session type (`echo $XDG_SESSION_TYPE`)
-- `linamp /VERSION` and how you installed it
+- `popamp /VERSION` and how you installed it
 - steps to reproduce, and what you expected instead
-- a log from `RUST_LOG=debug linamp /NEW …` if playback or skins misbehave
+- a log from `RUST_LOG=debug popamp /NEW …` if playback or skins misbehave
 - for skin problems, the `.wsz` file (if you are allowed to share it)
 
 ## Development setup
@@ -20,7 +20,7 @@ newer and a C compiler. No `-devel` packages are needed.
 
 ```sh
 cargo build
-cargo run -p linamp -- /NEW /INIDIR=/tmp/linamp-dev ~/Music
+cargo run -p popamp -- /NEW /INIDIR=/tmp/popamp-dev ~/Music
 ```
 
 Use `/NEW /INIDIR=<dir>` while developing so you don't touch your real
@@ -29,10 +29,10 @@ settings or a running instance.
 Useful tools:
 
 ```sh
-cargo run -p linamp-audio --example play -- --vol 0 file.flac   # engine without UI
-cargo run -p linamp-skin --example dump_sheets -- skin.wsz out/  # skin sheets as PNG
-LINAMP_SNAPSHOT=out/ cargo run -p linamp -- /NEW /INIDIR=/tmp/x  # windows as PNG, then exit
-cargo run -p linamp -- /RENDER=out/ /SKIN=skin.wsz                 # same, headless, fixed states
+cargo run -p popamp-audio --example play -- --vol 0 file.flac   # engine without UI
+cargo run -p popamp-skin --example dump_sheets -- skin.wsz out/  # skin sheets as PNG
+POPAMP_SNAPSHOT=out/ cargo run -p popamp -- /NEW /INIDIR=/tmp/x  # windows as PNG, then exit
+cargo run -p popamp -- /RENDER=out/ /SKIN=skin.wsz                 # same, headless, fixed states
 ```
 
 ## Before opening a pull request
@@ -57,7 +57,7 @@ Guidelines:
   threads and events.
 - **Artwork:** do not add artwork, presets or code from Winamp or other
   proprietary software. The default skin is drawn in code
-  (`crates/linamp-skin/src/default_skin.rs`), and third-party skins are
+  (`crates/popamp-skin/src/default_skin.rs`), and third-party skins are
   loaded at runtime, never bundled.
 - **Dependencies:** must be compatible with MIT OR Apache-2.0 distribution.
   Prefer crates that don't need system `-devel` packages at build time.

@@ -1,0 +1,25 @@
+[Desktop Entry]
+Type=Application
+Name=Popamp
+GenericName=Audio Player
+Comment=Winamp-style skinnable audio player
+Exec=popamp %U
+Icon=popamp
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=music;player;winamp;skin;mp3;flac;
+MimeType=audio/mpeg;audio/mp3;audio/flac;audio/x-flac;audio/ogg;audio/x-vorbis+ogg;audio/vorbis;audio/mp4;audio/x-m4a;audio/aac;audio/wav;audio/x-wav;audio/x-aiff;audio/x-matroska;audio/x-mpegurl;audio/mpegurl;application/vnd.apple.mpegurl;audio/x-scpls;application/xspf+xml;application/x-popamp-skin;
+StartupWMClass=popamp
+Actions=PlayPause;Next;Previous;
+
+[Desktop Action PlayPause]
+Name=Play/Pause
+Exec=popamp /PLAYPAUSE
+
+[Desktop Action Next]
+Name=Next
+Exec=popamp /NEXT
+
+[Desktop Action Previous]
+Name=Previous
+Exec=popamp /PREV
