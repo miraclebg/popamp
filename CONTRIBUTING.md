@@ -56,8 +56,8 @@ Guidelines:
   for long, and don't do I/O on the UI thread. Use the existing worker
   threads and events.
 - **Artwork:** do not add artwork, presets or code from Winamp or other
-  proprietary software. The default skin is drawn in code
-  (`crates/popamp-skin/src/default_skin.rs`), and third-party skins are
+  proprietary software. The default skin is Popamp's own vector skin in
+  `skins/default/` (built into the program), and third-party skins are
   loaded at runtime, never bundled.
 - **Dependencies:** must be compatible with MIT OR Apache-2.0 distribution.
   Prefer crates that don't need system `-devel` packages at build time.

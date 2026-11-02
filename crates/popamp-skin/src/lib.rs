@@ -4,10 +4,8 @@
 pub mod bitmap;
 mod classic;
 pub mod cursors;
-pub mod default_skin;
 pub mod layout;
 mod names;
-pub mod pen;
 pub mod sprites;
 pub mod svg;
 pub mod textcfg;
@@ -51,15 +49,55 @@ pub struct Skin {
     pub pl_font: Option<Vec<u8>>,
 }
 
+/// Popamp's own skin: the vector skin in `skins/default/`, built in.
+macro_rules! builtin_files {
+    ($($f:literal),*) => { [$(($f, include_bytes!(concat!("../../../skins/default/", $f)) as &[u8])),*] };
+}
+const BUILTIN: [(&str, &[u8]); 16] = builtin_files!(
+    "skin.toml",
+    "main.svg",
+    "cbuttons.svg",
+    "titlebar.svg",
+    "shufrep.svg",
+    "text.svg",
+    "volume.svg",
+    "balance.svg",
+    "monoster.svg",
+    "playpaus.svg",
+    "numbers.svg",
+    "nums_ex.svg",
+    "posbar.svg",
+    "eqmain.svg",
+    "eq_ex.svg",
+    "pledit.svg"
+);
+
 impl Skin {
+    /// Popamp's own skin, sharp at any scale. The player's default skin,
+    /// and where every other skin takes what it leaves out.
+    pub fn builtin_vector() -> Skin {
+        let files = BUILTIN.iter().map(|(name, data)| (name.to_string(), data.to_vec())).collect();
+        // The files are part of the program; a test loads them.
+        let mut skin = vector::load_onto(Skin::bare(), &files).expect("the built-in skin loads");
+        // Its `nums_ex` only stands in for skins that have none; its own
+        // clock, and theirs, use `numbers`.
+        skin.has_nums_ex = false;
+        skin
+    }
+
+    /// The built-in skin as x1 bitmaps, for classic skins to fall back on.
     pub fn builtin() -> Skin {
-        let sheets = Sheet::ALL.iter().map(|&s| (s, default_skin::sheet(s))).collect();
+        Skin { vector: false, svgs: svg::Svgs::default(), sheet_svgs: HashMap::new(), ..Skin::builtin_vector() }
+    }
+
+    /// A skin with nothing in it, to load the built-in one onto.
+    pub(crate) fn bare() -> Skin {
         Skin {
-            name: "Popamp Default".into(),
-            sheets,
+            name: String::new(),
+            sheets: HashMap::new(),
             has_nums_ex: false,
-            viscolor: default_skin::viscolors(),
-            pl: default_skin::pl_colors(),
+            viscolor: [0; 24],
+            pl: PlColors::default(),
             cursors: HashMap::new(),
             layout: Layout::default(),
             svgs: svg::Svgs::default(),
@@ -69,21 +107,6 @@ impl Skin {
             clock: None,
             pl_font: None,
         }
-        .with_layout(Regions::default())
-    }
-
-    /// Popamp's own skin drawn in SVG: the design of [`Skin::builtin`],
-    /// sharp at any scale. The player's default skin.
-    pub fn builtin_vector() -> Skin {
-        let mut skin = Skin::builtin();
-        for s in Sheet::ALL {
-            match skin.svgs.add(default_skin::svg_sheet(s).as_bytes()) {
-                Ok(id) => drop(skin.sheet_svgs.insert(s, id)),
-                Err(e) => log::warn!("built-in {}: {e}", s.file_name()),
-            }
-        }
-        skin.vector = true;
-        skin
     }
 
     /// Builds the classic layout for the skin's bitmaps and window shapes.
@@ -320,6 +343,18 @@ mod tests {
         for s in Sheet::ALL {
             assert_eq!((skin.sheet(s).w, skin.sheet(s).h), s.size(), "{s:?}");
         }
+    }
+
+    #[test]
+    fn the_built_in_skin_is_the_vector_skin_folder() {
+        let skin = Skin::builtin_vector();
+        assert_eq!(skin.name, "Popamp Default");
+        assert!(skin.vector);
+        assert_eq!(skin.sheet_svgs.len(), Sheet::ALL.len());
+        assert_eq!(skin.viscolor[0], 0x06090d, "colours from skin.toml");
+        assert!(!skin.has_nums_ex, "skins without nums_ex.bmp must not take the built-in one");
+        let classic = Skin::builtin();
+        assert!(!classic.vector && classic.sheet_svgs.is_empty(), "x1 bitmaps for classic skins");
     }
 
     #[test]

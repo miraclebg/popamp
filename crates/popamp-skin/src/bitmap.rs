@@ -100,14 +100,6 @@ impl Bitmap {
         self.fill(x, y, 1, h, c);
     }
 
-    /// Vertical gradient from `top` to `bottom`.
-    pub fn vgradient(&mut self, x: i32, y: i32, w: i32, h: i32, top: u32, bottom: u32) {
-        for i in 0..h {
-            let t = if h > 1 { i as f32 / (h - 1) as f32 } else { 0.0 };
-            self.fill(x, y + i, w, 1, mix(top, bottom, t));
-        }
-    }
-
     /// One-pixel bevel: `light` on top/left, `dark` on bottom/right.
     pub fn bevel(&mut self, x: i32, y: i32, w: i32, h: i32, light: u32, dark: u32) {
         self.hline(x, y, w, light);
@@ -130,30 +122,6 @@ impl Bitmap {
                     continue;
                 }
                 self.px[(dyy * self.w + dxx) as usize] = src.px[(syy * src.w + sxx) as usize];
-            }
-        }
-    }
-
-    /// Fills a convex polygon (scanline, even-odd), used for button icons.
-    pub fn polygon(&mut self, pts: &[(f32, f32)], c: u32) {
-        if pts.len() < 3 {
-            return;
-        }
-        let ymin = pts.iter().map(|p| p.1).fold(f32::MAX, f32::min).floor() as i32;
-        let ymax = pts.iter().map(|p| p.1).fold(f32::MIN, f32::max).ceil() as i32;
-        for y in ymin..ymax {
-            let sy = y as f32 + 0.5;
-            let mut xs = vec![];
-            for i in 0..pts.len() {
-                let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
-                if (a.1 <= sy && b.1 > sy) || (b.1 <= sy && a.1 > sy) {
-                    xs.push(a.0 + (sy - a.1) / (b.1 - a.1) * (b.0 - a.0));
-                }
-            }
-            xs.sort_by(f32::total_cmp);
-            for [a, b] in xs.as_chunks::<2>().0 {
-                let (x0, x1) = (a.round() as i32, b.round() as i32);
-                self.fill(x0, y, x1 - x0, 1, c);
             }
         }
     }

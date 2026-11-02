@@ -19,10 +19,15 @@ const FORMAT_VERSION: u32 = 1;
 /// Builds a skin from its files (path inside the skin -> bytes). Windows
 /// the file leaves out come from the built-in skin.
 pub fn load(files: &HashMap<String, Vec<u8>>) -> Result<Skin, String> {
+    load_onto(Skin::builtin_vector(), files)
+}
+
+/// Builds a skin over `base`, which gives what the file leaves out.
+pub(crate) fn load_onto(base: Skin, files: &HashMap<String, Vec<u8>>) -> Result<Skin, String> {
     let text = files.get(FILE).ok_or(format!("no {FILE}"))?;
     let text = std::str::from_utf8(text).map_err(|e| format!("{FILE}: not UTF-8 text: {e}"))?;
     let file: SkinFile = toml::from_str(text).map_err(|e| at(text, e.span(), e.message()))?;
-    let mut build = Builder { text, files, skin: Skin::builtin(), svg_ids: HashMap::new() };
+    let mut build = Builder { text, files, skin: base, svg_ids: HashMap::new() };
     if *file.meta.format_version.get_ref() != FORMAT_VERSION {
         return Err(at(text, Some(file.meta.format_version.span()), &format!("this player reads format_version {FORMAT_VERSION}")));
     }
@@ -403,7 +408,7 @@ impl Builder<'_> {
             }
             self.skin.has_nums_ex |= sheet == Sheet::NumsEx;
         }
-        self.skin = std::mem::replace(&mut self.skin, Skin::builtin()).with_layout(crate::Regions::default());
+        self.skin = std::mem::replace(&mut self.skin, Skin::bare()).with_layout(crate::Regions::default());
         Ok(())
     }
 
@@ -727,7 +732,9 @@ shift = \"stop\"
     fn sheets_replace_classic_bitmaps() {
         let s = skin(&format!("{HEAD}[sheets]\nmain = \"play.svg\"\n[shapes]\nmain_shade = \"play.svg\"\n")).unwrap();
         assert!(s.vector);
-        assert_eq!(s.sheet_svgs.keys().collect::<Vec<_>>(), [&Sheet::Main]);
+        let builtin = Skin::builtin_vector();
+        assert_ne!(s.sheet_svgs[&Sheet::Main], builtin.sheet_svgs[&Sheet::Main]);
+        assert_eq!(s.sheet_svgs.len(), Sheet::ALL.len(), "sheets left out are the built-in skin's drawings");
         assert_eq!((s.sheet(Sheet::Main).w, s.sheet(Sheet::Main).px[0]), (23, 0x00ff00), "an x1 copy for pixel reads");
         let main = s.layout.window(WindowKey::Main).unwrap();
         assert!(matches!(main.mode(true).shape, Some(Shape::Picture(_))));

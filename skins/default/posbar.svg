@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="307" height="10" viewBox="0 0 307 10">
+<defs>
+<linearGradient id="g0" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0.05" stop-color="#f2a93b"/>
+<stop offset="0.95" stop-color="#9c6214"/>
+</linearGradient>
+<linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0.05" stop-color="#edc384"/>
+<stop offset="0.95" stop-color="#f2a93b"/>
+</linearGradient>
+</defs>
+<rect x="0" y="0" width="307" height="10" fill="#262b38"/>
+<rect x="0" y="0" width="248" height="10" fill="#12151c"/>
+<rect x="0" y="0" width="248" height="1" fill="#12151c"/>
+<rect x="0" y="0" width="1" height="10" fill="#12151c"/>
+<rect x="0" y="9" width="248" height="1" fill="#3b4358"/>
+<rect x="247" y="0" width="1" height="10" fill="#3b4358"/>
+<rect x="2" y="5" width="244" height="1" fill="#153629"/>
+<rect x="248" y="0" width="29" height="10" fill="url(#g0)"/>
+<rect x="248" y="0" width="29" height="1" fill="#edc384"/>
+<rect x="248" y="0" width="1" height="10" fill="#edc384"/>
+<rect x="248" y="9" width="29" height="1" fill="#9c6214"/>
+<rect x="276" y="0" width="1" height="10" fill="#9c6214"/>
+<rect x="259" y="2" width="1" height="6" fill="#9c6214"/>
+<rect x="262" y="2" width="1" height="6" fill="#9c6214"/>
+<rect x="265" y="2" width="1" height="6" fill="#9c6214"/>
+<rect x="278" y="0" width="29" height="10" fill="url(#g1)"/>
+<rect x="278" y="0" width="29" height="1" fill="#ead3b0"/>
+<rect x="278" y="0" width="1" height="10" fill="#ead3b0"/>
+<rect x="278" y="9" width="29" height="1" fill="#9c6214"/>
+<rect x="306" y="0" width="1" height="10" fill="#9c6214"/>
+<rect x="289" y="2" width="1" height="6" fill="#9c6214"/>
+<rect x="292" y="2" width="1" height="6" fill="#9c6214"/>
+<rect x="295" y="2" width="1" height="6" fill="#9c6214"/>
+</svg>

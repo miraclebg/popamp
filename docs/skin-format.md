@@ -2,7 +2,8 @@
 
 A vector skin is drawn in SVG, so it stays sharp at every window size,
 including fractional ones such as x1.25 or x1.5. Popamp's own default skin
-is a vector skin.
+is a vector skin: `skins/default/` in Popamp's source is a complete example
+that draws every classic sheet.
 
 A vector skin is a folder, or a `.psz` archive (a zip file under another
 name), with a file named `skin.toml` at its top. Opening a `.psz` file in
