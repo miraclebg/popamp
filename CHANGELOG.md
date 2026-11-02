@@ -18,10 +18,12 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - Bar skins: `placement = "bar-bottom"` (or `"bar-top"`) makes a vector
-  skin's main window a strip across the screen at that edge. Its strip is
+  skin's main window a strip across the screen at that edge, inside the
+  desktop's own panels (it moves when they appear or resize). Its strip is
   reserved like a taskbar's, the playlist and the equalizer sit against it
   at the right end, and the main menu's "Bar position" moves it to the
-  other edge. `skins/bar/`, Popamp Bar, is Popamp Modern with such a bar;
+  other edge. `skins/bar/`, Popamp Bar, is Popamp Modern with a 14 pixel
+  high bar, as high as a classic window shade;
   `tools/gen_modern_skin.py skins/bar bar` regenerates it.
 - A marquee without `area` writes the title in all of its element, so it
   can stretch with a resizable window.

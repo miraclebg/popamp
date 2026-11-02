@@ -167,8 +167,8 @@ tip = "Play"
 ```
 
 A main window placed `bar-top` or `bar-bottom` is a bar: a strip as wide
-as the screen at that edge, which other windows keep out of like a
-taskbar. Its `size` gives the height and the narrowest width; place its
+as the screen at that edge, inside the desktop's own panels, which other
+windows keep out of like a taskbar. Its `size` gives the height and the narrowest width; place its
 elements with `edges` so they follow the width. The playlist and the
 equalizer sit against the bar at the screen's right end and do not move;
 the main menu's "Bar position" puts the bar at the other edge.
