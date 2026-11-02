@@ -237,6 +237,23 @@ fn read_dir_files(dir: &Path, key: Key) -> Result<HashMap<String, Vec<u8>>, Stri
     Ok(out)
 }
 
+/// When a skin last changed: the newest modification time of the archive,
+/// or of the folder and anything in it.
+pub fn changed_at(path: &Path) -> Option<std::time::SystemTime> {
+    let mut newest = std::fs::metadata(path).and_then(|m| m.modified()).ok()?;
+    let mut stack = vec![(path.to_path_buf(), 0)];
+    while let Some((d, depth)) = stack.pop() {
+        for entry in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+            let Ok(meta) = entry.metadata() else { continue };
+            newest = newest.max(meta.modified().unwrap_or(newest));
+            if meta.is_dir() && depth < 3 {
+                stack.push((entry.path(), depth + 1));
+            }
+        }
+    }
+    Some(newest)
+}
+
 /// Lists installable skins in `dir` (archives and sub-directories).
 pub fn list_skins(dir: &Path) -> Vec<std::path::PathBuf> {
     let mut v: Vec<_> = std::fs::read_dir(dir)

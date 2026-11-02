@@ -1094,7 +1094,8 @@ impl App {
                             w.shape_sig = None;
                         }
                     }
-                    self.update_shapes();
+                    // A vector skin may size its windows differently.
+                    self.apply_layout(WindowKey::Main);
                     self.redraw_all();
                 }
                 UiReq::AlwaysOnTop => {
@@ -1163,6 +1164,7 @@ impl App {
         self.render(WindowKey::Main);
         if self.last_slow.elapsed() >= Duration::from_millis(500) {
             self.last_slow = Instant::now();
+            self.model.reload_skin_if_changed();
             if state != PlayState::Stopped || settings.pe_width >= 350 {
                 self.render(WindowKey::Playlist);
             }
