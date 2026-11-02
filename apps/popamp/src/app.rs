@@ -120,6 +120,8 @@ pub struct App {
     mpris: Option<crate::mpris::Mpris>,
     /// The scale the windows are shown at now.
     shown_scale: Scale,
+    /// The monitor the main window is on.
+    monitor: Option<Screen>,
 }
 
 impl App {
@@ -150,6 +152,7 @@ impl App {
             platform: Platform::connect(),
             mpris,
             shown_scale,
+            monitor: None,
         }
     }
 
@@ -213,9 +216,26 @@ impl App {
         monitors.iter().find(|m| x >= m.x && x < m.x + m.w && y >= m.y && y < m.y + m.h).or(monitors.first()).copied()
     }
 
+    /// Finds again what a bar spans on the main window's monitor; true
+    /// when it changed, as when a desktop panel appears or resizes.
+    fn update_bar_area(&mut self) -> bool {
+        let shown = self.shown_scale;
+        let bar = self.win(WindowKey::Main).filter(|w| w.role == WindowRole::Bar && w.visible).map(|w| Screen {
+            x: w.pos.0,
+            y: w.pos.1,
+            w: shown.px(w.size.0),
+            h: shown.px(w.size.1),
+        });
+        let area = self.monitor.map(|m| bar::usable(m, &self.platform.work_areas(), bar));
+        let changed = area != self.model.screen;
+        self.model.screen = area;
+        changed
+    }
+
     fn create_windows(&mut self, el: &ActiveEventLoop) {
         let monitors = Self::monitors(el);
-        self.model.screen = self.screen_of_main(&monitors);
+        self.monitor = self.screen_of_main(&monitors);
+        self.update_bar_area();
         for k in WindowKey::ALL {
             if !self.create_window(el, k, &monitors) {
                 el.exit();
@@ -294,7 +314,8 @@ impl App {
     /// when it first shows it.
     fn remake_changed_windows(&mut self, el: &ActiveEventLoop) {
         let monitors = Self::monitors(el);
-        self.model.screen = self.screen_of_main(&monitors);
+        self.monitor = self.screen_of_main(&monitors);
+        self.update_bar_area();
         let left_bar = self.win(WindowKey::Main).is_some_and(|w| w.role == WindowRole::Bar) && bar::edge(&self.model).is_none();
         for k in WindowKey::ALL {
             if self.win(k).is_some_and(|w| w.role != self.role(k)) {
@@ -1252,6 +1273,9 @@ impl App {
         if self.last_slow.elapsed() >= Duration::from_millis(500) {
             self.last_slow = Instant::now();
             self.model.reload_skin_if_changed();
+            if bar::edge(&self.model).is_some() && self.update_bar_area() {
+                self.apply_layout(WindowKey::Main);
+            }
             if state != PlayState::Stopped || settings.pe_width >= 350 {
                 self.render(WindowKey::Playlist);
             }

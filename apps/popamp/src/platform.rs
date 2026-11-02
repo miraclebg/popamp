@@ -84,6 +84,32 @@ impl Platform {
         Ok(())
     }
 
+    /// The work areas the window manager publishes for the current desktop:
+    /// one per monitor where it says so (`_GTK_WORKAREAS_Dn`), else one
+    /// for all of them (`_NET_WORKAREA`).
+    pub fn work_areas(&self) -> Vec<crate::bar::Screen> {
+        let Some(conn) = &self.x11 else { return Vec::new() };
+        let Some(root) = conn.setup().roots.first().map(|r| r.root) else { return Vec::new() };
+        let cardinals = |name: &str| -> Option<Vec<u32>> {
+            let atom = conn.intern_atom(true, name.as_bytes()).ok()?.reply().ok()?.atom;
+            let reply = conn.get_property(false, root, atom, AtomEnum::CARDINAL, 0, 1024).ok()?.reply().ok()?;
+            let values = reply.value32()?.collect();
+            Some(values)
+        };
+        let desktop = cardinals("_NET_CURRENT_DESKTOP").and_then(|d| d.first().copied()).unwrap_or(0) as usize;
+        let rects = |v: &[u32]| -> Vec<crate::bar::Screen> {
+            v.as_chunks::<4>()
+                .0
+                .iter()
+                .map(|r| crate::bar::Screen { x: r[0] as i32, y: r[1] as i32, w: r[2] as i32, h: r[3] as i32 })
+                .collect()
+        };
+        match cardinals(&format!("_GTK_WORKAREAS_D{desktop}")) {
+            Some(per_monitor) if !per_monitor.is_empty() => rects(&per_monitor),
+            _ => cardinals("_NET_WORKAREA").map(|all| rects(&all).into_iter().skip(desktop).take(1).collect()).unwrap_or_default(),
+        }
+    }
+
     /// The height of the X screen all monitors are part of.
     pub fn root_height(&self) -> Option<i32> {
         Some(self.x11.as_ref()?.setup().roots.first()?.height_in_pixels as i32)

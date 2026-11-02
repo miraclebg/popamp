@@ -1,7 +1,7 @@
 //! A bar skin's main window: a strip across a monitor at its top or bottom
-//! edge. Its strip is reserved like a taskbar's, so maximized windows keep
-//! out of it; the playlist and the equalizer sit against it at the
-//! monitor's right end.
+//! edge, inside the panels the desktop already has there. Its strip is
+//! reserved like a taskbar's, so maximized windows keep out of it; the
+//! playlist and the equalizer sit against it at the right end.
 
 use crate::model::Model;
 use popamp_core::config::BarEdge;
@@ -22,6 +22,29 @@ pub fn edge(model: &Model) -> Option<BarEdge> {
         Placement::Bar(skin_edge) => Some(model.settings().bar_edge.unwrap_or(skin_edge)),
         _ => None,
     }
+}
+
+/// The part of `monitor` a bar spans: what the desktop's own panels leave
+/// of it, from the work areas the window manager publishes. Those count
+/// the bar's own strip too, so where `bar` (on the screen now) sits just
+/// outside the work area, its strip is given back.
+pub fn usable(monitor: Screen, work_areas: &[Screen], bar: Option<Screen>) -> Screen {
+    let overlap = |a: &Screen| {
+        let (x0, y0) = (a.x.max(monitor.x), a.y.max(monitor.y));
+        let (x1, y1) = ((a.x + a.w).min(monitor.x + monitor.w), (a.y + a.h).min(monitor.y + monitor.h));
+        (x1 > x0 && y1 > y0).then_some(Screen { x: x0, y: y0, w: x1 - x0, h: y1 - y0 })
+    };
+    let Some(area) = work_areas.iter().filter_map(overlap).max_by_key(|a| a.w as i64 * a.h as i64) else { return monitor };
+    let (mut top, mut bottom) = (area.y, area.y + area.h);
+    if let Some(b) = bar {
+        if b.y + b.h == top {
+            top = b.y;
+        }
+        if b.y == bottom {
+            bottom = b.y + b.h;
+        }
+    }
+    Screen { y: top, h: bottom - top, ..area }
 }
 
 /// Top-left corners of the windows in [`WindowKey::ALL`] order, from their
@@ -89,6 +112,39 @@ mod tests {
         assert_eq!(bottom, [0, 0, 0, 56 + 28, 0, 0, 0, 0, 0, 0, 1920, 3199]);
         let top = strut(BarEdge::Top, RIGHT_MONITOR, 1080, 28);
         assert_eq!(top, [0, 0, 28, 0, 0, 0, 0, 0, 1920, 3199, 0, 0]);
+    }
+
+    const MONITOR: Screen = Screen { x: 0, y: 0, w: 1920, h: 1080 };
+    /// A desktop with a 52 pixel panel at the bottom.
+    const ABOVE_PANEL: Screen = Screen { x: 0, y: 0, w: 1920, h: 1028 };
+
+    #[test]
+    fn a_bar_keeps_inside_the_desktops_panels() {
+        assert_eq!(usable(MONITOR, &[ABOVE_PANEL], None), ABOVE_PANEL);
+        assert_eq!(usable(MONITOR, &[], None), MONITOR, "no work area published");
+    }
+
+    #[test]
+    fn the_bars_own_strip_is_not_taken_for_a_panel() {
+        // Bottom bar 28 high above the panel: the work area ends at its top.
+        let work = Screen { h: 1000, ..ABOVE_PANEL };
+        let bar = Screen { x: 0, y: 1000, w: 1920, h: 28 };
+        assert_eq!(usable(MONITOR, &[work], Some(bar)), ABOVE_PANEL);
+        // Before the window manager counts the strip, the area is the same.
+        assert_eq!(usable(MONITOR, &[ABOVE_PANEL], Some(bar)), ABOVE_PANEL);
+        // A top bar.
+        let work = Screen { y: 28, h: 1000, ..ABOVE_PANEL };
+        let bar = Screen { y: 0, ..bar };
+        assert_eq!(usable(MONITOR, &[work], Some(bar)), ABOVE_PANEL);
+    }
+
+    #[test]
+    fn the_work_area_is_the_one_on_the_bars_monitor() {
+        let left = Screen { x: 0, y: 0, w: 1920, h: 1028 };
+        assert_eq!(usable(RIGHT_MONITOR, &[left, Screen { h: 1000, ..RIGHT_MONITOR }], None), Screen { h: 1000, ..RIGHT_MONITOR });
+        // One work area across both monitors is cut to the bar's.
+        let both = Screen { x: 0, y: 0, w: 3200, h: 1000 };
+        assert_eq!(usable(RIGHT_MONITOR, &[both], None), Screen { h: 1000, ..RIGHT_MONITOR });
     }
 
     #[test]

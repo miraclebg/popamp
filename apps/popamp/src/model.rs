@@ -102,7 +102,8 @@ pub struct Model {
     pub last_dir: Option<PathBuf>,
     /// Increments when anything visible in the playlist changes.
     pub pl_dirty: u64,
-    /// The monitor the main window is on; a bar spans it.
+    /// What a bar spans: the main window's monitor less the desktop's
+    /// panels.
     pub screen: Option<crate::bar::Screen>,
 }
 
