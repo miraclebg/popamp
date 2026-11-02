@@ -15,6 +15,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- The default skin is a vector skin folder, `skins/default/` (SVG files and
+  `skin.toml`), built into the program; it replaces the skin drawn in code.
+  Vector skins take any sheet they leave out from it.
 - `.psz`: Popamp's vector skin archive. Opening one installs it, like
   `.wsz`, and it has its own MIME type.
 - `.deb` and AppImage packages for x86_64 and ARM64, built by a release

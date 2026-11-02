@@ -6,8 +6,8 @@
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 A Winamp-style skinnable audio player for Linux, written in Rust. Popamp
-contains no Winamp code or artwork. Its default skin is drawn procedurally,
-and classic `.wsz` skins load at runtime.
+contains no Winamp code or artwork. Its default skin is its own vector skin
+(`skins/default/`), and classic `.wsz` skins load at runtime.
 
 Popamp grew out of [Linamp](https://github.com/sayoojkkarun/linamp) by
 Sayooj K Karun and keeps its history; see [THIRD_PARTY.md](THIRD_PARTY.md).
