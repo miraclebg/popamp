@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="275" height="16" viewBox="0 0 275 16">
+<defs>
+<linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0.0" stop-color="#f1f3f6"/><stop offset="0.5" stop-color="#d6dbe1"/><stop offset="1.0" stop-color="#b3bac3"/></linearGradient>
+<linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0.0" stop-color="#0a131b"/><stop offset="1.0" stop-color="#15222d"/></linearGradient>
+</defs>
+<rect x="0.5" y="0.5" width="274" height="15" rx="6" fill="url(#g1)" stroke="#56606c" stroke-width="1"/>
+<rect x="70" y="3" width="132" height="10" rx="2" fill="url(#g2)" stroke="#3a4450" stroke-width="1"/>
+<g transform="translate(20,4)"><path d="M0.6999999999999997 1.0 h1.2000000000000002 v6 h-1.2000000000000002 Z M7.0 1.0 v6 L2.2 4 Z" fill="#2b333d"/></g>
+<g transform="translate(29,4)"><path d="M1.9000000000000004 0.6999999999999997 L7.6 4 L1.9000000000000004 7.300000000000001 Z" fill="#2b333d"/></g>
+<g transform="translate(38,4)"><path d="M1.2999999999999998 1.0 h1.7999999999999998 v6 h-1.7999999999999998 Z M4.9 1.0 h1.7999999999999998 v6 h-1.7999999999999998 Z" fill="#2b333d"/></g>
+<g transform="translate(47,4)"><rect x="1.2999999999999998" y="1.2999999999999998" width="5.4" height="5.4" fill="#2b333d"/></g>
+<g transform="translate(56,4)"><path d="M7.300000000000001 1.0 h-1.2000000000000002 v6 h1.2000000000000002 Z M1.0 1.0 v6 L5.8 4 Z" fill="#2b333d"/></g>
+</svg>

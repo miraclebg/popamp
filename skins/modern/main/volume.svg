@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="76" height="280" viewBox="0 0 76 280">
+<defs>
+<linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0.0" stop-color="#7fd0ff"/><stop offset="0.5" stop-color="#2f9bff"/><stop offset="1.0" stop-color="#1f62b8"/></linearGradient>
+</defs>
+<g transform="translate(0,0)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+</g>
+<g transform="translate(0,10)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="2.740740740740741" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,20)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="5.481481481481482" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,30)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="8.222222222222221" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,40)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="10.962962962962964" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,50)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="13.703703703703704" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,60)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="16.444444444444443" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,70)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="19.185185185185187" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,80)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="21.925925925925927" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,90)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="24.666666666666668" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,100)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="27.40740740740741" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,110)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="30.14814814814815" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,120)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="32.888888888888886" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,130)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="35.629629629629626" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,140)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="38.370370370370374" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,150)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="41.111111111111114" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,160)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="43.851851851851855" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,170)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="46.592592592592595" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,180)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="49.333333333333336" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,190)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="52.074074074074076" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,200)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="54.81481481481482" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,210)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="57.55555555555556" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,220)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="60.2962962962963" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,230)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="63.03703703703704" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,240)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="65.77777777777777" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,250)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="68.51851851851852" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,260)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="71.25925925925925" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+<g transform="translate(0,270)">
+<rect x="0.5" y="3.0" width="75" height="4" rx="2" fill="#202a34" stroke="#ffffff" stroke-width="0.6"/>
+<rect x="1" y="3.5" width="74.0" height="3" rx="1.5" fill="url(#g1)"/>
+</g>
+</svg>

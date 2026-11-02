@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="56" height="28" viewBox="0 0 56 28">
+<defs>
+<linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0.0" stop-color="#fdfdfe"/><stop offset="1.0" stop-color="#c3c9d1"/></linearGradient>
+<linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0.0" stop-color="#aab2bc"/><stop offset="1.0" stop-color="#e2e6ea"/></linearGradient>
+</defs>
+<g transform="translate(0,0)">
+<circle cx="14.0" cy="14.6" r="13.0" fill="#000000" opacity="0.25"/>
+<circle cx="14.0" cy="14.0" r="13.0" fill="url(#g1)" stroke="#66707c"/>
+<circle cx="14.0" cy="14.0" r="11.5" fill="none" stroke="#ffffff" opacity="0.8"/>
+<path d="M9.8 7.3999999999999995 L21.2 14.0 L9.8 20.6 Z" fill="#2f9bff"/>
+</g>
+<g transform="translate(28,0)">
+<circle cx="14.0" cy="14.6" r="13.0" fill="#000000" opacity="0.25"/>
+<circle cx="14.0" cy="14.0" r="13.0" fill="url(#g2)" stroke="#66707c"/>
+<circle cx="14.0" cy="14.0" r="11.5" fill="none" stroke="#ffffff" opacity="0.3"/>
+<path d="M10.3 7.8999999999999995 L21.7 14.5 L10.3 21.1 Z" fill="#2f9bff"/>
+</g>
+</svg>
