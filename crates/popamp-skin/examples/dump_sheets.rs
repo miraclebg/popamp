@@ -15,7 +15,7 @@ fn main() {
         }
     };
     std::fs::create_dir_all(&out).expect("create output dir");
-    for s in Sheet::ALL {
+    for s in Sheet::ALL.into_iter().filter(|&s| s != Sheet::NumsEx || skin.has_nums_ex()) {
         let b = skin.sheet(s);
         let path = out.join(s.file_name().replace(".bmp", ".png"));
         b.save_png(&path).expect("write png");

@@ -25,8 +25,6 @@ use std::path::Path;
 pub struct Skin {
     pub name: String,
     sheets: HashMap<Sheet, Bitmap>,
-    /// The skin provides `nums_ex.bmp` (which has its own minus sign).
-    pub has_nums_ex: bool,
     pub viscolor: [u32; 24],
     pub pl: PlColors,
     /// The skin's own mouse cursors; the system cursor stands in for the rest.
@@ -53,7 +51,7 @@ pub struct Skin {
 macro_rules! builtin_files {
     ($($f:literal),*) => { [$(($f, include_bytes!(concat!("../../../skins/default/", $f)) as &[u8])),*] };
 }
-const BUILTIN: [(&str, &[u8]); 16] = builtin_files!(
+const BUILTIN: [(&str, &[u8]); 15] = builtin_files!(
     "skin.toml",
     "main.svg",
     "cbuttons.svg",
@@ -65,7 +63,6 @@ const BUILTIN: [(&str, &[u8]); 16] = builtin_files!(
     "monoster.svg",
     "playpaus.svg",
     "numbers.svg",
-    "nums_ex.svg",
     "posbar.svg",
     "eqmain.svg",
     "eq_ex.svg",
@@ -78,11 +75,7 @@ impl Skin {
     pub fn builtin_vector() -> Skin {
         let files = BUILTIN.iter().map(|(name, data)| (name.to_string(), data.to_vec())).collect();
         // The files are part of the program; a test loads them.
-        let mut skin = vector::load_onto(Skin::bare(), &files).expect("the built-in skin loads");
-        // Its `nums_ex` only stands in for skins that have none; its own
-        // clock, and theirs, use `numbers`.
-        skin.has_nums_ex = false;
-        skin
+        vector::load_onto(Skin::bare(), &files).expect("the built-in skin loads")
     }
 
     /// The built-in skin as x1 bitmaps, for classic skins to fall back on.
@@ -95,7 +88,6 @@ impl Skin {
         Skin {
             name: String::new(),
             sheets: HashMap::new(),
-            has_nums_ex: false,
             viscolor: [0; 24],
             pl: PlColors::default(),
             cursors: HashMap::new(),
@@ -125,6 +117,12 @@ impl Skin {
 
     pub fn sheet(&self, s: Sheet) -> &Bitmap {
         &self.sheets[&s]
+    }
+
+    /// The skin has its own `nums_ex` (digits with a minus sign), which
+    /// then replaces `numbers`. The built-in skin has none.
+    pub fn has_nums_ex(&self) -> bool {
+        self.sheets.contains_key(&Sheet::NumsEx)
     }
 
     /// Loads a skin archive or directory: a vector skin when it has a
@@ -158,9 +156,6 @@ impl Skin {
             if let Some(b) = decode(sheet.file_name()) {
                 skin.sheets.insert(sheet, b);
                 found += 1;
-                if sheet == Sheet::NumsEx {
-                    skin.has_nums_ex = true;
-                }
             }
         }
         // Old skins without balance.bmp reuse their volume bitmap.
@@ -340,7 +335,7 @@ mod tests {
     #[test]
     fn builtin_sheets_have_reference_sizes() {
         let skin = Skin::builtin();
-        for s in Sheet::ALL {
+        for s in Sheet::ALL.into_iter().filter(|&s| s != Sheet::NumsEx) {
             assert_eq!((skin.sheet(s).w, skin.sheet(s).h), s.size(), "{s:?}");
         }
     }
@@ -350,9 +345,9 @@ mod tests {
         let skin = Skin::builtin_vector();
         assert_eq!(skin.name, "Popamp Default");
         assert!(skin.vector);
-        assert_eq!(skin.sheet_svgs.len(), Sheet::ALL.len());
+        assert_eq!(skin.sheet_svgs.len(), Sheet::ALL.len() - 1, "all but nums_ex");
         assert_eq!(skin.viscolor[0], 0x06090d, "colours from skin.toml");
-        assert!(!skin.has_nums_ex, "skins without nums_ex.bmp must not take the built-in one");
+        assert!(!skin.has_nums_ex(), "its clock uses numbers");
         let classic = Skin::builtin();
         assert!(!classic.vector && classic.sheet_svgs.is_empty(), "x1 bitmaps for classic skins");
     }

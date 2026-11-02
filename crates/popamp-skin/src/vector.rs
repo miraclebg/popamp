@@ -406,7 +406,6 @@ impl Builder<'_> {
                 b.overlay(&r, 0, 0, (0, 0, w, h));
                 self.skin.sheets.insert(sheet, b);
             }
-            self.skin.has_nums_ex |= sheet == Sheet::NumsEx;
         }
         self.skin = std::mem::replace(&mut self.skin, Skin::bare()).with_layout(crate::Regions::default());
         Ok(())
@@ -729,12 +728,18 @@ shift = \"stop\"
     }
 
     #[test]
+    fn only_a_skin_with_nums_ex_draws_its_clock_with_it() {
+        assert!(!skin(&format!("{HEAD}[sheets]\nmain = \"play.svg\"\n")).unwrap().has_nums_ex());
+        assert!(skin(&format!("{HEAD}[sheets]\nnums_ex = \"play.svg\"\n")).unwrap().has_nums_ex());
+    }
+
+    #[test]
     fn sheets_replace_classic_bitmaps() {
         let s = skin(&format!("{HEAD}[sheets]\nmain = \"play.svg\"\n[shapes]\nmain_shade = \"play.svg\"\n")).unwrap();
         assert!(s.vector);
         let builtin = Skin::builtin_vector();
         assert_ne!(s.sheet_svgs[&Sheet::Main], builtin.sheet_svgs[&Sheet::Main]);
-        assert_eq!(s.sheet_svgs.len(), Sheet::ALL.len(), "sheets left out are the built-in skin's drawings");
+        assert_eq!(s.sheet_svgs.len(), builtin.sheet_svgs.len(), "sheets left out are the built-in skin's drawings");
         assert_eq!((s.sheet(Sheet::Main).w, s.sheet(Sheet::Main).px[0]), (23, 0x00ff00), "an x1 copy for pixel reads");
         let main = s.layout.window(WindowKey::Main).unwrap();
         assert!(matches!(main.mode(true).shape, Some(Shape::Picture(_))));

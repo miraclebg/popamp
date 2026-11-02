@@ -99,7 +99,7 @@ pub fn clock(b: &mut Canvas, skin: &Skin, fonts: &mut Fonts, r: Rect, secs: u64,
 
 /// Draws the big `m:ss` time display; `negative` shows a minus sign.
 pub fn time_digits(b: &mut Canvas, skin: &Skin, secs: Option<u64>, negative: bool, ox: i32, oy: i32) {
-    let sheet = if skin.has_nums_ex { Sheet::NumsEx } else { Sheet::Numbers };
+    let sheet = if skin.has_nums_ex() { Sheet::NumsEx } else { Sheet::Numbers };
     let blank = Rect { x: main::NUMBERS_BLANK_X, y: 0, w: main::DIGIT_W, h: main::DIGIT_H };
     let digits: [Option<u64>; 4] = match secs {
         Some(s) => {
@@ -117,7 +117,7 @@ pub fn time_digits(b: &mut Canvas, skin: &Skin, secs: Option<u64>, negative: boo
         sprite(b, skin, sheet, src, ox + x, oy + y);
     }
     let (mx, my) = main::AT_MINUS;
-    if skin.has_nums_ex {
+    if skin.has_nums_ex() {
         let src = if negative { main::NUMS_EX_MINUS } else { Rect { x: 90, y: 0, w: 9, h: 13 } };
         sprite(b, skin, sheet, src, ox + mx, oy + my);
     } else if negative {

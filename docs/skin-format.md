@@ -65,6 +65,9 @@ classic bitmap:
 `monoster`, `playpaus`, `numbers`, `nums_ex`, `posbar`, `eqmain`, `eq_ex`,
 `pledit`.
 
+`nums_ex` (digits with a minus sign) is optional: when a skin has it, the
+play time uses it instead of `numbers`.
+
 For example `cbuttons.svg` is 136 x 36 units with the Previous button's
 normal picture at 0, 0, 23 x 18 and its pressed picture at 0, 18. Any
 reference on classic Winamp 2 skins describes where each sprite is.
