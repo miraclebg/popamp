@@ -1,18 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="48" height="24" viewBox="0 0 48 24">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="12" viewBox="0 0 24 12">
 <defs>
 <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0.0" stop-color="#fdfdfe"/><stop offset="1.0" stop-color="#c3c9d1"/></linearGradient>
 <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0.0" stop-color="#aab2bc"/><stop offset="1.0" stop-color="#e2e6ea"/></linearGradient>
 </defs>
 <g transform="translate(0,0)">
-<circle cx="12.0" cy="12.6" r="11.0" fill="#000000" opacity="0.25"/>
-<circle cx="12.0" cy="12.0" r="11.0" fill="url(#g1)" stroke="#66707c"/>
-<circle cx="12.0" cy="12.0" r="9.5" fill="none" stroke="#ffffff" opacity="0.8"/>
-<path d="M8.15 5.949999999999999 L18.6 12.0 L8.15 18.05 Z" fill="#2f9bff"/>
+<circle cx="6.0" cy="6.6" r="5.0" fill="#000000" opacity="0.25"/>
+<circle cx="6.0" cy="6.0" r="5.0" fill="url(#g1)" stroke="#66707c"/>
+<circle cx="6.0" cy="6.0" r="3.5" fill="none" stroke="#ffffff" opacity="0.8"/>
+<path d="M3.5500000000000003 2.1499999999999995 L10.2 6.0 L3.5500000000000003 9.850000000000001 Z" fill="#2f9bff"/>
 </g>
-<g transform="translate(24,0)">
-<circle cx="12.0" cy="12.6" r="11.0" fill="#000000" opacity="0.25"/>
-<circle cx="12.0" cy="12.0" r="11.0" fill="url(#g2)" stroke="#66707c"/>
-<circle cx="12.0" cy="12.0" r="9.5" fill="none" stroke="#ffffff" opacity="0.3"/>
-<path d="M8.65 6.449999999999999 L19.1 12.5 L8.65 18.55 Z" fill="#2f9bff"/>
+<g transform="translate(12,0)">
+<circle cx="6.0" cy="6.6" r="5.0" fill="#000000" opacity="0.25"/>
+<circle cx="6.0" cy="6.0" r="5.0" fill="url(#g2)" stroke="#66707c"/>
+<circle cx="6.0" cy="6.0" r="3.5" fill="none" stroke="#ffffff" opacity="0.3"/>
+<path d="M4.050000000000001 2.6499999999999995 L10.7 6.5 L4.050000000000001 10.350000000000001 Z" fill="#2f9bff"/>
 </g>
 </svg>

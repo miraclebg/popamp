@@ -327,16 +327,24 @@ def main_art():
 
 
 def controls_art():
-    """Pictures the main window and the bar share."""
-    for name, glyph in (("menu", GLYPH_MENU), ("min", GLYPH_MIN), ("shade", GLYPH_SHADE), ("close", GLYPH_CLOSE)):
-        small_button(f"common/{name}.svg", glyph)
+    """Pictures of the main window's controls."""
+    common_art()
     for name, text in (("eq", "EQ"), ("pl", "PL"), ("shuffle", "SHUF"), ("repeat", "REP")):
         pill(f"main/{name}.svg", 28, 11, text)
     fill_frames("main/volume.svg", 76, 10, 28, False)
     thumb("main/seek-thumb.svg", 22, 7)
     thumb("main/vol-thumb.svg", 10, 10)
+    status_art()
 
-    # Status icons 9 x 9 and stereo/mono lamps.
+
+def common_art():
+    """Title bar buttons every window uses."""
+    for name, glyph in (("menu", GLYPH_MENU), ("min", GLYPH_MIN), ("shade", GLYPH_SHADE), ("close", GLYPH_CLOSE)):
+        small_button(f"common/{name}.svg", glyph)
+
+
+def status_art():
+    """Status icons 9 x 9 and stereo/mono lamps."""
     st = Svg(27, 9)
     st.add(f'<path d="M1.5 0.5 L8.5 4.5 L1.5 8.5 Z" fill="{LCD_TEXT}"/>')
     st.add(f'<path d="M10 1 h2.5 v7 h-2.5 Z M14 1 h2.5 v7 h-2.5 Z" fill="{LCD_TEXT}"/>')
@@ -434,13 +442,15 @@ def main_shade():
 
 
 # --- bar ---------------------------------------------------------------------------
-# A strip across the screen: transport on the left, the display stretching
-# in the middle, volume and toggles on the right. Placed at the bottom of
-# the screen by default.
-BAR_H = 28
+# A thin strip across the screen, as high as a classic window shade: the
+# transport on the left, the display stretching in the middle, volume and
+# toggles on the right. Placed at the bottom of the screen by default.
+BAR_H = 14
+# The display inside the bar, from its top to its bottom.
+LCD_TOP, LCD_BOTTOM = 1, 13
 # The stretching part of the display, from its left end to its right end
 # counted from the bar's right end.
-BAR_SPAN = (342, 204)
+BAR_SPAN = (210, 180)
 
 
 def bar_window():
@@ -449,97 +459,105 @@ def bar_window():
 
 
 def lcd_piece(name, w, cap=None, groove=False):
-    """A slice of a 22 high display: the left or right end, or the middle."""
-    s = Svg(w, 22)
-    r = 3
+    """A slice of the display: the left or right end, or the middle."""
+    h = LCD_BOTTOM - LCD_TOP
+    s = Svg(w, h)
+    r = 2
     path = {
-        "left": f"M{w} 0.5 H{r + 0.5} a{r} {r} 0 0 0 -{r} {r} V{21.5 - r} a{r} {r} 0 0 0 {r} {r} H{w}",
-        "right": f"M0 0.5 H{w - r - 0.5} a{r} {r} 0 0 1 {r} {r} V{21.5 - r} a{r} {r} 0 0 1 -{r} {r} H0",
-        None: f"M0 0.5 H{w} M0 21.5 H{w}",
+        "left": f"M{w} 0.5 H{r + 0.5} a{r} {r} 0 0 0 -{r} {r} V{h - 0.5 - r} a{r} {r} 0 0 0 {r} {r} H{w}",
+        "right": f"M0 0.5 H{w - r - 0.5} a{r} {r} 0 0 1 {r} {r} V{h - 0.5 - r} a{r} {r} 0 0 1 -{r} {r} H0",
+        None: f"M0 0.5 H{w} M0 {h - 0.5} H{w}",
     }[cap]
-    fill = {"left": f"M{w} 0 H{r} a{r} {r} 0 0 0 -{r} {r} V{22 - r} a{r} {r} 0 0 0 {r} {r} H{w} Z",
-            "right": f"M0 0 H{w - r} a{r} {r} 0 0 1 {r} {r} V{22 - r} a{r} {r} 0 0 1 -{r} {r} H0 Z",
-            None: f"M0 0 H{w} V22 H0 Z"}[cap]
+    fill = {"left": f"M{w} 0 H{r} a{r} {r} 0 0 0 -{r} {r} V{h - r} a{r} {r} 0 0 0 {r} {r} H{w} Z",
+            "right": f"M0 0 H{w - r} a{r} {r} 0 0 1 {r} {r} V{h - r} a{r} {r} 0 0 1 -{r} {r} H0 Z",
+            None: f"M0 0 H{w} V{h} H0 Z"}[cap]
     s.add(f'<path d="{fill}" fill="{s.grad(LCD)}"/>')
     s.add(f'<path d="{path}" fill="none" stroke="#3a4450"/>')
     if groove:
-        s.add(f'<rect x="0" y="14.5" width="{w}" height="5" fill="#28323c"/>')
-        s.add(f'<line x1="0" y1="19.5" x2="{w}" y2="19.5" stroke="{LCD_DIM}"/>')
+        s.add(f'<rect x="0" y="{h - 3.5}" width="{w}" height="2" fill="#28323c"/>')
     s.save(f"bar/{name}.svg")
 
 
 def bar_art():
     body = Svg(8, BAR_H)
     body.add(f'<rect width="8" height="{BAR_H}" fill="{body.grad(BODY)}"/>')
-    for y, color, opacity in ((0.5, EDGE, 1), (1.5, "#ffffff", 0.7), (BAR_H - 0.5, EDGE, 1)):
+    for y, color, opacity in ((0.5, EDGE, 1), (BAR_H - 0.5, EDGE, 1)):
         body.add(f'<line x1="0" y1="{y}" x2="8" y2="{y}" stroke="{color}" opacity="{opacity}"/>')
     body.save("bar/body.svg")
     # The fixed display: play state, time and vis.
-    d = Svg(166, 22)
-    panel(d, 0.5, 0.5, 165, 21)
-    d.add(f'<line x1="81.5" y1="3" x2="81.5" y2="19" stroke="{LCD_DIM}"/>')
+    h = LCD_BOTTOM - LCD_TOP
+    d = Svg(112, h)
+    panel(d, 0.5, 0.5, 111, h - 1, 2)
+    d.add(f'<line x1="56.5" y1="2" x2="56.5" y2="{h - 2}" stroke="{LCD_DIM}"/>')
     d.save("bar/display.svg")
-    lcd_piece("lcd-left", 6, "left")
+    lcd_piece("lcd-left", 4, "left")
     lcd_piece("lcd-tile", 8, groove=True)
-    lcd_piece("lcd-right", 6, "right")
-    for name, size, icon in (("prev", 22, 9), ("play", 24, 11), ("pause", 22, 9), ("stop", 22, 8), ("next", 22, 9),
-                             ("eject", 18, 8)):
-        round_button(f"bar/{name}.svg", size, name, icon)
-    controls_art()
+    lcd_piece("lcd-right", 4, "right")
+    for name, icon in (("prev", 6), ("play", 7), ("pause", 6), ("stop", 5), ("next", 6), ("eject", 6)):
+        round_button(f"bar/{name}.svg", 12, name, icon)
+    for name, text in (("eq", "EQ"), ("pl", "PL"), ("shuffle", "SHUF"), ("repeat", "REP")):
+        pill(f"bar/{name}.svg", 24, 10, text)
+    fill_frames("bar/volume.svg", 52, 8, 28, False)
+    thumb("bar/seek-thumb.svg", 12, 4)
+    thumb("bar/vol-thumb.svg", 8, 8)
+    common_art()
+    status_art()
 
 
 def bar_toml():
     H = BAR_H
+    top, bottom = LCD_TOP, LCD_BOTTOM
     left, right = BAR_SPAN
     T.lines.append("\n# --- bar: the main window ---")
     T.table("[[window]]", key="main", placement="bar-bottom", empty_press="nothing")
     T.table("[window.normal]", size=[640, H])
     n = "normal"
     T.el(n, type="image", edges=[0, 0, "end", H], normal="bar/body.svg", fill="tile")
-    T.el(n, type="button", rect=[6, 9, 10, 10], **look2("common/menu.svg", 10, 10), menu_press="main",
+    T.el(n, type="button", rect=[3, 2, 10, 10], **look2("common/menu.svg", 10, 10), menu_press="main",
          cursor="mainmenu", tip="Main Menu")
     transport = (
-        ("prev", 22, 22, {"click": "previous", "shift": "back5s", "ctrl": "start-of-list"}, "previous", "Previous"),
-        ("play", 24, 46, {"click": "play", "shift": "open-file", "ctrl": "open-url"}, "play", "Play"),
-        ("pause", 22, 72, {"click": "pause"}, "pause", "Pause"),
-        ("stop", 22, 96, {"click": "stop", "shift": "stop-fadeout", "ctrl": "stop-after-current"}, "stop", "Stop"),
-        ("next", 22, 120, {"click": "next", "shift": "fwd5s", "ctrl": "end-of-list"}, "next", "Next"),
-        ("eject", 18, 146, {"click": "open-file", "shift": "open-folder", "ctrl": "open-url"}, "eject", "Open"),
+        ("prev", {"click": "previous", "shift": "back5s", "ctrl": "start-of-list"}, "previous", "Previous"),
+        ("play", {"click": "play", "shift": "open-file", "ctrl": "open-url"}, "play", "Play"),
+        ("pause", {"click": "pause"}, "pause", "Pause"),
+        ("stop", {"click": "stop", "shift": "stop-fadeout", "ctrl": "stop-after-current"}, "stop", "Stop"),
+        ("next", {"click": "next", "shift": "fwd5s", "ctrl": "end-of-list"}, "next", "Next"),
+        ("eject", {"click": "open-file", "shift": "open-folder", "ctrl": "open-url"}, "eject", "Open"),
     )
-    for name, size, x, act, menu, tip in transport:
-        lk = look2(f"bar/{name}.svg", size, size)
-        T.el(n, type="button", rect=[x, (H - size) // 2, size, size], **lk, hit=lk["normal"], **act, menu=menu, tip=tip)
+    for i, (name, act, menu, tip) in enumerate(transport):
+        lk = look2(f"bar/{name}.svg", 12, 12)
+        T.el(n, type="button", rect=[16 + 13 * i, 1, 12, 12], **lk, hit=lk["normal"], **act, menu=menu, tip=tip)
     # Fixed display.
-    T.el(n, type="image", rect=[170, 3, 166, 22], normal="bar/display.svg")
+    T.el(n, type="image", rect=[96, top, 112, bottom - top], normal="bar/display.svg")
     for flag, x in (("playing", 0), ("paused", 9), ("stopped", 18)):
-        T.el(n, type="image", rect=[175, 9, 9, 9], normal=part("main/status.svg", x, 0, 9, 9), show=flag)
-    T.el(n, type="clock", rect=[186, 5, 62, 18], hide="stopped")
-    T.el(n, type="button", rect=[186, 5, 62, 18], press="toggle-time-mode", menu="time")
-    T.el(n, type="vis", rect=[255, 6, 76, 16])
-    T.el(n, type="button", rect=[255, 6, 76, 16], press="cycle-vis-mode", menu="vis")
-    # Stretching display: title over the seek bar.
-    T.el(n, type="image", edges=[left, 3, left + 6, 25], normal="bar/lcd-left.svg")
-    T.el(n, type="image", edges=[left + 6, 3, f"end-{right + 6}", 25], normal="bar/lcd-tile.svg", fill="tile")
-    T.el(n, type="image", edges=[f"end-{right + 6}", 3, f"end-{right}", 25], normal="bar/lcd-right.svg")
-    T.el(n, type="marquee", edges=[left + 6, 5, f"end-{right + 6}", 15], double="file-info", cursor="songname",
+        T.el(n, type="image", rect=[99, 3, 9, 9], normal=part("main/status.svg", x, 0, 9, 9), show=flag)
+    T.el(n, type="clock", rect=[110, 2, 42, 10], hide="stopped")
+    T.el(n, type="button", rect=[110, 2, 42, 10], press="toggle-time-mode", menu="time")
+    T.el(n, type="vis", rect=[155, 3, 50, 8])
+    T.el(n, type="button", rect=[155, 3, 50, 8], press="cycle-vis-mode", menu="vis")
+    # Stretching display: the title over a thin seek bar.
+    T.el(n, type="image", edges=[left, top, left + 4, bottom], normal="bar/lcd-left.svg")
+    T.el(n, type="image", edges=[left + 4, top, f"end-{right + 4}", bottom], normal="bar/lcd-tile.svg", fill="tile")
+    T.el(n, type="image", edges=[f"end-{right + 4}", top, f"end-{right}", bottom], normal="bar/lcd-right.svg")
+    T.el(n, type="marquee", edges=[left + 4, 2, f"end-{right + 4}", 9], double="file-info", cursor="songname",
          tip="Song Title (right-click for options)", menu="song-title")
-    T.el(n, type="slider", edges=[left + 4, 17, f"end-{right + 4}", 24], value="position", thumb={
-        "normal": part("main/seek-thumb.svg", 0, 0, 22, 7), "pressed": part("main/seek-thumb.svg", 22, 0, 22, 7)},
-         thumb_len=22, live=False, show="seekable", cursor="posbar", menu="seek")
+    T.el(n, type="slider", edges=[left + 3, 9, f"end-{right + 3}", 13], value="position", thumb={
+        "normal": part("bar/seek-thumb.svg", 0, 0, 12, 4), "pressed": part("bar/seek-thumb.svg", 12, 0, 12, 4)},
+         thumb_len=12, live=False, show="seekable", cursor="posbar", menu="seek")
     # Volume and toggles.
-    T.el(n, type="slider", edges=["end-196", 9, "end-120", 19], value="volume",
-         track={"file": "main/volume.svg", "first": [0, 0, 76, 10], "step": [0, 10], "count": 28},
-         thumb={"normal": part("main/vol-thumb.svg", 0, 0, 10, 10), "pressed": part("main/vol-thumb.svg", 10, 0, 10, 10)},
-         thumb_len=10, reset=200, wheel_step=8, cursor="volbal", tip="Volume")
-    toggles = (("eq", "eq-window", "toggle-eq-window", None, 112, 3), ("pl", "playlist-window", "toggle-playlist-window", None, 82, 3),
-               ("shuffle", "shuffle", "toggle-shuffle", "shuffle", 112, 14), ("repeat", "repeat", "toggle-repeat", "repeat", 82, 14))
-    for name, flag, cmd, menu, x, y in toggles:
-        kv = dict(type="toggle", edges=[f"end-{x}", y, f"end-{x - 28}", y + 11], **look4(f"main/{name}.svg", 28, 11),
+    T.el(n, type="slider", edges=["end-175", 3, "end-123", 11], value="volume",
+         track={"file": "bar/volume.svg", "first": [0, 0, 52, 8], "step": [0, 8], "count": 28},
+         thumb={"normal": part("bar/vol-thumb.svg", 0, 0, 8, 8), "pressed": part("bar/vol-thumb.svg", 8, 0, 8, 8)},
+         thumb_len=8, reset=200, wheel_step=8, cursor="volbal", tip="Volume")
+    toggles = (("eq", "eq-window", "toggle-eq-window", None), ("pl", "playlist-window", "toggle-playlist-window", None),
+               ("shuffle", "shuffle", "toggle-shuffle", "shuffle"), ("repeat", "repeat", "toggle-repeat", "repeat"))
+    for i, (name, flag, cmd, menu) in enumerate(toggles):
+        x = 118 - 25 * i
+        kv = dict(type="toggle", edges=[f"end-{x}", 2, f"end-{x - 24}", 12], **look4(f"bar/{name}.svg", 24, 10),
                   flag=flag, click=cmd)
         if menu:
             kv["menu"] = menu
         T.el(n, **kv)
-    T.el(n, type="button", edges=["end-18", 9, "end-8", 19], **look2("common/close.svg", 10, 10), click="exit", tip="Close")
+    T.el(n, type="button", edges=["end-13", 2, "end-3", 12], **look2("common/close.svg", 10, 10), click="exit", tip="Close")
 
 
 # --- equalizer -------------------------------------------------------------------
@@ -744,7 +762,7 @@ def main():
     T.lines.append("# Own artwork; labels are DejaVu Sans Condensed Bold outlines.")
     T.table("[meta]", name="Popamp Bar" if BAR else "Popamp Modern", author="Popamp", format_version=1)
     T.table("[text]", size=7, color=LCD_TEXT)
-    T.table("[clock]", size=16, color=LCD_TEXT)
+    T.table("[clock]", size=10 if BAR else 16, color=LCD_TEXT)
     T.table("[playlist]", normal="#9fd8ff", current="#ffffff", normal_bg="#0d1720", selected_bg="#24496f")
     vis = ["#0a131b", "#1b2a36"]
     top, mid, bottom = (0xff, 0xff, 0xff), (0x2f, 0x9b, 0xff), (0x14, 0x3d, 0x73)

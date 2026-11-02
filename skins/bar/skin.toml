@@ -11,7 +11,7 @@ size = 7
 color = "#8fd6ff"
 
 [clock]
-size = 16
+size = 10
 color = "#8fd6ff"
 
 [playlist]
@@ -31,17 +31,17 @@ placement = "bar-bottom"
 empty_press = "nothing"
 
 [window.normal]
-size = [640, 28]
+size = [640, 14]
 
 [[window.normal.element]]
 type = "image"
-edges = [0, 0, "end", 28]
+edges = [0, 0, "end", 14]
 normal = "bar/body.svg"
 fill = "tile"
 
 [[window.normal.element]]
 type = "button"
-rect = [6, 9, 10, 10]
+rect = [3, 2, 10, 10]
 normal = { file = "common/menu.svg", area = [0, 0, 10, 10] }
 pressed = { file = "common/menu.svg", area = [10, 0, 10, 10] }
 menu_press = "main"
@@ -50,10 +50,10 @@ tip = "Main Menu"
 
 [[window.normal.element]]
 type = "button"
-rect = [22, 3, 22, 22]
-normal = { file = "bar/prev.svg", area = [0, 0, 22, 22] }
-pressed = { file = "bar/prev.svg", area = [22, 0, 22, 22] }
-hit = { file = "bar/prev.svg", area = [0, 0, 22, 22] }
+rect = [16, 1, 12, 12]
+normal = { file = "bar/prev.svg", area = [0, 0, 12, 12] }
+pressed = { file = "bar/prev.svg", area = [12, 0, 12, 12] }
+hit = { file = "bar/prev.svg", area = [0, 0, 12, 12] }
 click = "previous"
 shift = "back5s"
 ctrl = "start-of-list"
@@ -62,10 +62,10 @@ tip = "Previous"
 
 [[window.normal.element]]
 type = "button"
-rect = [46, 2, 24, 24]
-normal = { file = "bar/play.svg", area = [0, 0, 24, 24] }
-pressed = { file = "bar/play.svg", area = [24, 0, 24, 24] }
-hit = { file = "bar/play.svg", area = [0, 0, 24, 24] }
+rect = [29, 1, 12, 12]
+normal = { file = "bar/play.svg", area = [0, 0, 12, 12] }
+pressed = { file = "bar/play.svg", area = [12, 0, 12, 12] }
+hit = { file = "bar/play.svg", area = [0, 0, 12, 12] }
 click = "play"
 shift = "open-file"
 ctrl = "open-url"
@@ -74,20 +74,20 @@ tip = "Play"
 
 [[window.normal.element]]
 type = "button"
-rect = [72, 3, 22, 22]
-normal = { file = "bar/pause.svg", area = [0, 0, 22, 22] }
-pressed = { file = "bar/pause.svg", area = [22, 0, 22, 22] }
-hit = { file = "bar/pause.svg", area = [0, 0, 22, 22] }
+rect = [42, 1, 12, 12]
+normal = { file = "bar/pause.svg", area = [0, 0, 12, 12] }
+pressed = { file = "bar/pause.svg", area = [12, 0, 12, 12] }
+hit = { file = "bar/pause.svg", area = [0, 0, 12, 12] }
 click = "pause"
 menu = "pause"
 tip = "Pause"
 
 [[window.normal.element]]
 type = "button"
-rect = [96, 3, 22, 22]
-normal = { file = "bar/stop.svg", area = [0, 0, 22, 22] }
-pressed = { file = "bar/stop.svg", area = [22, 0, 22, 22] }
-hit = { file = "bar/stop.svg", area = [0, 0, 22, 22] }
+rect = [55, 1, 12, 12]
+normal = { file = "bar/stop.svg", area = [0, 0, 12, 12] }
+pressed = { file = "bar/stop.svg", area = [12, 0, 12, 12] }
+hit = { file = "bar/stop.svg", area = [0, 0, 12, 12] }
 click = "stop"
 shift = "stop-fadeout"
 ctrl = "stop-after-current"
@@ -96,10 +96,10 @@ tip = "Stop"
 
 [[window.normal.element]]
 type = "button"
-rect = [120, 3, 22, 22]
-normal = { file = "bar/next.svg", area = [0, 0, 22, 22] }
-pressed = { file = "bar/next.svg", area = [22, 0, 22, 22] }
-hit = { file = "bar/next.svg", area = [0, 0, 22, 22] }
+rect = [68, 1, 12, 12]
+normal = { file = "bar/next.svg", area = [0, 0, 12, 12] }
+pressed = { file = "bar/next.svg", area = [12, 0, 12, 12] }
+hit = { file = "bar/next.svg", area = [0, 0, 12, 12] }
 click = "next"
 shift = "fwd5s"
 ctrl = "end-of-list"
@@ -108,10 +108,10 @@ tip = "Next"
 
 [[window.normal.element]]
 type = "button"
-rect = [146, 5, 18, 18]
-normal = { file = "bar/eject.svg", area = [0, 0, 18, 18] }
-pressed = { file = "bar/eject.svg", area = [18, 0, 18, 18] }
-hit = { file = "bar/eject.svg", area = [0, 0, 18, 18] }
+rect = [81, 1, 12, 12]
+normal = { file = "bar/eject.svg", area = [0, 0, 12, 12] }
+pressed = { file = "bar/eject.svg", area = [12, 0, 12, 12] }
+hit = { file = "bar/eject.svg", area = [0, 0, 12, 12] }
 click = "open-file"
 shift = "open-folder"
 ctrl = "open-url"
@@ -120,67 +120,67 @@ tip = "Open"
 
 [[window.normal.element]]
 type = "image"
-rect = [170, 3, 166, 22]
+rect = [96, 1, 112, 12]
 normal = "bar/display.svg"
 
 [[window.normal.element]]
 type = "image"
-rect = [175, 9, 9, 9]
+rect = [99, 3, 9, 9]
 normal = { file = "main/status.svg", area = [0, 0, 9, 9] }
 show = "playing"
 
 [[window.normal.element]]
 type = "image"
-rect = [175, 9, 9, 9]
+rect = [99, 3, 9, 9]
 normal = { file = "main/status.svg", area = [9, 0, 9, 9] }
 show = "paused"
 
 [[window.normal.element]]
 type = "image"
-rect = [175, 9, 9, 9]
+rect = [99, 3, 9, 9]
 normal = { file = "main/status.svg", area = [18, 0, 9, 9] }
 show = "stopped"
 
 [[window.normal.element]]
 type = "clock"
-rect = [186, 5, 62, 18]
+rect = [110, 2, 42, 10]
 hide = "stopped"
 
 [[window.normal.element]]
 type = "button"
-rect = [186, 5, 62, 18]
+rect = [110, 2, 42, 10]
 press = "toggle-time-mode"
 menu = "time"
 
 [[window.normal.element]]
 type = "vis"
-rect = [255, 6, 76, 16]
+rect = [155, 3, 50, 8]
 
 [[window.normal.element]]
 type = "button"
-rect = [255, 6, 76, 16]
+rect = [155, 3, 50, 8]
 press = "cycle-vis-mode"
 menu = "vis"
 
 [[window.normal.element]]
 type = "image"
-edges = [342, 3, 348, 25]
+edges = [210, 1, 214, 13]
 normal = "bar/lcd-left.svg"
 
 [[window.normal.element]]
 type = "image"
-edges = [348, 3, "end-210", 25]
+edges = [214, 1, "end-184", 13]
 normal = "bar/lcd-tile.svg"
 fill = "tile"
 
 [[window.normal.element]]
 type = "image"
-edges = ["end-210", 3, "end-204", 25]
+edges = ["end-184", 1, "end-180", 13]
 normal = "bar/lcd-right.svg"
 
 [[window.normal.element]]
 type = "marquee"
-edges = [348, 5, "end-210", 15]
+edges = [214, 2, "end-184", 9]
 double = "file-info"
 cursor = "songname"
 tip = "Song Title (right-click for options)"
@@ -188,10 +188,10 @@ menu = "song-title"
 
 [[window.normal.element]]
 type = "slider"
-edges = [346, 17, "end-208", 24]
+edges = [213, 9, "end-183", 13]
 value = "position"
-thumb = { normal = { file = "main/seek-thumb.svg", area = [0, 0, 22, 7] }, pressed = { file = "main/seek-thumb.svg", area = [22, 0, 22, 7] } }
-thumb_len = 22
+thumb = { normal = { file = "bar/seek-thumb.svg", area = [0, 0, 12, 4] }, pressed = { file = "bar/seek-thumb.svg", area = [12, 0, 12, 4] } }
+thumb_len = 12
 live = false
 show = "seekable"
 cursor = "posbar"
@@ -199,11 +199,11 @@ menu = "seek"
 
 [[window.normal.element]]
 type = "slider"
-edges = ["end-196", 9, "end-120", 19]
+edges = ["end-175", 3, "end-123", 11]
 value = "volume"
-track = { file = "main/volume.svg", first = [0, 0, 76, 10], step = [0, 10], count = 28 }
-thumb = { normal = { file = "main/vol-thumb.svg", area = [0, 0, 10, 10] }, pressed = { file = "main/vol-thumb.svg", area = [10, 0, 10, 10] } }
-thumb_len = 10
+track = { file = "bar/volume.svg", first = [0, 0, 52, 8], step = [0, 8], count = 28 }
+thumb = { normal = { file = "bar/vol-thumb.svg", area = [0, 0, 8, 8] }, pressed = { file = "bar/vol-thumb.svg", area = [8, 0, 8, 8] } }
+thumb_len = 8
 reset = 200
 wheel_step = 8
 cursor = "volbal"
@@ -211,49 +211,49 @@ tip = "Volume"
 
 [[window.normal.element]]
 type = "toggle"
-edges = ["end-112", 3, "end-84", 14]
-normal = { file = "main/eq.svg", area = [0, 0, 28, 11] }
-pressed = { file = "main/eq.svg", area = [28, 0, 28, 11] }
-on = { file = "main/eq.svg", area = [56, 0, 28, 11] }
-on_pressed = { file = "main/eq.svg", area = [84, 0, 28, 11] }
+edges = ["end-118", 2, "end-94", 12]
+normal = { file = "bar/eq.svg", area = [0, 0, 24, 10] }
+pressed = { file = "bar/eq.svg", area = [24, 0, 24, 10] }
+on = { file = "bar/eq.svg", area = [48, 0, 24, 10] }
+on_pressed = { file = "bar/eq.svg", area = [72, 0, 24, 10] }
 flag = "eq-window"
 click = "toggle-eq-window"
 
 [[window.normal.element]]
 type = "toggle"
-edges = ["end-82", 3, "end-54", 14]
-normal = { file = "main/pl.svg", area = [0, 0, 28, 11] }
-pressed = { file = "main/pl.svg", area = [28, 0, 28, 11] }
-on = { file = "main/pl.svg", area = [56, 0, 28, 11] }
-on_pressed = { file = "main/pl.svg", area = [84, 0, 28, 11] }
+edges = ["end-93", 2, "end-69", 12]
+normal = { file = "bar/pl.svg", area = [0, 0, 24, 10] }
+pressed = { file = "bar/pl.svg", area = [24, 0, 24, 10] }
+on = { file = "bar/pl.svg", area = [48, 0, 24, 10] }
+on_pressed = { file = "bar/pl.svg", area = [72, 0, 24, 10] }
 flag = "playlist-window"
 click = "toggle-playlist-window"
 
 [[window.normal.element]]
 type = "toggle"
-edges = ["end-112", 14, "end-84", 25]
-normal = { file = "main/shuffle.svg", area = [0, 0, 28, 11] }
-pressed = { file = "main/shuffle.svg", area = [28, 0, 28, 11] }
-on = { file = "main/shuffle.svg", area = [56, 0, 28, 11] }
-on_pressed = { file = "main/shuffle.svg", area = [84, 0, 28, 11] }
+edges = ["end-68", 2, "end-44", 12]
+normal = { file = "bar/shuffle.svg", area = [0, 0, 24, 10] }
+pressed = { file = "bar/shuffle.svg", area = [24, 0, 24, 10] }
+on = { file = "bar/shuffle.svg", area = [48, 0, 24, 10] }
+on_pressed = { file = "bar/shuffle.svg", area = [72, 0, 24, 10] }
 flag = "shuffle"
 click = "toggle-shuffle"
 menu = "shuffle"
 
 [[window.normal.element]]
 type = "toggle"
-edges = ["end-82", 14, "end-54", 25]
-normal = { file = "main/repeat.svg", area = [0, 0, 28, 11] }
-pressed = { file = "main/repeat.svg", area = [28, 0, 28, 11] }
-on = { file = "main/repeat.svg", area = [56, 0, 28, 11] }
-on_pressed = { file = "main/repeat.svg", area = [84, 0, 28, 11] }
+edges = ["end-43", 2, "end-19", 12]
+normal = { file = "bar/repeat.svg", area = [0, 0, 24, 10] }
+pressed = { file = "bar/repeat.svg", area = [24, 0, 24, 10] }
+on = { file = "bar/repeat.svg", area = [48, 0, 24, 10] }
+on_pressed = { file = "bar/repeat.svg", area = [72, 0, 24, 10] }
 flag = "repeat"
 click = "toggle-repeat"
 menu = "repeat"
 
 [[window.normal.element]]
 type = "button"
-edges = ["end-18", 9, "end-8", 19]
+edges = ["end-13", 2, "end-3", 12]
 normal = { file = "common/close.svg", area = [0, 0, 10, 10] }
 pressed = { file = "common/close.svg", area = [10, 0, 10, 10] }
 click = "exit"
