@@ -4,8 +4,10 @@ A vector skin is drawn in SVG, so it stays sharp at every window size,
 including fractional ones such as x1.25 or x1.5. Popamp's own default skin
 is a vector skin.
 
-A vector skin is a folder, or a `.zip` archive, with a file named
-`skin.toml` at its top. Everything else in it (SVG pictures, TrueType
+A vector skin is a folder, or a `.psz` archive (a zip file under another
+name), with a file named `skin.toml` at its top. Opening a `.psz` file in
+Popamp installs and applies it; a folder or `.zip` placed in the skins
+folder works too. Everything else in it (SVG pictures, TrueType
 fonts) is referred to from `skin.toml` by its path inside the skin, for
 example `"buttons/play.svg"`.
 

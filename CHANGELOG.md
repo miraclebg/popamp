@@ -15,6 +15,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `.psz`: Popamp's vector skin archive. Opening one installs it, like
+  `.wsz`, and it has its own MIME type.
 - `.deb` and AppImage packages for x86_64 and ARM64, built by a release
   workflow on version tags (`packaging/build-deb.sh`,
   `packaging/build-appimage.sh`), and AppStream metadata.

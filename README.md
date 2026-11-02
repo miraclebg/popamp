@@ -34,7 +34,7 @@ Sayooj K Karun and keeps its history; see [THIRD_PARTY.md](THIRD_PARTY.md).
 - **Own dialogs:** Jump to file (search as you type), File info and a
   Preferences window (`Ctrl+P`). Opening and saving files uses the desktop's
   dialog through `zenity` or `kdialog`.
-- **Vector skins:** drawn in SVG, sharp at every size, with TrueType text
+- **Vector skins** (`.psz`): drawn in SVG, sharp at every size, with TrueType text
   and live reload while you edit them. Popamp's default skin is one. See
   [docs/skin-format.md](docs/skin-format.md).
 - **Classic skins:** `.wsz`/`.zip` archives or unpacked directories. Each file
@@ -180,7 +180,7 @@ This builds a release binary and installs:
 |---|---|
 | `popamp` binary | `~/.local/bin/popamp` |
 | Desktop entry | `~/.local/share/applications/popamp.desktop` |
-| `.wsz` MIME type | `~/.local/share/mime/packages/popamp-skin.xml` |
+| `.wsz`/`.psz` MIME types | `~/.local/share/mime/packages/popamp-skin.xml` |
 | Icons (SVG + 16–256 px PNG) | `~/.local/share/icons/hicolor/*/apps/popamp.*` |
 | Skins folder | `~/.local/share/popamp/skins/` (created empty) |
 
@@ -209,7 +209,7 @@ rm -rf ~/.config/popamp ~/.local/share/popamp
 | Transport | `Z X C V B` (prev, play, pause, stop, next) |
 | Seek / volume | arrow keys, or drag the bars; mouse wheel changes volume |
 | Main menu | click the top-left button, right-click, or `Alt+F` |
-| Skins | `Alt+S`, or put `.wsz` files in `~/.local/share/popamp/skins/` |
+| Skins | `Alt+S`, or put `.wsz`/`.psz` files in `~/.local/share/popamp/skins/` |
 | Equalizer keys | `1`–`0` / `Q`–`P` raise/lower bands, `N` on/off, `S` presets |
 | Double size / shade | `Ctrl+D` / `Ctrl+W` (or double-click the title bar) |
 
