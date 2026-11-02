@@ -1,6 +1,7 @@
 //! Everything that depends on the windowing system. Linamp runs on X11
 //! (or Xwayland); another backend would replace this module only.
 
+use crate::scale::Scale;
 use linamp_skin::textcfg::region_mask;
 use winit::platform::x11::{WindowAttributesExtX11, WindowType};
 use winit::window::{Window, WindowAttributes};
@@ -48,8 +49,8 @@ impl Platform {
     }
 
     /// Cuts `window` to the `region.txt` polygons (`None` restores the
-    /// rectangle). `size` is in skin pixels, drawn `scale` times larger.
-    pub fn set_shape(&self, window: &Window, polys: Option<&[Vec<(i32, i32)>]>, size: (i32, i32), scale: i32) -> Result<(), String> {
+    /// rectangle). `size` is in skin pixels, drawn at `scale`.
+    pub fn set_shape(&self, window: &Window, polys: Option<&[Vec<(i32, i32)>]>, size: (i32, i32), scale: Scale) -> Result<(), String> {
         let (Some(conn), Some(xid)) = (&self.x11, x11_window_id(window)) else { return Ok(()) };
         let err = |e: &dyn std::fmt::Display| e.to_string();
         if conn.extension_information(shape::X11_EXTENSION_NAME).map_err(|e| err(&e))?.is_none() {
@@ -74,9 +75,9 @@ fn x11_window_id(w: &Window) -> Option<u32> {
 
 /// The visible part of a window as `(x, y, w, h)` rectangles in screen
 /// pixels: one per horizontal run of the region mask.
-fn shape_rects(polys: Option<&[Vec<(i32, i32)>]>, size: (i32, i32), scale: i32) -> Vec<(i16, i16, u16, u16)> {
+fn shape_rects(polys: Option<&[Vec<(i32, i32)>]>, size: (i32, i32), scale: Scale) -> Vec<(i16, i16, u16, u16)> {
     let (w, h) = size;
-    let whole = vec![(0, 0, (w * scale) as u16, (h * scale) as u16)];
+    let whole = vec![(0, 0, scale.px(w) as u16, scale.px(h) as u16)];
     let Some(polys) = polys else { return whole };
     let mask = region_mask(polys, w, h);
     let mut out = Vec::new();
@@ -91,7 +92,8 @@ fn shape_rects(polys: Option<&[Vec<(i32, i32)>]>, size: (i32, i32), scale: i32) 
             while x < w && mask[(y * w + x) as usize] {
                 x += 1;
             }
-            out.push(((start * scale) as i16, (y * scale) as i16, ((x - start) * scale) as u16, scale as u16));
+            let (x0, y0) = (scale.px(start), scale.px(y));
+            out.push((x0 as i16, y0 as i16, (scale.px(x) - x0) as u16, (scale.px(y + 1) - y0) as u16));
         }
     }
     // A region that hides everything is a broken skin: ignore it.
@@ -105,22 +107,25 @@ fn shape_rects(polys: Option<&[Vec<(i32, i32)>]>, size: (i32, i32), scale: i32) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use linamp_core::config::Scaling;
 
     #[test]
     fn no_region_is_the_whole_window() {
-        assert_eq!(shape_rects(None, (275, 116), 2), [(0, 0, 550, 232)]);
+        assert_eq!(shape_rects(None, (275, 116), Scale::new(200, Scaling::Sharp)), [(0, 0, 550, 232)]);
     }
 
     #[test]
     fn region_becomes_scaled_row_runs() {
         // A 4x2 rectangle at (1, 0) inside a 6x3 window.
         let rect = vec![vec![(1, 0), (5, 0), (5, 2), (1, 2)]];
-        assert_eq!(shape_rects(Some(&rect), (6, 3), 2), [(2, 0, 8, 2), (2, 2, 8, 2)]);
+        assert_eq!(shape_rects(Some(&rect), (6, 3), Scale::new(200, Scaling::Sharp)), [(2, 0, 8, 2), (2, 2, 8, 2)]);
+        // At x1.5 the runs meet without gaps: rows 0..2 and 2..3.
+        assert_eq!(shape_rects(Some(&rect), (6, 3), Scale::new(150, Scaling::Sharp)), [(2, 0, 6, 2), (2, 2, 6, 1)]);
     }
 
     #[test]
     fn empty_region_is_ignored() {
         let nothing = vec![vec![(0, 0), (0, 0), (0, 0)]];
-        assert_eq!(shape_rects(Some(&nothing), (10, 4), 1), [(0, 0, 10, 4)]);
+        assert_eq!(shape_rects(Some(&nothing), (10, 4), Scale::ONE), [(0, 0, 10, 4)]);
     }
 }

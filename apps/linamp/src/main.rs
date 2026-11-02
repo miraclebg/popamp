@@ -14,6 +14,7 @@ mod museum;
 mod panels;
 mod platform;
 mod render;
+mod scale;
 mod skinwin;
 mod ui;
 mod vis;

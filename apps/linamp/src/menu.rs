@@ -19,6 +19,9 @@ pub enum MenuAction {
     EqBands(bool),
     EqLimiter,
     ReplayGain(Option<i32>),
+    /// Window size in percent; 100 turns "Double Size" off.
+    Zoom(i32),
+    Scaling(linamp_core::config::Scaling),
     TitleFormat(String),
     EqPreset(usize, bool),
     EqDialog(DialogKind),

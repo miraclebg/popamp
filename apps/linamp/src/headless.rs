@@ -7,8 +7,10 @@
 
 use crate::font::Font;
 use crate::model::{AddMode, Model};
+use crate::scale::Scale;
 use crate::skinwin::SkinWin;
 use linamp_audio::{PlayState, StreamInfo};
+use linamp_core::config::Scaling;
 use linamp_core::config::{Config, Paths, Settings};
 use linamp_skin::layout::WindowKey;
 use linamp_skin::{Bitmap, Skin};
@@ -84,7 +86,24 @@ impl Renderer {
             self.shot(*k, name, set)?;
         }
         self.playing_states()?;
+        self.scaled()?;
         self.eq_preset()
+    }
+
+    /// The playing main window at x1.5, sharp and nearest, to compare.
+    fn scaled(&self) -> Result<(), String> {
+        let m = self.playing()?;
+        let (w, h) = crate::bind::window_size(&m, WindowKey::Main);
+        let mut b = Bitmap::new(w, h, 0);
+        SkinWin::new(WindowKey::Main).draw(&m, &mut Font::load(&m.skin.pl.font), &mut b, true);
+        for (mode, name) in [(Scaling::Sharp, "main-x1.5-sharp"), (Scaling::Nearest, "main-x1.5-nearest")] {
+            let s = Scale::new(150, mode);
+            let mut out = Bitmap::new(s.px(w), s.px(h), 0);
+            s.present(&b, &mut out.px, out.w as usize, out.h as usize);
+            let path = self.dir.join(format!("{name}.png"));
+            out.save_png(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        Ok(())
     }
 
     fn playing_states(&self) -> Result<(), String> {
@@ -173,6 +192,7 @@ mod tests {
         assert_eq!(size(&dir.join("playlist-default.png")), (275, 232));
         assert_eq!(size(&dir.join("playlist-wide.png")), (450, 232));
         assert_eq!(size(&dir.join("playlist-shade.png")), (275, 14));
+        assert_eq!(size(&dir.join("main-x1.5-sharp.png")), (413, 174));
         let read = |n: &str| std::fs::read(dir.join(n)).unwrap();
         assert_ne!(read("main-playing.png"), read("main-stopped.png"), "playing shows time and vis");
         assert_ne!(read("main-scope.png"), read("main-playing.png"), "oscilloscope differs from spectrum");

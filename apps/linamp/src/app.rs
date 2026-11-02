@@ -7,7 +7,7 @@ use crate::menu::{self, Layout, MenuItem};
 use crate::model::{AddMode, AppEvent, Model, UiReq};
 use crate::panels::{Panel, PanelKind};
 use crate::platform::{self, Platform, WindowRole};
-use crate::render::present_scaled;
+use crate::scale::Scale;
 use crate::skinwin::{Nav, SkinWin};
 use crate::ui::{Input, Out};
 use crate::widgets::{self, Event};
@@ -110,11 +110,14 @@ pub struct App {
     snapshot: Option<(std::path::PathBuf, u32)>,
     platform: Platform,
     mpris: Option<crate::mpris::Mpris>,
+    /// The scale the windows are shown at now.
+    shown_scale: Scale,
 }
 
 impl App {
     pub fn new(model: Model, start_minimized: bool, mpris: Option<crate::mpris::Mpris>) -> App {
         let font = Font::load(&model.skin.pl.font);
+        let shown_scale = Scale::of(model.settings());
         App {
             model,
             font,
@@ -138,15 +141,12 @@ impl App {
             snapshot: std::env::var_os("LINAMP_SNAPSHOT").map(|d| (std::path::PathBuf::from(d), 0)),
             platform: Platform::connect(),
             mpris,
+            shown_scale,
         }
     }
 
-    fn scale(&self) -> i32 {
-        if self.model.settings().dsize {
-            2
-        } else {
-            1
-        }
+    fn scale(&self) -> Scale {
+        Scale::of(self.model.settings())
     }
 
     fn logical_size(&self, k: WindowKey) -> (i32, i32) {
@@ -195,7 +195,7 @@ impl App {
                     .any(|&(mx, my, mw, mh)| pos.0 + 20 > mx && pos.0 < mx + mw - 20 && pos.1 >= my - 5 && pos.1 < my + mh - 14);
                 if !on_screen {
                     let (mx, my, _, _) = monitors[0];
-                    pos = (mx + 100, my + 100 + k.index() as i32 * 116 * scale);
+                    pos = (mx + 100, my + 100 + scale.px(k.index() as i32 * 116));
                 }
             }
             let title = crate::bind::title(k);
@@ -205,7 +205,7 @@ impl App {
             };
             let mut attrs = platform::attributes(role)
                 .with_title(title)
-                .with_inner_size(PhysicalSize::new((w * scale) as u32, (h * scale) as u32))
+                .with_inner_size(PhysicalSize::new(scale.px(w) as u32, scale.px(h) as u32))
                 .with_position(PhysicalPosition::new(pos.0, pos.1))
                 .with_visible(false)
                 .with_window_icon(window_icon());
@@ -252,7 +252,7 @@ impl App {
             self.store_pos(k, pos);
         }
         self.build_cursors(el);
-        self.apply_layout();
+        self.apply_layout(WindowKey::Main);
         if self.start_minimized {
             for k in WindowKey::ALL {
                 if let Some(w) = self.win(k) {
@@ -263,52 +263,32 @@ impl App {
     }
 
     /// Applies sizes, scale and visibility; keeps docked windows attached
-    /// when a window above them changes height.
-    fn apply_layout(&mut self) {
-        let scale = self.scale();
-        type Geometry = (i32, i32, i32, i32, bool);
-        let old: Vec<Option<Geometry>> = WindowKey::ALL
+    /// when windows change size; `anchor` stays where it is.
+    fn apply_layout(&mut self, anchor: WindowKey) {
+        let (scale, shown) = (self.scale(), self.shown_scale);
+        let old: Vec<Option<Rect>> = WindowKey::ALL
             .iter()
             .map(|&k| {
-                self.win(k).map(|w| {
-                    let s = w.window.inner_size();
-                    (w.pos.0, w.pos.1, s.width as i32, s.height as i32, w.visible)
-                })
+                let w = self.win(k).filter(|w| w.visible)?;
+                Some((w.pos.0, w.pos.1, shown.px(w.size.0), shown.px(w.size.1)))
             })
             .collect();
-        let mut new_pos: Vec<(i32, i32)> = WindowKey::ALL.iter().map(|&k| self.win(k).map(|w| w.pos).unwrap_or((0, 0))).collect();
-        for (i, &k) in WindowKey::ALL.iter().enumerate() {
-            let Some((x, y, ow, oh, vis)) = old[i] else { continue };
-            let (lw, lh) = self.logical_size(k);
-            let (nw, nh) = (lw * scale, lh * scale);
-            if !vis || (nw == ow && nh == oh) {
-                continue;
-            }
-            // Shift windows docked below/right of this one.
-            for (j, &other) in WindowKey::ALL.iter().enumerate() {
-                if j == i {
-                    continue;
-                }
-                let Some((ox, oy, oww, ohh, ovis)) = old[j] else { continue };
-                if !ovis {
-                    continue;
-                }
-                let h_overlap = ox < x + ow && ox + oww > x;
-                let v_overlap = oy < y + oh && oy + ohh > y;
-                if (oy - (y + oh)).abs() <= 1 && h_overlap {
-                    new_pos[j].1 += nh - oh;
-                } else if (ox - (x + ow)).abs() <= 1 && v_overlap {
-                    new_pos[j].0 += nw - ow;
-                }
-                let _ = other;
-            }
-        }
+        let sizes: Vec<(i32, i32)> = WindowKey::ALL
+            .iter()
+            .map(|&k| {
+                let (lw, lh) = self.logical_size(k);
+                (scale.px(lw), scale.px(lh))
+            })
+            .collect();
+        let moved = follow_docked(&old, &sizes, anchor.index(), |d| scale.px(shown.skin(d)));
+        let new_pos: Vec<(i32, i32)> =
+            WindowKey::ALL.iter().zip(moved).map(|(&k, p)| self.win(k).map_or((0, 0), |w| if w.visible { p } else { w.pos })).collect();
         for (i, &k) in WindowKey::ALL.iter().enumerate() {
             let visible = self.wanted_visible(k);
             let (lw, lh) = self.logical_size(k);
             let pos = new_pos[i];
             if let Some(w) = self.win_mut(k) {
-                let _ = w.window.request_inner_size(PhysicalSize::new((lw * scale) as u32, (lh * scale) as u32));
+                let _ = w.window.request_inner_size(PhysicalSize::new(scale.px(lw) as u32, scale.px(lh) as u32));
                 if w.pos != pos {
                     w.window.set_outer_position(PhysicalPosition::new(pos.0, pos.1));
                     w.pos = pos;
@@ -322,6 +302,7 @@ impl App {
             }
             self.store_pos(k, pos);
         }
+        self.shown_scale = scale;
         self.update_shapes();
     }
 
@@ -339,7 +320,7 @@ impl App {
                 _ => regions.equalizer.as_ref(),
             };
             let Some(w) = self.wins[k.index()].as_mut() else { continue };
-            let sig = (skin_ptr ^ polys.map(|p| p.len()).unwrap_or(0), w.size.0, w.size.1, scale);
+            let sig = (skin_ptr ^ polys.map(|p| p.len()).unwrap_or(0), w.size.0, w.size.1, scale.px(100));
             if w.shape_sig == Some(sig) {
                 continue;
             }
@@ -351,7 +332,7 @@ impl App {
     }
 
     fn render(&mut self, k: WindowKey) {
-        let scale = self.scale() as u32;
+        let scale = self.scale();
         let i = k.index();
         let Some(w) = self.wins[i].as_mut() else { return };
         if !w.visible {
@@ -363,13 +344,13 @@ impl App {
         }
         let active = w.focused;
         self.skins[k.index()].draw(&self.model, &mut self.font, &mut w.frame, active);
-        let (pw, ph) = (lw as u32 * scale, lh as u32 * scale);
+        let (pw, ph) = (scale.px(lw) as u32, scale.px(lh) as u32);
         let (Some(nw), Some(nh)) = (NonZeroU32::new(pw), NonZeroU32::new(ph)) else { return };
         if w.surface.resize(nw, nh).is_err() {
             return;
         }
         if let Ok(mut buf) = w.surface.buffer_mut() {
-            present_scaled(&w.frame, scale, &mut buf, pw);
+            scale.present(&w.frame, &mut buf, pw as usize, ph as usize);
             if let Err(e) = buf.present() {
                 log::debug!("present failed: {e}");
             }
@@ -672,7 +653,7 @@ impl App {
             return None;
         }
         let s = self.scale();
-        Some((w.pos.0, w.pos.1, w.size.0 * s, w.size.1 * s))
+        Some((w.pos.0, w.pos.1, s.px(w.size.0), s.px(w.size.1)))
     }
 
     fn docked_group(&self, root: WindowKey) -> Vec<WindowKey> {
@@ -732,7 +713,7 @@ impl App {
             if !w.visible {
                 continue;
             }
-            let (gw, gh) = (w.size.0 * scale, w.size.1 * scale);
+            let (gw, gh) = (scale.px(w.size.0), scale.px(w.size.1));
             let (gx, gy) = (start.0 + dx, start.1 + dy);
             for &(tx, ty, tw, th) in &targets {
                 let v_near = gy < ty + th + snap && gy + gh > ty - snap;
@@ -776,9 +757,9 @@ impl App {
             }
             Some(Drag::Resize { start_size, start }) => {
                 let s = self.scale();
-                let (dx, dy) = ((cursor.0 - start.0) / s, (cursor.1 - start.1) / s);
+                let (dx, dy) = (s.skin(cursor.0 - start.0), s.skin(cursor.1 - start.1));
                 if crate::bind::resize(&mut self.model, WindowKey::Playlist, *start_size, dx, dy) {
-                    self.apply_layout();
+                    self.apply_layout(WindowKey::Playlist);
                 }
             }
             None => {}
@@ -790,7 +771,7 @@ impl App {
     fn input(&self, k: WindowKey, right: bool, double: bool) -> Input {
         let s = self.scale();
         let c = self.win(k).map(|w| w.cursor).unwrap_or((0, 0));
-        Input { x: c.0.div_euclid(s), y: c.1.div_euclid(s), right, shift: self.mods.shift_key(), ctrl: self.mods.control_key(), double }
+        Input { x: s.skin(c.0), y: s.skin(c.1), right, shift: self.mods.shift_key(), ctrl: self.mods.control_key(), double }
     }
 
     fn handle_out(&mut self, el: &ActiveEventLoop, k: WindowKey, out: Out) {
@@ -1081,7 +1062,7 @@ impl App {
                     self.open_popup(el, items, at);
                 }
                 UiReq::Layout => {
-                    self.apply_layout();
+                    self.apply_layout(WindowKey::Main);
                     self.redraw_all();
                 }
                 UiReq::Minimize => {
@@ -1198,7 +1179,7 @@ fn present_unscaled(surface: &mut Surface, frame: &Bitmap) {
     let (Some(nw), Some(nh)) = (NonZeroU32::new(w), NonZeroU32::new(h)) else { return };
     if surface.resize(nw, nh).is_ok() {
         if let Ok(mut buf) = surface.buffer_mut() {
-            present_scaled(frame, 1, &mut buf, w);
+            Scale::ONE.present(frame, &mut buf, w as usize, h as usize);
             let _ = buf.present();
         }
     }
@@ -1404,5 +1385,109 @@ impl ApplicationHandler<AppEvent> for App {
         if !self.model.quit {
             self.model.save_session();
         }
+    }
+}
+
+/// Screen rectangle of a shown window: x, y, width, height.
+type Rect = (i32, i32, i32, i32);
+
+/// New positions after windows change size. `anchor`, then the first shown
+/// window of every other docked group, stays put; a window docked to a placed
+/// one goes back against the same edge, its offset along that edge passed
+/// through `rescale`.
+fn follow_docked(old: &[Option<Rect>], sizes: &[(i32, i32)], anchor: usize, rescale: impl Fn(i32) -> i32) -> Vec<(i32, i32)> {
+    let mut pos: Vec<Option<(i32, i32)>> = vec![None; old.len()];
+    for root in std::iter::once(anchor).chain(0..old.len()) {
+        let Some(r) = old[root].filter(|_| pos[root].is_none()) else { continue };
+        pos[root] = Some((r.0, r.1));
+        let mut todo = vec![root];
+        while let Some(a) = todo.pop() {
+            let (Some(ra), Some(pa)) = (old[a], pos[a]) else { continue };
+            let now = (pa.0, pa.1, sizes[a].0, sizes[a].1);
+            for b in 0..old.len() {
+                let Some(rb) = old[b].filter(|_| pos[b].is_none()) else { continue };
+                pos[b] = reattach(ra, rb, now, sizes[b], &rescale);
+                if pos[b].is_some() {
+                    todo.push(b);
+                }
+            }
+        }
+    }
+    pos.into_iter().map(|p| p.unwrap_or((0, 0))).collect()
+}
+
+/// Where `b`, which touched `a` before, goes now that `a` is at `now` and
+/// `b` has `size`; `None` if they did not touch.
+fn reattach(a: Rect, b: Rect, now: Rect, size: (i32, i32), rescale: &impl Fn(i32) -> i32) -> Option<(i32, i32)> {
+    let columns_overlap = b.0 < a.0 + a.2 && b.0 + b.2 > a.0;
+    let rows_overlap = b.1 < a.1 + a.3 && b.1 + b.3 > a.1;
+    let touch = |gap: i32| gap.abs() <= 1;
+    let x = now.0 + rescale(b.0 - a.0);
+    let y = now.1 + rescale(b.1 - a.1);
+    let sides = [
+        (columns_overlap && touch(b.1 - (a.1 + a.3)), (x, now.1 + now.3)),  // below
+        (columns_overlap && touch(a.1 - (b.1 + b.3)), (x, now.1 - size.1)), // above
+        (rows_overlap && touch(b.0 - (a.0 + a.2)), (now.0 + now.2, y)),     // right
+        (rows_overlap && touch(a.0 - (b.0 + b.2)), (now.0 - size.0, y)),    // left
+    ];
+    sides.into_iter().find(|s| s.0).map(|s| s.1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn x15(d: i32) -> i32 {
+        d * 3 / 2
+    }
+
+    #[test]
+    fn a_docked_chain_moves_down_as_a_whole() {
+        // Main, EQ and playlist stacked at x1, then all grown to x1.5.
+        let old = [Some((100, 100, 275, 116)), Some((100, 216, 275, 116)), Some((100, 332, 275, 232))];
+        let sizes = [(413, 174), (413, 174), (413, 348)];
+        assert_eq!(follow_docked(&old, &sizes, 0, x15), [(100, 100), (100, 274), (100, 448)]);
+    }
+
+    #[test]
+    fn a_window_on_the_left_moves_left_as_it_grows() {
+        // Playlist left of main, EQ under main; x1 to x1.5 and back.
+        let old = [Some((500, 0, 275, 116)), Some((500, 116, 275, 116)), Some((225, 0, 275, 232))];
+        let sizes = [(413, 174), (413, 174), (413, 348)];
+        let grown = follow_docked(&old, &sizes, 0, x15);
+        assert_eq!(grown, [(500, 0), (500, 174), (87, 0)]);
+        let old = [Some((500, 0, 413, 174)), Some((500, 174, 413, 174)), Some((87, 0, 413, 348))];
+        let sizes = [(275, 116), (275, 116), (275, 232)];
+        assert_eq!(follow_docked(&old, &sizes, 0, |d| d * 2 / 3), [(500, 0), (500, 116), (225, 0)]);
+    }
+
+    #[test]
+    fn offsets_along_an_edge_scale_with_the_windows() {
+        // EQ right of main and 20 pixels lower.
+        let old = [Some((0, 0, 275, 116)), Some((275, 20, 275, 116)), None];
+        let sizes = [(413, 174), (413, 174), (0, 0)];
+        assert_eq!(follow_docked(&old, &sizes, 0, x15), [(0, 0), (413, 30), (0, 0)]);
+    }
+
+    #[test]
+    fn shading_main_pulls_the_window_below_up_and_leaves_the_side_one() {
+        let old = [Some((500, 0, 275, 116)), Some((500, 116, 275, 116)), Some((225, 0, 275, 232))];
+        let sizes = [(275, 14), (275, 116), (275, 232)];
+        assert_eq!(follow_docked(&old, &sizes, 0, |d| d), [(500, 0), (500, 14), (225, 0)]);
+    }
+
+    #[test]
+    fn the_resized_window_stays_and_pushes_its_neighbour() {
+        // Playlist left of main grows 25 wider: main moves right, not the playlist left.
+        let old = [Some((500, 0, 275, 116)), None, Some((225, 0, 275, 232))];
+        let sizes = [(275, 116), (0, 0), (300, 232)];
+        assert_eq!(follow_docked(&old, &sizes, 2, |d| d), [(525, 0), (0, 0), (225, 0)]);
+    }
+
+    #[test]
+    fn detached_windows_stay_put() {
+        let old = [Some((0, 0, 275, 116)), None, Some((500, 500, 275, 232))];
+        let sizes = [(413, 174), (0, 0), (413, 348)];
+        assert_eq!(follow_docked(&old, &sizes, 0, x15), [(0, 0), (0, 0), (500, 500)]);
     }
 }
