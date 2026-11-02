@@ -219,6 +219,7 @@ struct ElementFile {
     cursor: Option<N<CursorKind>>,
     tip: Option<String>,
     menu: Option<N<MenuRef>>,
+    hit: Option<Spanned<PaintFile>>,
 }
 
 impl ElementFile {
@@ -259,7 +260,7 @@ impl ElementFile {
 }
 
 /// The fields each element type uses (besides rect, edges, show, hide,
-/// min_width, cursor, tip and menu).
+/// min_width, cursor, tip, menu and hit).
 const KINDS: &[(&str, &[&str])] = &[
     ("image", &["normal", "on", "inactive", "fill", "lit"]),
     ("drag", &["double"]),
@@ -497,7 +498,8 @@ impl Builder<'_> {
         let place = place(f).map_err(fail)?;
         let kind = self.kind(kind_name, f, place).map_err(|x| at(self.text, x.span.or(Some(e.span())), &x.msg))?;
         let show = show(f).map_err(fail)?;
-        Ok(Element { at: place, kind, show, cursor: f.cursor.map(|c| c.0), tip: f.tip.clone(), menu: f.menu.map(|m| m.0) })
+        let hit = self.paint(f.hit.as_ref()).map_err(|x| at(self.text, x.span, &x.msg))?;
+        Ok(Element { at: place, kind, show, cursor: f.cursor.map(|c| c.0), tip: f.tip.clone(), menu: f.menu.map(|m| m.0), hit })
     }
 
     fn kind(&mut self, name: &str, f: &ElementFile, at: Place) -> Result<Kind, Fault> {
@@ -690,8 +692,15 @@ mod tests {
     const SQUARE: &[u8] =
         br##"<svg xmlns="http://www.w3.org/2000/svg" width="23" height="18"><rect width="23" height="18" fill="#0f0"/></svg>"##;
 
+    const DOT: &[u8] =
+        br##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="10" fill="#0f0"/></svg>"##;
+
     fn skin(toml: &str) -> Result<Skin, String> {
-        let files = HashMap::from([(FILE.to_string(), toml.as_bytes().to_vec()), ("play.svg".to_string(), SQUARE.to_vec())]);
+        let files = HashMap::from([
+            (FILE.to_string(), toml.as_bytes().to_vec()),
+            ("play.svg".to_string(), SQUARE.to_vec()),
+            ("dot.svg".to_string(), DOT.to_vec()),
+        ]);
         load(&files)
     }
 
@@ -731,6 +740,30 @@ shift = \"stop\"
     fn only_a_skin_with_nums_ex_draws_its_clock_with_it() {
         assert!(!skin(&format!("{HEAD}[sheets]\nmain = \"play.svg\"\n")).unwrap().has_nums_ex());
         assert!(skin(&format!("{HEAD}[sheets]\nnums_ex = \"play.svg\"\n")).unwrap().has_nums_ex());
+    }
+
+    #[test]
+    fn a_round_button_takes_the_mouse_on_its_shape_only() {
+        let s = skin(&format!(
+            "{HEAD}
+[[window]]
+key = \"main\"
+normal.size = [275, 116]
+
+[[window.normal.element]]
+type = \"button\"
+rect = [10, 10, 20, 20]
+normal = \"dot.svg\"
+hit = \"dot.svg\"
+click = \"play\"
+"
+        ))
+        .unwrap();
+        let el = &s.layout.window(WindowKey::Main).unwrap().normal.elements[0];
+        let hit = el.hit.as_ref().unwrap();
+        assert!(s.opaque(hit, 10, 10), "the middle");
+        assert!(!s.opaque(hit, 1, 1), "a corner");
+        assert!(!s.opaque(hit, 25, 10), "beside the picture");
     }
 
     #[test]

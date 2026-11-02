@@ -189,8 +189,15 @@ normal = { file = "buttons.svg", area = [23, 0, 23, 18], offset = [0, 1] }
 
 Every element can also have `show`, `hide` or `min_width` (when it is
 visible: while a player state holds, while it does not, or while the
-window is at least that wide), `cursor`, `tip` (tooltip text) and `menu`
-(its right-click menu).
+window is at least that wide), `cursor`, `tip` (tooltip text), `menu`
+(its right-click menu) and `hit`: a picture whose opaque part is where the
+element takes the mouse, for round buttons. Without `hit` the whole
+rectangle does:
+
+```toml
+normal = "play.svg"
+hit = "play.svg"       # only the round part is the button
+```
 
 | `type` | What it is | Its keys |
 |---|---|---|

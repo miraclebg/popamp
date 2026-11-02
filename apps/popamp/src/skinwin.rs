@@ -99,7 +99,9 @@ impl SkinWin {
     fn hit(&self, model: &Model, x: i32, y: i32) -> Option<usize> {
         let c = self.current(model)?;
         c.mode.elements.iter().enumerate().rev().find_map(|(i, el)| {
-            let takes = el.interactive() && bind::holds(model, el.show, c.w) && el.at.resolve(c.w, c.h).contains(x, y);
+            let r = el.at.resolve(c.w, c.h);
+            let on_shape = || el.hit.as_ref().is_none_or(|p| model.skin.opaque(p, x - r.x, y - r.y));
+            let takes = el.interactive() && bind::holds(model, el.show, c.w) && r.contains(x, y) && on_shape();
             takes.then_some(i)
         })
     }
@@ -798,6 +800,19 @@ mod tests {
         // The clutter bar is hidden in windowshade mode.
         m.settings_mut().windowshade = true;
         assert_eq!(w.tooltip(&m, 13, 36), None);
+    }
+
+    #[test]
+    fn a_round_button_takes_the_mouse_on_its_shape_only() {
+        let mut m = Model::for_tests();
+        let dot = br##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="10"/></svg>"##;
+        let toml = "[meta]\nname = \"Round\"\nformat_version = 1\n[[window]]\nkey = \"main\"\nnormal.size = [275, 116]\n\
+            [[window.normal.element]]\ntype = \"button\"\nrect = [10, 10, 20, 20]\nnormal = \"dot.svg\"\nhit = \"dot.svg\"\nclick = \"play\"\ntip = \"Play\"\n";
+        let files = [("skin.toml".to_string(), toml.as_bytes().to_vec()), ("dot.svg".to_string(), dot.to_vec())].into();
+        m.skin = popamp_skin::vector::load(&files).unwrap();
+        let w = SkinWin::new(WindowKey::Main);
+        assert_eq!(w.tooltip(&m, 20, 20).as_deref(), Some("Play"));
+        assert_eq!(w.tooltip(&m, 11, 11), None, "the corner is not the button");
     }
 
     #[test]

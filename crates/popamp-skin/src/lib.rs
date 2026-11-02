@@ -119,6 +119,19 @@ impl Skin {
         &self.sheets[&s]
     }
 
+    /// Whether `paint`, drawn with its corner at 0, 0, covers `x`, `y`
+    /// (skin pixels) with at least half-opaque colour. Bitmaps are opaque.
+    pub fn opaque(&self, paint: &layout::Paint, x: i32, y: i32) -> bool {
+        let (x, y, src) = (x - paint.dx, y - paint.dy, paint.src);
+        if x < 0 || y < 0 || x >= src.w || y >= src.h {
+            return false;
+        }
+        match paint.picture {
+            Picture::Sheet(_) => true,
+            Picture::Svg(id) => self.svgs.raster(id, src, src.w, src.h).is_some_and(|r| r.px[(y * r.w + x) as usize] >> 24 >= 0x80),
+        }
+    }
+
     /// The skin has its own `nums_ex` (digits with a minus sign), which
     /// then replaces `numbers`. The built-in skin has none.
     pub fn has_nums_ex(&self) -> bool {
