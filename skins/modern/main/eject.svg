@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="36" height="18" viewBox="0 0 36 18">
+<defs>
+<linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0.0" stop-color="#fdfdfe"/><stop offset="1.0" stop-color="#c3c9d1"/></linearGradient>
+<linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0.0" stop-color="#aab2bc"/><stop offset="1.0" stop-color="#e2e6ea"/></linearGradient>
+</defs>
+<g transform="translate(0,0)">
+<circle cx="9.0" cy="9.6" r="8.0" fill="#000000" opacity="0.25"/>
+<circle cx="9.0" cy="9.0" r="8.0" fill="url(#g1)" stroke="#66707c"/>
+<circle cx="9.0" cy="9.0" r="6.5" fill="none" stroke="#ffffff" opacity="0.8"/>
+<path d="M5.0 9.8 L9.0 5.0 L13.0 9.8 Z M5.0 11.4 h8 v1.6 h-8 Z" fill="#2b333d"/>
+</g>
+<g transform="translate(18,0)">
+<circle cx="9.0" cy="9.6" r="8.0" fill="#000000" opacity="0.25"/>
+<circle cx="9.0" cy="9.0" r="8.0" fill="url(#g2)" stroke="#66707c"/>
+<circle cx="9.0" cy="9.0" r="6.5" fill="none" stroke="#ffffff" opacity="0.3"/>
+<path d="M5.5 10.3 L9.5 5.5 L13.5 10.3 Z M5.5 11.9 h8 v1.6 h-8 Z" fill="#2b333d"/>
+</g>
+</svg>

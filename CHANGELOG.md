@@ -15,6 +15,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `skins/modern/`: Popamp Modern, a silver vector skin with its own
+  layout, round buttons that take clicks only on their shape (the new
+  `hit` key) and rounded windows. `tools/gen_modern_skin.py` regenerates it.
 - The default skin is a vector skin folder, `skins/default/` (SVG files and
   `skin.toml`), built into the program; it replaces the skin drawn in code.
   Vector skins take any sheet they leave out from it.

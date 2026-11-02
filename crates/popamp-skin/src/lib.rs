@@ -402,6 +402,14 @@ mod tests {
     }
 
     #[test]
+    fn the_modern_example_skin_loads() {
+        let skin = Skin::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../skins/modern")).unwrap();
+        assert_eq!(skin.name, "Popamp Modern");
+        let main = skin.layout.window(WindowKey::Main).unwrap();
+        assert!(main.normal.elements.iter().filter(|e| e.hit.is_some()).count() >= 6, "round transport buttons");
+    }
+
+    #[test]
     fn lists_both_kinds_of_skin_archives() {
         let dir = std::env::temp_dir().join(format!("popamp-skin-list-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("folder")).unwrap();
