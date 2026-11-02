@@ -686,7 +686,8 @@ impl App {
         // A free window takes the windows docked to it along.
         let group = if self.placement(k) == Placement::Free { self.docked_group(k) } else { vec![k] };
         let start = self.cursor_screen(k);
-        let group = group.into_iter().filter_map(|g| self.win(g).map(|w| (g, w.pos))).collect();
+        let group: Vec<_> = group.into_iter().filter_map(|g| self.win(g).map(|w| (g, w.pos))).collect();
+        log::debug!(target: "moves", "begin {k:?}: group {group:?}, cursor {start:?}, x1 is 100 px wide: {}", self.scale().px(100));
         self.drag = Some(Drag::Move { group, start });
     }
 
@@ -744,7 +745,9 @@ impl App {
             Some(Drag::Move { group, start }) => {
                 let (dx, dy) = (cursor.0 - start.0, cursor.1 - start.1);
                 let group = group.clone();
-                let (dx, dy) = self.snap_delta(&group, dx, dy);
+                let (sx, sy) = self.snap_delta(&group, dx, dy);
+                log::debug!(target: "moves", "drag {k:?}: cursor {cursor:?} (local {:?}), by ({dx},{dy}) snapped ({sx},{sy})", self.win(k).map(|w| w.cursor));
+                let (dx, dy) = (sx, sy);
                 for (g, origin) in group {
                     let p = (origin.0 + dx, origin.1 + dy);
                     if let Some(w) = self.win_mut(g) {
@@ -824,6 +827,7 @@ impl App {
         if let Some(drag) = self.drag.take() {
             if let Drag::Move { group, .. } = drag {
                 for (g, _) in group {
+                    log::debug!(target: "moves", "end {g:?} at {:?}", self.win(g).map(|w| w.pos));
                     if let Some(p) = self.win(g).map(|w| w.pos) {
                         self.store_pos(g, p);
                     }
@@ -1343,6 +1347,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.render(k);
             }
             WindowEvent::Moved(p) => {
+                log::debug!(target: "moves", "{k:?} moved to ({},{}); we had {:?}, dragging {}", p.x, p.y, self.win(k).map(|w| w.pos), self.drag.is_some());
                 // Always trust the WM: it may hold a window back (at a panel,
                 // say), and the pointer's screen position is counted from
                 // where the window really is.
