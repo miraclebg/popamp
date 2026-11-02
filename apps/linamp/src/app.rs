@@ -1,21 +1,23 @@
 //! Windowing: winit event loop, skinned windows, docking/snapping, pop-up
 //! menus, keyboard shortcuts and drag & drop.
 
+use crate::canvas::Canvas;
 use crate::dialogs::{self, DialogResult};
-use crate::font::Font;
+use crate::font::Fonts;
 use crate::menu::{self, Layout, MenuItem};
 use crate::model::{AddMode, AppEvent, Model, UiReq};
 use crate::panels::{Panel, PanelKind};
-use crate::platform::{self, Platform, WindowRole};
+use crate::platform::{self, Mask, Platform, WindowRole};
 use crate::scale::Scale;
 use crate::skinwin::{Nav, SkinWin};
 use crate::ui::{Input, Out};
 use crate::widgets::{self, Event};
 use linamp_audio::PlayState;
 use linamp_core::Command;
-use linamp_skin::layout::{Placement, WindowKey};
-use linamp_skin::Bitmap;
+use linamp_skin::layout::{Paint, Placement, Shape, WindowKey};
+use linamp_skin::textcfg::region_mask;
 use linamp_skin::CursorKind;
+use linamp_skin::{Bitmap, Picture, Skin};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -41,7 +43,7 @@ struct SkinWindow {
     /// Cursor in physical window coordinates.
     cursor: (i32, i32),
     frame: Bitmap,
-    shape_sig: Option<(usize, i32, i32, i32)>,
+    shape_sig: Option<(usize, i32, i32)>,
     /// The skin cursor last set on this window.
     cursor_kind: Option<CursorKind>,
 }
@@ -86,7 +88,7 @@ enum Drag {
 
 pub struct App {
     pub model: Model,
-    font: Font,
+    fonts: Fonts,
     /// The skinned windows, by `idx`.
     skins: [SkinWin; 3],
     wins: [Option<SkinWindow>; 3],
@@ -116,11 +118,11 @@ pub struct App {
 
 impl App {
     pub fn new(model: Model, start_minimized: bool, mpris: Option<crate::mpris::Mpris>) -> App {
-        let font = Font::load(&model.skin.pl.font);
+        let fonts = Fonts::for_skin(&model.skin);
         let shown_scale = Scale::of(model.settings());
         App {
             model,
-            font,
+            fonts,
             skins: [SkinWin::new(WindowKey::Main), SkinWin::new(WindowKey::Eq), SkinWin::new(WindowKey::Playlist)],
             wins: [None, None, None],
             popups: Vec::new(),
@@ -306,26 +308,21 @@ impl App {
         self.update_shapes();
     }
 
-    /// Applies `region.txt` window shapes.
+    /// Applies the window shapes of the modes on screen.
     fn update_shapes(&mut self) {
         let scale = self.scale();
-        let regions = &self.model.skin.regions;
-        let s = &self.model.config.settings;
-        let skin_ptr = &self.model.skin as *const _ as usize;
-        for k in [WindowKey::Main, WindowKey::Eq] {
-            let polys = match k {
-                WindowKey::Main if s.windowshade => regions.window_shade.as_ref(),
-                WindowKey::Main => regions.normal.as_ref(),
-                _ if s.eq_ws => regions.equalizer_ws.as_ref(),
-                _ => regions.equalizer.as_ref(),
-            };
+        for k in WindowKey::ALL {
+            let def = self.model.skin.layout.window(k);
+            let shape = def.and_then(|d| d.mode(crate::bind::shaded(&self.model, k)).shape.as_ref());
             let Some(w) = self.wins[k.index()].as_mut() else { continue };
-            let sig = (skin_ptr ^ polys.map(|p| p.len()).unwrap_or(0), w.size.0, w.size.1, scale.px(100));
+            let size = (scale.px(w.size.0), scale.px(w.size.1));
+            let sig = (shape.map_or(0, |s| s as *const Shape as usize), size.0, size.1);
             if w.shape_sig == Some(sig) {
                 continue;
             }
             w.shape_sig = Some(sig);
-            if let Err(e) = self.platform.set_shape(&w.window, polys.map(|v| v.as_slice()), w.size, scale) {
+            let mask = shape.and_then(|s| shape_mask(&self.model.skin, s, w.size, scale));
+            if let Err(e) = self.platform.set_shape(&w.window, mask.as_ref(), size) {
                 log::debug!("shape: {e}");
             }
         }
@@ -339,11 +336,14 @@ impl App {
             return;
         }
         let (lw, lh) = w.size;
-        if w.frame.w != lw || w.frame.h != lh {
-            w.frame = Bitmap::new(lw, lh, 0);
+        // Vector skins are drawn at screen size, classic ones at x1 and scaled.
+        let drawn = if self.model.skin.vector { scale } else { Scale::ONE };
+        let (fw, fh) = (drawn.px(lw), drawn.px(lh));
+        if w.frame.w != fw || w.frame.h != fh {
+            w.frame = Bitmap::new(fw, fh, 0);
         }
         let active = w.focused;
-        self.skins[k.index()].draw(&self.model, &mut self.font, &mut w.frame, active);
+        self.skins[k.index()].draw(&self.model, &mut self.fonts, &mut Canvas::new(&mut w.frame, drawn), active);
         let (pw, ph) = (scale.px(lw) as u32, scale.px(lh) as u32);
         let (Some(nw), Some(nh)) = (NonZeroU32::new(pw), NonZeroU32::new(ph)) else { return };
         if w.surface.resize(nw, nh).is_err() {
@@ -376,7 +376,7 @@ impl App {
         if items.is_empty() {
             return;
         }
-        let layout = menu::layout(&items, &mut self.font);
+        let layout = menu::layout(&items, &mut self.fonts.list);
         let (mut x, mut y) = at;
         // Keep the menu on the monitor.
         if let Some(m) = self.win(WindowKey::Main).and_then(|w| w.window.current_monitor()) {
@@ -403,7 +403,7 @@ impl App {
 
     fn render_popup(&mut self, i: usize) {
         let Some(p) = self.popups.get_mut(i) else { return };
-        menu::draw(&mut p.frame, &p.items, &p.layout, p.hover, &mut self.font);
+        menu::draw(&mut p.frame, &p.items, &p.layout, p.hover, &mut self.fonts.list);
         present_unscaled(&mut p.surface, &p.frame);
     }
 
@@ -445,7 +445,7 @@ impl App {
 
     fn render_panel(&mut self, i: usize) {
         let Some(p) = self.panels.get_mut(i) else { return };
-        p.panel.form().draw(&mut p.frame, &mut self.font);
+        p.panel.form().draw(&mut p.frame, &mut self.fonts.list);
         present_unscaled(&mut p.surface, &p.frame);
     }
 
@@ -558,7 +558,7 @@ impl App {
             return;
         }
         let text = tip.text.clone();
-        let frame = menu::tooltip(&text, &mut self.font);
+        let frame = menu::tooltip(&text, &mut self.fonts.list);
         let (x, y) = self.cursor_screen(WindowKey::Main);
         let attrs = platform::attributes(WindowRole::Tooltip)
             .with_title(text)
@@ -576,7 +576,7 @@ impl App {
 
     fn render_tooltip(&mut self) {
         let Some(Tooltip { text, shown: Some((_, surface)), .. }) = &mut self.tip else { return };
-        let frame = menu::tooltip(text, &mut self.font);
+        let frame = menu::tooltip(text, &mut self.fonts.list);
         present_unscaled(surface, &frame);
     }
 
@@ -1087,14 +1087,15 @@ impl App {
                     el.exit();
                 }
                 UiReq::SkinChanged => {
-                    self.font = Font::load(&self.model.skin.pl.font);
+                    self.fonts = Fonts::for_skin(&self.model.skin);
                     self.build_cursors(el);
                     for k in WindowKey::ALL {
                         if let Some(w) = self.win_mut(k) {
                             w.shape_sig = None;
                         }
                     }
-                    self.update_shapes();
+                    // A vector skin may size its windows differently.
+                    self.apply_layout(WindowKey::Main);
                     self.redraw_all();
                 }
                 UiReq::AlwaysOnTop => {
@@ -1159,10 +1160,11 @@ impl App {
         let rate = sh.sample_rate();
         let settings = self.model.settings().clone();
         self.model.vis.analyze(&settings, rate);
-        self.skins[WindowKey::Main.index()].tick(&self.model);
+        self.skins[WindowKey::Main.index()].tick(&self.model, &mut self.fonts);
         self.render(WindowKey::Main);
         if self.last_slow.elapsed() >= Duration::from_millis(500) {
             self.last_slow = Instant::now();
+            self.model.reload_skin_if_changed();
             if state != PlayState::Stopped || settings.pe_width >= 350 {
                 self.render(WindowKey::Playlist);
             }
@@ -1385,6 +1387,20 @@ impl ApplicationHandler<AppEvent> for App {
         if !self.model.quit {
             self.model.save_session();
         }
+    }
+}
+
+/// The pixels of a window `size` skin pixels big that `shape` shows.
+fn shape_mask(skin: &Skin, shape: &Shape, size: (i32, i32), scale: Scale) -> Option<Mask> {
+    let (w, h) = size;
+    match shape {
+        Shape::Polygons(polys) => Some(Mask { w, h, on: region_mask(polys, w, h), scale }),
+        Shape::Picture(Paint { picture: Picture::Svg(id), src, .. }) => {
+            let (pw, ph) = (scale.px(w), scale.px(h));
+            let r = skin.svgs.raster(*id, *src, pw, ph)?;
+            Some(Mask { w: pw, h: ph, on: r.px.iter().map(|p| p >> 24 >= 128).collect(), scale: Scale::ONE })
+        }
+        Shape::Picture(_) => None,
     }
 }
 

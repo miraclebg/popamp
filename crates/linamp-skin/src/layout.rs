@@ -14,6 +14,8 @@
 //! - *anchor*: which window edge an element edge follows when the window
 //!   is resized ([`Pos`]).
 //! - *paint*: how an element looks in one state ([`Paint`]).
+//! - *picture*: where a paint's pixels come from: a classic skin bitmap
+//!   or an SVG file of a vector skin ([`Picture`]).
 
 use crate::cursors::CursorKind;
 use crate::sprites::{Rect, Sheet};
@@ -119,6 +121,16 @@ pub struct Mode {
     pub height: Dim,
     pub cursor: CursorKind,
     pub elements: Vec<Element>,
+    /// The visible part of the window; all of it when `None`.
+    pub shape: Option<Shape>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Shape {
+    /// Classic `region.txt` polygons in skin pixels.
+    Polygons(Vec<Vec<(i32, i32)>>),
+    /// The opaque part of a picture stretched over the window.
+    Picture(Paint),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -227,10 +239,18 @@ impl Place {
     }
 }
 
-/// A picture drawn at the element's top-left corner plus `(dx, dy)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Picture {
+    Sheet(Sheet),
+    /// A vector skin's SVG file, by its place in the skin's list.
+    Svg(u16),
+}
+
+/// Area `src` of a picture, drawn at the element's top-left corner plus
+/// `(dx, dy)`. For an SVG, `src` is in the SVG's own units.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Paint {
-    pub sheet: Sheet,
+    pub picture: Picture,
     pub src: Rect,
     pub dx: i32,
     pub dy: i32,
@@ -238,7 +258,7 @@ pub struct Paint {
 
 impl Paint {
     pub const fn new(sheet: Sheet, src: Rect) -> Paint {
-        Paint { sheet, src, dx: 0, dy: 0 }
+        Paint { picture: Picture::Sheet(sheet), src, dx: 0, dy: 0 }
     }
 
     pub const fn offset(self, dx: i32, dy: i32) -> Paint {
@@ -393,7 +413,7 @@ pub struct Slider {
 /// A grid of background pictures, one per step of the value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Frames {
-    pub sheet: Sheet,
+    pub picture: Picture,
     pub first: Rect,
     pub step: (i32, i32),
     pub count: i32,
@@ -558,7 +578,14 @@ mod tests {
     }
 
     fn frames(map: FrameMap) -> Frames {
-        Frames { sheet: Sheet::Volume, first: Rect { x: 0, y: 0, w: 68, h: 13 }, step: (0, 15), count: 28, per_row: 1, map }
+        Frames {
+            picture: Picture::Sheet(Sheet::Volume),
+            first: Rect { x: 0, y: 0, w: 68, h: 13 },
+            step: (0, 15),
+            count: 28,
+            per_row: 1,
+            map,
+        }
     }
 
     #[test]

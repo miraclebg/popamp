@@ -119,11 +119,11 @@ fn main_shade() -> Mode {
     for (rc, (action, _)) in m::SHADE_TRANSPORT.iter().zip(transport()) {
         v.push(hot_spot(rect(*rc), action));
     }
-    Mode { width: Dim::Fixed(m::SHADE_SIZE.0), height: Dim::Fixed(m::SHADE_SIZE.1), cursor: C::WSNormal, elements: v }
+    Mode { width: Dim::Fixed(m::SHADE_SIZE.0), height: Dim::Fixed(m::SHADE_SIZE.1), cursor: C::WSNormal, elements: v, shape: None }
 }
 
 fn single_frame(sheet: Sheet, src: Rect) -> Frames {
-    Frames { sheet, first: src, step: (0, 0), count: 1, per_row: 1, map: FrameMap::Rising }
+    Frames { picture: Picture::Sheet(sheet), first: src, step: (0, 0), count: 1, per_row: 1, map: FrameMap::Rising }
 }
 
 fn main_normal(volume_h: i32, balance_h: i32) -> Mode {
@@ -189,7 +189,7 @@ fn main_normal(volume_h: i32, balance_h: i32) -> Mode {
         el.menu = menu;
         v.push(el);
     }
-    Mode { width: Dim::Fixed(m::SIZE.0), height: Dim::Fixed(m::SIZE.1), cursor: C::Normal, elements: v }
+    Mode { width: Dim::Fixed(m::SIZE.0), height: Dim::Fixed(m::SIZE.1), cursor: C::Normal, elements: v, shape: None }
 }
 
 /// The O A I D V buttons; A and D light up while their option is on.
@@ -270,7 +270,7 @@ fn volume_slider(value: Value, area: Rect, src_x: i32, sheet_h: i32, detent: i64
             value,
             vertical: false,
             track: Some(Frames {
-                sheet,
+                picture: Picture::Sheet(sheet),
                 first: r(src_x, 0, area.w, area.h),
                 step: (0, m::SLIDER_FRAME_STEP),
                 count: m::SLIDER_FRAMES,
@@ -315,7 +315,7 @@ fn eq_shade() -> Mode {
         Element::new(Place::fixed(0, 0, 275, 14), Kind::Drag { double: Some(Command::ToggleEqShade) }).cursor(C::EqTitle),
     ];
     v.extend(eq_title_buttons(x, Some(e::SHADE_CLOSE_PRESSED), Some(e::UNSHADE_PRESSED)));
-    Mode { width: Dim::Fixed(e::SHADE_SIZE.0), height: Dim::Fixed(e::SHADE_SIZE.1), cursor: C::EqNormal, elements: v }
+    Mode { width: Dim::Fixed(e::SHADE_SIZE.0), height: Dim::Fixed(e::SHADE_SIZE.1), cursor: C::EqNormal, elements: v, shape: None }
 }
 
 fn eq_normal() -> Mode {
@@ -340,7 +340,7 @@ fn eq_normal() -> Mode {
         v.push(eq_slider(Value::EqBand(i), e::BAND_X0 + i as i32 * e::BAND_STEP));
     }
     v.push(Element::new(at(e::AT_GRAPH, e::GRAPH_BG.w, e::GRAPH_BG.h), Kind::EqGraph));
-    Mode { width: Dim::Fixed(e::SIZE.0), height: Dim::Fixed(e::SIZE.1), cursor: C::EqNormal, elements: v }
+    Mode { width: Dim::Fixed(e::SIZE.0), height: Dim::Fixed(e::SIZE.1), cursor: C::EqNormal, elements: v, shape: None }
 }
 
 fn eq_slider(value: Value, x: i32) -> Element {
@@ -353,7 +353,7 @@ fn eq_slider(value: Value, x: i32) -> Element {
             value,
             vertical: true,
             track: Some(Frames {
-                sheet: s,
+                picture: Picture::Sheet(s),
                 first,
                 step: (e::slider_frame(1).x - first.x, second_row.y - first.y),
                 count: 28,
@@ -426,7 +426,7 @@ fn playlist_shade() -> Mode {
             .cursor(C::PClose),
         Element::new(span(Start(5), Start(4), End(-55), Start(10)), Kind::Text(Text::Title)),
     ];
-    Mode { width: Dim::Free { min: p::MIN_SIZE.0, step: p::STEP.0 }, height: Dim::Fixed(14), cursor: C::PWSNorm, elements: v }
+    Mode { width: Dim::Free { min: p::MIN_SIZE.0, step: p::STEP.0 }, height: Dim::Fixed(14), cursor: C::PWSNorm, elements: v, shape: None }
 }
 
 fn playlist_normal() -> Mode {
@@ -473,6 +473,7 @@ fn playlist_normal() -> Mode {
         height: Dim::Free { min: p::MIN_SIZE.1, step: p::STEP.1 },
         cursor: C::PNormal,
         elements: v,
+        shape: None,
     }
 }
 
@@ -527,7 +528,8 @@ mod tests {
             for mode in [Some(&w.normal), w.shade.as_ref()].into_iter().flatten() {
                 for el in &mode.elements {
                     for pt in paints(&el.kind) {
-                        let (sw, sh) = pt.sheet.size();
+                        let Picture::Sheet(sheet) = pt.picture else { panic!("{pt:?}") };
+                        let (sw, sh) = sheet.size();
                         let s = pt.src;
                         assert!(s.x >= 0 && s.y >= 0 && s.x + s.w <= sw && s.y + s.h <= sh, "{:?} {:?}", w.key, pt);
                     }

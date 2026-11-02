@@ -6,14 +6,19 @@ mod classic;
 pub mod cursors;
 pub mod default_skin;
 pub mod layout;
+mod names;
+pub mod pen;
 pub mod sprites;
+pub mod svg;
 pub mod textcfg;
+pub mod vector;
 
-pub use bitmap::Bitmap;
+pub use bitmap::{Bitmap, Rgba};
 pub use cursors::{CursorImage, CursorKind};
-pub use layout::Layout;
+pub use layout::{Layout, Picture};
+use layout::{Shape, WindowKey};
 pub use sprites::{Rect, Sheet};
-pub use textcfg::{PlColors, Regions};
+pub use textcfg::{PlColors, Regions, TextStyle};
 
 use std::collections::HashMap;
 use std::io::Read;
@@ -26,11 +31,24 @@ pub struct Skin {
     pub has_nums_ex: bool,
     pub viscolor: [u32; 24],
     pub pl: PlColors,
-    pub regions: Regions,
     /// The skin's own mouse cursors; the system cursor stands in for the rest.
     pub cursors: HashMap<CursorKind, CursorImage>,
     /// The windows and their elements.
     pub layout: Layout,
+    /// A vector skin's pictures.
+    pub svgs: svg::Svgs,
+    /// Drawn at screen size rather than scaled up from x1.
+    pub vector: bool,
+    /// A vector skin's drawings of classic sheets, used in their place.
+    pub sheet_svgs: HashMap<Sheet, u16>,
+    /// A vector skin's small texts (title, kbps...); classic skins use
+    /// `text.bmp`.
+    pub text: Option<TextStyle>,
+    /// A vector skin's play time; classic skins use their digit bitmaps.
+    pub clock: Option<TextStyle>,
+    /// A vector skin's playlist font file; otherwise `pl.font` names a
+    /// system font.
+    pub pl_font: Option<Vec<u8>>,
 }
 
 impl Skin {
@@ -42,16 +60,43 @@ impl Skin {
             has_nums_ex: false,
             viscolor: default_skin::viscolors(),
             pl: default_skin::pl_colors(),
-            regions: Regions::default(),
             cursors: HashMap::new(),
             layout: Layout::default(),
+            svgs: svg::Svgs::default(),
+            vector: false,
+            sheet_svgs: HashMap::new(),
+            text: None,
+            clock: None,
+            pl_font: None,
         }
-        .with_layout()
+        .with_layout(Regions::default())
     }
 
-    /// Builds the classic layout for the skin's bitmaps.
-    fn with_layout(mut self) -> Skin {
+    /// Linamp's own skin drawn in SVG: the design of [`Skin::builtin`],
+    /// sharp at any scale. The player's default skin.
+    pub fn builtin_vector() -> Skin {
+        let mut skin = Skin::builtin();
+        for s in Sheet::ALL {
+            match skin.svgs.add(default_skin::svg_sheet(s).as_bytes()) {
+                Ok(id) => drop(skin.sheet_svgs.insert(s, id)),
+                Err(e) => log::warn!("built-in {}: {e}", s.file_name()),
+            }
+        }
+        skin.vector = true;
+        skin
+    }
+
+    /// Builds the classic layout for the skin's bitmaps and window shapes.
+    pub(crate) fn with_layout(mut self, regions: Regions) -> Skin {
         self.layout = classic::layout(self.sheet(Sheet::Volume).h, self.sheet(Sheet::Balance).h);
+        let shapes = [(WindowKey::Main, regions.normal, regions.window_shade), (WindowKey::Eq, regions.equalizer, regions.equalizer_ws)];
+        for (key, normal, shade) in shapes {
+            let Some(w) = self.layout.windows.iter_mut().find(|w| w.key == key) else { continue };
+            w.normal.shape = normal.map(Shape::Polygons);
+            if let Some(s) = &mut w.shade {
+                s.shape = shade.map(Shape::Polygons);
+            }
+        }
         self
     }
 
@@ -59,11 +104,15 @@ impl Skin {
         &self.sheets[&s]
     }
 
-    /// Loads a skin archive or directory.
+    /// Loads a skin archive or directory: a vector skin when it has a
+    /// `skin.toml`, a classic one otherwise.
     pub fn load(path: &Path) -> Result<Skin, String> {
-        let files = if path.is_dir() { read_dir_files(path)? } else { read_zip_files(path)? };
+        let read = |key: Key| if path.is_dir() { read_dir_files(path, key) } else { read_zip_files(path, key) };
+        if is_vector(path) {
+            return read(vector_key).and_then(|files| vector::load(&files)).map_err(|e| format!("{}: {e}", path.display()));
+        }
         let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        Ok(Self::from_files(name, &files))
+        Ok(Self::from_files(name, &read(classic_key)?))
     }
 
     /// Builds a skin from lower-cased basename → bytes.
@@ -106,9 +155,7 @@ impl Skin {
         } else if found > 0 {
             skin.pl = PlColors::default();
         }
-        if let Some(t) = files.get("region.txt") {
-            skin.regions = textcfg::parse_region(&linamp_core::text::decode_lossy(t));
-        }
+        let regions = files.get("region.txt").map(|t| textcfg::parse_region(&linamp_core::text::decode_lossy(t))).unwrap_or_default();
         for kind in CursorKind::ALL {
             let Some(bytes) = files.get(kind.file_name()) else { continue };
             match cursors::parse(bytes) {
@@ -121,7 +168,7 @@ impl Skin {
         if found == 0 {
             log::warn!("skin {}: no recognised bitmaps, using defaults", skin.name);
         }
-        skin.with_layout()
+        skin.with_layout(regions)
     }
 }
 
@@ -131,20 +178,42 @@ fn wanted(name: &str) -> bool {
     name.ends_with(".bmp") || name.ends_with(".png") || name.ends_with(".txt") || name.ends_with(".cur")
 }
 
-fn read_zip_files(path: &Path) -> Result<HashMap<String, Vec<u8>>, String> {
+fn is_vector(path: &Path) -> bool {
+    if path.is_dir() {
+        return path.join(vector::FILE).is_file();
+    }
+    let zip = std::fs::File::open(path).ok().and_then(|f| zip::ZipArchive::new(f).ok());
+    zip.is_some_and(|mut z| z.by_name(vector::FILE).is_ok())
+}
+
+/// The name a file inside a skin is known by, or `None` to skip it.
+type Key = fn(&str) -> Option<String>;
+
+/// Classic skins: the lower-case base name, wherever the file is.
+fn classic_key(path: &str) -> Option<String> {
+    let base = path.rsplit(['/', '\\']).next().unwrap_or("").to_ascii_lowercase();
+    wanted(&base).then_some(base)
+}
+
+/// Vector skins: the path from the skin's top folder.
+fn vector_key(path: &str) -> Option<String> {
+    Some(path.replace('\\', "/"))
+}
+
+fn read_zip_files(path: &Path, key: Key) -> Result<HashMap<String, Vec<u8>>, String> {
     let file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    read_zip(file).map_err(|e| format!("{}: {e}", path.display()))
+    read_zip(file, key).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Checks downloaded bytes before they are saved as a skin: a zip archive
 /// whose main window bitmap decodes.
 pub fn check_archive(bytes: &[u8]) -> Result<(), String> {
-    let files = read_zip(std::io::Cursor::new(bytes))?;
+    let files = read_zip(std::io::Cursor::new(bytes), classic_key)?;
     let main = files.get(Sheet::Main.file_name()).ok_or("no main window bitmap in the archive")?;
     Bitmap::decode(main).map(drop)
 }
 
-fn read_zip(file: impl Read + std::io::Seek) -> Result<HashMap<String, Vec<u8>>, String> {
+fn read_zip(file: impl Read + std::io::Seek, key: Key) -> Result<HashMap<String, Vec<u8>>, String> {
     let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("not a skin archive: {e}"))?;
     let mut out = HashMap::new();
     for i in 0..zip.len() {
@@ -152,10 +221,7 @@ fn read_zip(file: impl Read + std::io::Seek) -> Result<HashMap<String, Vec<u8>>,
         if entry.is_dir() || entry.size() > MAX_FILE {
             continue;
         }
-        let base = entry.name().rsplit(['/', '\\']).next().unwrap_or("").to_ascii_lowercase();
-        if !wanted(&base) || out.contains_key(&base) {
-            continue;
-        }
+        let Some(base) = key(entry.name()).filter(|k| !out.contains_key(k)) else { continue };
         let mut data = Vec::with_capacity(entry.size() as usize);
         if entry.by_ref().take(MAX_FILE).read_to_end(&mut data).is_ok() {
             out.insert(base, data);
@@ -164,7 +230,7 @@ fn read_zip(file: impl Read + std::io::Seek) -> Result<HashMap<String, Vec<u8>>,
     Ok(out)
 }
 
-fn read_dir_files(dir: &Path) -> Result<HashMap<String, Vec<u8>>, String> {
+fn read_dir_files(dir: &Path, key: Key) -> Result<HashMap<String, Vec<u8>>, String> {
     let mut out = HashMap::new();
     let mut stack = vec![(dir.to_path_buf(), 0)];
     while let Some((d, depth)) = stack.pop() {
@@ -177,8 +243,9 @@ fn read_dir_files(dir: &Path) -> Result<HashMap<String, Vec<u8>>, String> {
                 }
                 continue;
             }
-            let base = entry.file_name().to_string_lossy().to_ascii_lowercase();
-            if wanted(&base) && !out.contains_key(&base) && entry.metadata().map(|m| m.len() <= MAX_FILE).unwrap_or(false) {
+            let inside = p.strip_prefix(dir).unwrap_or(&p).to_string_lossy();
+            let Some(base) = key(&inside).filter(|k| !out.contains_key(k)) else { continue };
+            if entry.metadata().map(|m| m.len() <= MAX_FILE).unwrap_or(false) {
                 if let Ok(data) = std::fs::read(&p) {
                     out.insert(base, data);
                 }
@@ -186,6 +253,23 @@ fn read_dir_files(dir: &Path) -> Result<HashMap<String, Vec<u8>>, String> {
         }
     }
     Ok(out)
+}
+
+/// When a skin last changed: the newest modification time of the archive,
+/// or of the folder and anything in it.
+pub fn changed_at(path: &Path) -> Option<std::time::SystemTime> {
+    let mut newest = std::fs::metadata(path).and_then(|m| m.modified()).ok()?;
+    let mut stack = vec![(path.to_path_buf(), 0)];
+    while let Some((d, depth)) = stack.pop() {
+        for entry in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+            let Ok(meta) = entry.metadata() else { continue };
+            newest = newest.max(meta.modified().unwrap_or(newest));
+            if meta.is_dir() && depth < 3 {
+                stack.push((entry.path(), depth + 1));
+            }
+        }
+    }
+    Some(newest)
 }
 
 /// Lists installable skins in `dir` (archives and sub-directories).
@@ -240,6 +324,16 @@ mod tests {
         assert_eq!(skin.sheet(Sheet::Balance).px[0], 0xffffff, "balance falls back to volume");
         assert_eq!(skin.sheet(Sheet::Main).w, 275, "bad main.bmp falls back to default");
         assert_eq!(skin.pl.normal, 0x112233);
+    }
+
+    #[test]
+    fn regions_shape_the_main_and_eq_windows() {
+        let region = b"[Normal]\nNumPoints=4\nPointList=0,0, 275,0, 275,116, 0,116\n[WindowShade]\nNumPoints=3\nPointList=0,0, 9,0, 0,9\n";
+        let skin = Skin::from_files("t".into(), &HashMap::from([("region.txt".to_string(), region.to_vec())]));
+        let main = skin.layout.window(WindowKey::Main).unwrap();
+        assert_eq!(main.normal.shape, Some(Shape::Polygons(vec![vec![(0, 0), (275, 0), (275, 116), (0, 116)]])));
+        assert_eq!(main.mode(true).shape, Some(Shape::Polygons(vec![vec![(0, 0), (9, 0), (0, 9)]])));
+        assert_eq!(skin.layout.window(WindowKey::Eq).unwrap().normal.shape, None);
     }
 
     fn zip_of(files: &[(&str, &[u8])]) -> Vec<u8> {

@@ -23,13 +23,17 @@ and classic `.wsz` skins load at runtime.
 
 ## Features
 
-- **Classic windows:** Main, Equalizer and Playlist Editor, drawn pixel-exact
-  from the skin at 1x or double size. Windows dock and snap together, and
+- **Classic windows:** Main, Equalizer and Playlist Editor at any size from
+  x1 to x3 in steps of 0.25 (`Ctrl+D` switches between x1 and the chosen
+  size). Classic skins stay crisp at fractional sizes. Windows dock and snap together, and
   support windowshade mode, EasyMove, always-on-top and `region.txt` shapes.
   Tooltips explain the main window's buttons.
 - **Own dialogs:** Jump to file (search as you type), File info and a
   Preferences window (`Ctrl+P`). Opening and saving files uses the desktop's
   dialog through `zenity` or `kdialog`.
+- **Vector skins:** drawn in SVG, sharp at every size, with TrueType text
+  and live reload while you edit them. Linamp's default skin is one. See
+  [docs/skin-format.md](docs/skin-format.md).
 - **Classic skins:** `.wsz`/`.zip` archives or unpacked directories. Each file
   falls back to the default skin if missing or broken. `viscolor.txt`,
   `pledit.txt` and the skin's mouse cursors (`*.cur`) are supported.

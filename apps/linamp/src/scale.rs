@@ -34,6 +34,15 @@ impl Scale {
         (p * 100).div_euclid(self.pct)
     }
 
+    /// How many skin pixels it takes to cover `p` screen pixels.
+    pub fn skin_up(self, p: i32) -> i32 {
+        (p * 100 + self.pct - 1).div_euclid(self.pct)
+    }
+
+    pub fn is_one(self) -> bool {
+        self.pct == 100
+    }
+
     /// Draws `src` scaled to fill the `dst_w` x `dst_h` screen buffer.
     pub fn present(self, src: &Bitmap, dst: &mut [u32], dst_w: usize, dst_h: usize) {
         let (sw, sh) = (src.w.max(0) as usize, src.h.max(0) as usize);

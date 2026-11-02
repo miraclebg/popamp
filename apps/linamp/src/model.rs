@@ -83,6 +83,8 @@ pub struct Model {
     pub format: Arc<Format>,
     pub skin: Skin,
     pub skin_path: Option<PathBuf>,
+    /// When the skin's files last changed, to reload it after edits.
+    skin_changed_at: Option<std::time::SystemTime>,
     pub status: Status,
     pub stop_after_current: bool,
     /// Temporary marquee text (volume, seek, errors) and when it expires.
@@ -236,8 +238,9 @@ impl Model {
             playlist: Playlist::new(),
             engine,
             format,
-            skin: Skin::builtin(),
+            skin: Skin::builtin_vector(),
             skin_path: None,
+            skin_changed_at: None,
             status: Status::default(),
             stop_after_current: false,
             transient: None,
@@ -724,7 +727,7 @@ impl Model {
 
     pub fn set_skin(&mut self, path: Option<PathBuf>) {
         match &path {
-            None => self.skin = Skin::builtin(),
+            None => self.skin = Skin::builtin_vector(),
             Some(p) => match Skin::load(p) {
                 Ok(s) => self.skin = s,
                 Err(e) => {
@@ -734,8 +737,30 @@ impl Model {
             },
         }
         self.settings_mut().skin = path.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+        self.skin_changed_at = path.as_deref().and_then(linamp_skin::changed_at);
         self.skin_path = path;
         self.ui.push(UiReq::SkinChanged);
+    }
+
+    /// Loads the skin again when its files have changed since, so a skin
+    /// author sees each edit; a broken edit keeps the skin on screen.
+    pub fn reload_skin_if_changed(&mut self) {
+        let Some(path) = self.skin_path.clone() else { return };
+        let now = linamp_skin::changed_at(&path);
+        if now == self.skin_changed_at {
+            return;
+        }
+        self.skin_changed_at = now;
+        match Skin::load(&path) {
+            Ok(s) => {
+                self.skin = s;
+                self.ui.push(UiReq::SkinChanged);
+            }
+            Err(e) => {
+                log::warn!("{e}");
+                self.flash(format!("SKIN ERROR: {e}"));
+            }
+        }
     }
 
     // --- dialogs ---------------------------------------------------------------
@@ -1699,6 +1724,28 @@ mod tests {
 
     fn titles(m: &Model) -> Vec<String> {
         m.bookmarks.iter().map(|b| b.title.clone().unwrap_or_default()).collect()
+    }
+
+    #[test]
+    fn an_edited_skin_is_loaded_again() {
+        let mut m = Model::for_tests();
+        let dir = m.paths.skins_dir().join("vector");
+        std::fs::create_dir_all(&dir).unwrap();
+        let write = |name: &str| std::fs::write(dir.join("skin.toml"), format!("[meta]\nname = \"{name}\"\nformat_version = 1\n")).unwrap();
+        write("First");
+        m.set_skin(Some(dir.clone()));
+        assert_eq!(m.skin.name, "First");
+        m.reload_skin_if_changed();
+        assert_eq!(m.ui.len(), 1, "nothing changed: no reload");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        write("Second");
+        m.reload_skin_if_changed();
+        assert_eq!(m.skin.name, "Second");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(dir.join("skin.toml"), "[meta]\nname = 1\n").unwrap();
+        m.reload_skin_if_changed();
+        assert_eq!(m.skin.name, "Second", "a broken edit keeps the skin");
+        assert!(m.transient.as_ref().is_some_and(|t| t.0.starts_with("SKIN ERROR: ")));
     }
 
     #[test]

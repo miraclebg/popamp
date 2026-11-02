@@ -29,7 +29,37 @@ pub fn mix(a: u32, b: u32, t: f32) -> u32 {
     ch(16) | ch(8) | ch(0)
 }
 
+/// Pixels with transparency: premultiplied `0xAARRGGBB`.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Rgba {
+    pub w: i32,
+    pub h: i32,
+    pub px: Vec<u32>,
+}
+
+/// Premultiplied `p` over opaque `dst`.
+fn over(p: u32, dst: u32) -> u32 {
+    let keep = 255 - (p >> 24);
+    let ch = |shift: u32| ((p >> shift) & 0xff) + (((dst >> shift) & 0xff) * keep + 127) / 255;
+    (ch(16).min(255) << 16) | (ch(8).min(255) << 8) | ch(0).min(255)
+}
+
 impl Bitmap {
+    /// Lays `src` over the bitmap with its top-left corner at `(x, y)`,
+    /// touching only pixels inside the `clip` rectangle (x, y, w, h).
+    pub fn overlay(&mut self, src: &Rgba, x: i32, y: i32, clip: (i32, i32, i32, i32)) {
+        let (cx, cy, cw, ch) = clip;
+        let (x0, x1) = (x.max(cx).max(0), (x + src.w).min(cx + cw).min(self.w));
+        let (y0, y1) = (y.max(cy).max(0), (y + src.h).min(cy + ch).min(self.h));
+        for yy in y0..y1 {
+            for xx in x0..x1 {
+                let p = src.px[((yy - y) * src.w + xx - x) as usize];
+                let dst = &mut self.px[(yy * self.w + xx) as usize];
+                *dst = over(p, *dst);
+            }
+        }
+    }
+
     pub fn new(w: i32, h: i32, color: u32) -> Self {
         Self { w, h, px: vec![color; (w.max(0) * h.max(0)) as usize] }
     }
