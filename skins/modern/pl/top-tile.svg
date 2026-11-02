@@ -2,7 +2,7 @@
 <defs>
 <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0.0" stop-color="#cfd5dc"/><stop offset="1.0" stop-color="#a7afb9"/></linearGradient>
 </defs>
-<rect x="0" y="0" width="25" height="20" fill="url(#g1)"/>
+<path d="M0 0 H25 V20 H0 Z" fill="url(#g1)"/>
 <line x1="0" y1="0.5" x2="25" y2="0.5" stroke="#56606c"/>
 <line x1="0" y1="19.5" x2="25" y2="19.5" stroke="#8a929c"/>
 <line x1="0" y1="8" x2="25" y2="8" stroke="#ffffff" opacity="0.8"/>
