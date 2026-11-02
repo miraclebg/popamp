@@ -167,11 +167,14 @@ pub struct Element {
     pub tip: Option<String>,
     /// Right-click menu; the window's main menu if none.
     pub menu: Option<MenuRef>,
+    /// Takes the mouse only where this picture is opaque (a round
+    /// button); the whole rectangle if none.
+    pub hit: Option<Paint>,
 }
 
 impl Element {
     pub fn new(at: Place, kind: Kind) -> Element {
-        Element { at, kind, show: Cond::Always, cursor: None, tip: None, menu: None }
+        Element { at, kind, show: Cond::Always, cursor: None, tip: None, menu: None, hit: None }
     }
 
     pub fn show(mut self, c: Cond) -> Element {
