@@ -319,14 +319,14 @@ impl SkinWin {
         if shade != bind::shaded(model, self.key) {
             return Vec::new();
         }
-        let Some((Element { kind: Kind::Popup { items, .. }, .. }, r)) = self.element(model, i) else { return Vec::new() };
+        let Some((Element { kind: Kind::Popup { items, above, .. }, .. }, r)) = self.element(model, i) else { return Vec::new() };
         let mut y = r.y;
         items
             .into_iter()
             .enumerate()
             .map(|(k, item)| {
                 let src = item.look.normal.map(|p| p.src).unwrap_or(Rect { x: 0, y: 0, w: 0, h: 0 });
-                if k > 0 {
+                if k > 0 || above {
                     y -= src.h;
                 }
                 (item, Rect { x: r.x, y, w: src.w, h: src.h })
@@ -840,6 +840,23 @@ mod tests {
         let w = SkinWin::new(WindowKey::Main);
         assert_eq!(w.tooltip(&m, 20, 20).as_deref(), Some("Play"));
         assert_eq!(w.tooltip(&m, 11, 11), None, "the corner is not the button");
+    }
+
+    #[test]
+    fn a_popup_opening_above_its_button_stays_open_after_a_click() {
+        let mut m = Model::for_tests();
+        let dot = br##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="10"/></svg>"##;
+        let toml = "[meta]\nname = \"Above\"\nformat_version = 1\n[[window]]\nkey = \"main\"\nnormal.size = [275, 116]\n\
+            [[window.normal.element]]\ntype = \"popup\"\nrect = [10, 80, 20, 20]\nabove = true\n\
+            [[window.normal.element.item]]\nnormal = \"dot.svg\"\nclick = \"play\"\n";
+        let files = [("skin.toml".to_string(), toml.as_bytes().to_vec()), ("dot.svg".to_string(), dot.to_vec())].into();
+        m.skin = popamp_skin::vector::load(&files).unwrap();
+        let mut w = SkinWin::new(WindowKey::Main);
+        w.mouse_down(&mut m, &input(20, 90));
+        w.mouse_up(&mut m, &input(20, 90));
+        assert!(w.popup_open(), "the button is not under an item");
+        assert_eq!(w.popup_hit(&m, 20, 70).map(|(k, _)| k), Some(0), "the item sits on top of the button");
+        assert_eq!(w.popup_hit(&m, 20, 90).map(|(k, _)| k), None);
     }
 
     #[test]

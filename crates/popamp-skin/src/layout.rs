@@ -364,6 +364,8 @@ pub enum Kind {
     Popup {
         items: Vec<PopupItem>,
         bar: Option<Paint>,
+        /// The column starts above the button instead of covering it.
+        above: bool,
     },
     /// Resizes the window.
     Resize,

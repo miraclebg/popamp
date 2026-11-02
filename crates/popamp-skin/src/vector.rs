@@ -215,6 +215,8 @@ struct ElementFile {
     #[serde(default, rename = "item")]
     items: Vec<ItemFile>,
     bar: Option<Spanned<PaintFile>>,
+    #[serde(default)]
+    above: bool,
     // When and how it shows.
     show: Option<N<Flag>>,
     hide: Option<N<Flag>>,
@@ -519,7 +521,7 @@ impl Builder<'_> {
             "list-scroll" => Kind::ListScroll { thumb: self.thumb(f)? },
             "popup" => {
                 let items = f.items.iter().map(|i| self.item(i)).collect::<Result<_, _>>()?;
-                Kind::Popup { items, bar: self.paint(f.bar.as_ref())? }
+                Kind::Popup { items, bar: self.paint(f.bar.as_ref())?, above: f.above }
             }
             "drag" => Kind::Drag { double: f.double.map(|x| x.0) },
             "clock" => Kind::Clock,

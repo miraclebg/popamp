@@ -217,7 +217,7 @@ hit = "play.svg"       # only the round part is the button
 | `eq-graph` | The equalizer curve | |
 | `list` | The playlist's track list | |
 | `list-scroll` | The track list's scroll bar | `thumb` |
-| `popup` | A button opening a column of picture buttons | `item` (each with `normal`, `pressed` and what it does), `bar` |
+| `popup` | A button opening a column of picture buttons | `item` (each with `normal`, `pressed` and what it does), `bar`, `above` |
 | `resize` | Resizes the window | |
 
 What a button does is one of:
@@ -226,6 +226,10 @@ What a button does is one of:
   `shift` and `ctrl` give commands for Shift+click and Ctrl+click;
 - `press = "command"`, run as soon as the button goes down;
 - `menu_press = "menu"` or `menu_release = "menu"`, opening a menu.
+
+A popup's items stack upward. The first one covers the button, as in
+Winamp, so a quick click runs it. With `above = true` they start above the
+button, and a click leaves the column open.
 
 A slider:
 

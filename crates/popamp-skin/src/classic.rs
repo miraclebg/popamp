@@ -501,7 +501,7 @@ fn playlist_menus() -> Vec<Element> {
                 .collect::<Vec<_>>();
             let bar = paint(Sheet::PlEdit, p::MENU_BARS[i]).offset(-3, -(items.len() as i32 - 1) * 18);
             let w = if i == 4 { 22 } else { 25 };
-            Element::new(span(lefts[i], End(-30), shift(lefts[i], w), End(-12)), Kind::Popup { items, bar: Some(bar) })
+            Element::new(span(lefts[i], End(-30), shift(lefts[i], w), End(-12)), Kind::Popup { items, bar: Some(bar), above: false })
         })
         .collect()
 }
@@ -517,7 +517,7 @@ mod tests {
                 look(l)
             }
             Kind::Slider(s) => look(&s.thumb),
-            Kind::Popup { items, bar } => items.iter().flat_map(|i| look(&i.look)).chain(*bar).collect(),
+            Kind::Popup { items, bar, .. } => items.iter().flat_map(|i| look(&i.look)).chain(*bar).collect(),
             _ => Vec::new(),
         }
     }

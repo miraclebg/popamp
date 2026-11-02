@@ -731,6 +731,7 @@ click = "open-file"
 [[window.normal.element]]
 type = "popup"
 edges = [12, "end-30", 37, "end-12"]
+above = true
 [[window.normal.element.item]]
 normal = { file = "pl/item-file.svg", area = [0, 0, 22, 18] }
 pressed = { file = "pl/item-file.svg", area = [22, 0, 22, 18] }
@@ -747,6 +748,7 @@ click = "pl-add-url"
 [[window.normal.element]]
 type = "popup"
 edges = [40, "end-30", 65, "end-12"]
+above = true
 [[window.normal.element.item]]
 normal = { file = "pl/item-rmisc.svg", area = [0, 0, 22, 18] }
 pressed = { file = "pl/item-rmisc.svg", area = [22, 0, 22, 18] }
@@ -767,6 +769,7 @@ click = "clear-playlist"
 [[window.normal.element]]
 type = "popup"
 edges = [68, "end-30", 93, "end-12"]
+above = true
 [[window.normal.element.item]]
 normal = { file = "pl/item-sall.svg", area = [0, 0, 22, 18] }
 pressed = { file = "pl/item-sall.svg", area = [22, 0, 22, 18] }
@@ -783,6 +786,7 @@ click = "invert-selection"
 [[window.normal.element]]
 type = "popup"
 edges = [96, "end-30", 121, "end-12"]
+above = true
 [[window.normal.element.item]]
 normal = { file = "pl/item-mopt.svg", area = [0, 0, 22, 18] }
 pressed = { file = "pl/item-mopt.svg", area = [22, 0, 22, 18] }
@@ -799,6 +803,7 @@ menu_release = "playlist-sort"
 [[window.normal.element]]
 type = "popup"
 edges = ["end-44", "end-30", "end-19", "end-12"]
+above = true
 [[window.normal.element.item]]
 normal = { file = "pl/item-lnew.svg", area = [0, 0, 22, 18] }
 pressed = { file = "pl/item-lnew.svg", area = [22, 0, 22, 18] }
