@@ -150,6 +150,8 @@ struct ModeFile {
     /// Makes the window resizable in these steps.
     resize_step: Option<[i32; 2]>,
     cursor: Option<N<CursorKind>>,
+    /// A picture whose opaque part is the visible window.
+    shape: Option<Spanned<PaintFile>>,
     #[serde(default, rename = "element")]
     elements: Vec<Spanned<ElementFile>>,
 }
@@ -427,7 +429,8 @@ impl Builder<'_> {
             None => Dim::Fixed(m.size[i]),
         };
         let elements = m.elements.iter().map(|e| self.element(e)).collect::<Result<_, _>>()?;
-        Ok(Mode { width: dim(0), height: dim(1), cursor: m.cursor.map_or(CursorKind::Normal, |c| c.0), elements })
+        let shape = self.paint(&m.shape).map_err(|e| at(self.text, e.span, &e.msg))?.map(Shape::Picture);
+        Ok(Mode { width: dim(0), height: dim(1), cursor: m.cursor.map_or(CursorKind::Normal, |c| c.0), elements, shape })
     }
 
     fn element(&mut self, e: &Spanned<ElementFile>) -> Result<Element, String> {
@@ -665,6 +668,14 @@ shift = \"stop\"
         assert_eq!(look.normal.unwrap().picture, look.pressed.unwrap().picture, "one file is parsed once");
         assert_eq!(*action, Action::Click { plain: Command::Play, shift: Some(Command::Stop), ctrl: None });
         assert!(s.layout.window(WindowKey::Eq).is_some(), "missing windows come from the built-in skin");
+    }
+
+    #[test]
+    fn shapes_come_from_pictures() {
+        let s = skin(&format!("{HEAD}\n[[window]]\nkey = \"eq\"\nnormal.size = [275, 116]\nnormal.shape = \"play.svg\"\n")).unwrap();
+        let eq = s.layout.window(WindowKey::Eq).unwrap();
+        let Some(Shape::Picture(p)) = &eq.normal.shape else { panic!("{:?}", eq.normal.shape) };
+        assert_eq!(p.src, Rect { x: 0, y: 0, w: 23, h: 18 });
     }
 
     #[test]

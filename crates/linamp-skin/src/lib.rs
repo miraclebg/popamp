@@ -15,6 +15,7 @@ pub mod vector;
 pub use bitmap::{Bitmap, Rgba};
 pub use cursors::{CursorImage, CursorKind};
 pub use layout::{Layout, Picture};
+use layout::{Shape, WindowKey};
 pub use sprites::{Rect, Sheet};
 pub use textcfg::{PlColors, Regions, TextStyle};
 
@@ -29,7 +30,6 @@ pub struct Skin {
     pub has_nums_ex: bool,
     pub viscolor: [u32; 24],
     pub pl: PlColors,
-    pub regions: Regions,
     /// The skin's own mouse cursors; the system cursor stands in for the rest.
     pub cursors: HashMap<CursorKind, CursorImage>,
     /// The windows and their elements.
@@ -57,7 +57,6 @@ impl Skin {
             has_nums_ex: false,
             viscolor: default_skin::viscolors(),
             pl: default_skin::pl_colors(),
-            regions: Regions::default(),
             cursors: HashMap::new(),
             layout: Layout::default(),
             svgs: svg::Svgs::default(),
@@ -66,12 +65,20 @@ impl Skin {
             clock: None,
             pl_font: None,
         }
-        .with_layout()
+        .with_layout(Regions::default())
     }
 
-    /// Builds the classic layout for the skin's bitmaps.
-    fn with_layout(mut self) -> Skin {
+    /// Builds the classic layout for the skin's bitmaps and window shapes.
+    fn with_layout(mut self, regions: Regions) -> Skin {
         self.layout = classic::layout(self.sheet(Sheet::Volume).h, self.sheet(Sheet::Balance).h);
+        let shapes = [(WindowKey::Main, regions.normal, regions.window_shade), (WindowKey::Eq, regions.equalizer, regions.equalizer_ws)];
+        for (key, normal, shade) in shapes {
+            let Some(w) = self.layout.windows.iter_mut().find(|w| w.key == key) else { continue };
+            w.normal.shape = normal.map(Shape::Polygons);
+            if let Some(s) = &mut w.shade {
+                s.shape = shade.map(Shape::Polygons);
+            }
+        }
         self
     }
 
@@ -130,9 +137,7 @@ impl Skin {
         } else if found > 0 {
             skin.pl = PlColors::default();
         }
-        if let Some(t) = files.get("region.txt") {
-            skin.regions = textcfg::parse_region(&linamp_core::text::decode_lossy(t));
-        }
+        let regions = files.get("region.txt").map(|t| textcfg::parse_region(&linamp_core::text::decode_lossy(t))).unwrap_or_default();
         for kind in CursorKind::ALL {
             let Some(bytes) = files.get(kind.file_name()) else { continue };
             match cursors::parse(bytes) {
@@ -145,7 +150,7 @@ impl Skin {
         if found == 0 {
             log::warn!("skin {}: no recognised bitmaps, using defaults", skin.name);
         }
-        skin.with_layout()
+        skin.with_layout(regions)
     }
 }
 
@@ -284,6 +289,16 @@ mod tests {
         assert_eq!(skin.sheet(Sheet::Balance).px[0], 0xffffff, "balance falls back to volume");
         assert_eq!(skin.sheet(Sheet::Main).w, 275, "bad main.bmp falls back to default");
         assert_eq!(skin.pl.normal, 0x112233);
+    }
+
+    #[test]
+    fn regions_shape_the_main_and_eq_windows() {
+        let region = b"[Normal]\nNumPoints=4\nPointList=0,0, 275,0, 275,116, 0,116\n[WindowShade]\nNumPoints=3\nPointList=0,0, 9,0, 0,9\n";
+        let skin = Skin::from_files("t".into(), &HashMap::from([("region.txt".to_string(), region.to_vec())]));
+        let main = skin.layout.window(WindowKey::Main).unwrap();
+        assert_eq!(main.normal.shape, Some(Shape::Polygons(vec![vec![(0, 0), (275, 0), (275, 116), (0, 116)]])));
+        assert_eq!(main.mode(true).shape, Some(Shape::Polygons(vec![vec![(0, 0), (9, 0), (0, 9)]])));
+        assert_eq!(skin.layout.window(WindowKey::Eq).unwrap().normal.shape, None);
     }
 
     fn zip_of(files: &[(&str, &[u8])]) -> Vec<u8> {

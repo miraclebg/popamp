@@ -2,7 +2,6 @@
 //! (or Xwayland); another backend would replace this module only.
 
 use crate::scale::Scale;
-use linamp_skin::textcfg::region_mask;
 use winit::platform::x11::{WindowAttributesExtX11, WindowType};
 use winit::window::{Window, WindowAttributes};
 use x11rb::connection::{Connection, RequestConnection};
@@ -50,14 +49,16 @@ impl Platform {
 
     /// Cuts `window` to the `region.txt` polygons (`None` restores the
     /// rectangle). `size` is in skin pixels, drawn at `scale`.
-    pub fn set_shape(&self, window: &Window, polys: Option<&[Vec<(i32, i32)>]>, size: (i32, i32), scale: Scale) -> Result<(), String> {
+    /// Shows only the pixels `mask` covers of a window `size` screen pixels
+    /// big; all of it without a mask.
+    pub fn set_shape(&self, window: &Window, mask: Option<&Mask>, size: (i32, i32)) -> Result<(), String> {
         let (Some(conn), Some(xid)) = (&self.x11, x11_window_id(window)) else { return Ok(()) };
         let err = |e: &dyn std::fmt::Display| e.to_string();
         if conn.extension_information(shape::X11_EXTENSION_NAME).map_err(|e| err(&e))?.is_none() {
             return Err("X server has no SHAPE extension".into());
         }
         let rects: Vec<Rectangle> =
-            shape_rects(polys, size, scale).into_iter().map(|(x, y, width, height)| Rectangle { x, y, width, height }).collect();
+            shape_rects(mask, size).into_iter().map(|(x, y, width, height)| Rectangle { x, y, width, height }).collect();
         conn.shape_rectangles(SO::SET, SK::BOUNDING, ClipOrdering::UNSORTED, xid, 0, 0, &rects).map_err(|e| err(&e))?;
         conn.flush().map_err(|e| err(&e))?;
         Ok(())
@@ -73,13 +74,21 @@ fn x11_window_id(w: &Window) -> Option<u32> {
     }
 }
 
+/// Which pixels of a window show: `w` x `h` of them, each `scale` times
+/// bigger on the screen.
+pub struct Mask {
+    pub w: i32,
+    pub h: i32,
+    pub on: Vec<bool>,
+    pub scale: Scale,
+}
+
 /// The visible part of a window as `(x, y, w, h)` rectangles in screen
-/// pixels: one per horizontal run of the region mask.
-fn shape_rects(polys: Option<&[Vec<(i32, i32)>]>, size: (i32, i32), scale: Scale) -> Vec<(i16, i16, u16, u16)> {
-    let (w, h) = size;
-    let whole = vec![(0, 0, scale.px(w) as u16, scale.px(h) as u16)];
-    let Some(polys) = polys else { return whole };
-    let mask = region_mask(polys, w, h);
+/// pixels: one per horizontal run of the mask.
+fn shape_rects(mask: Option<&Mask>, size: (i32, i32)) -> Vec<(i16, i16, u16, u16)> {
+    let whole = vec![(0, 0, size.0 as u16, size.1 as u16)];
+    let Some(Mask { w, h, on: mask, scale }) = mask else { return whole };
+    let (w, h, scale) = (*w, *h, *scale);
     let mut out = Vec::new();
     for y in 0..h {
         let mut x = 0;
@@ -109,23 +118,29 @@ mod tests {
     use super::*;
     use linamp_core::config::Scaling;
 
-    #[test]
-    fn no_region_is_the_whole_window() {
-        assert_eq!(shape_rects(None, (275, 116), Scale::new(200, Scaling::Sharp)), [(0, 0, 550, 232)]);
+    fn region(polys: &[Vec<(i32, i32)>], w: i32, h: i32, scale: Scale) -> Mask {
+        Mask { w, h, on: linamp_skin::textcfg::region_mask(polys, w, h), scale }
     }
 
     #[test]
-    fn region_becomes_scaled_row_runs() {
+    fn no_mask_is_the_whole_window() {
+        assert_eq!(shape_rects(None, (550, 232)), [(0, 0, 550, 232)]);
+    }
+
+    #[test]
+    fn masks_become_scaled_row_runs() {
         // A 4x2 rectangle at (1, 0) inside a 6x3 window.
         let rect = vec![vec![(1, 0), (5, 0), (5, 2), (1, 2)]];
-        assert_eq!(shape_rects(Some(&rect), (6, 3), Scale::new(200, Scaling::Sharp)), [(2, 0, 8, 2), (2, 2, 8, 2)]);
+        let x2 = Scale::new(200, Scaling::Sharp);
+        assert_eq!(shape_rects(Some(&region(&rect, 6, 3, x2)), (12, 6)), [(2, 0, 8, 2), (2, 2, 8, 2)]);
         // At x1.5 the runs meet without gaps: rows 0..2 and 2..3.
-        assert_eq!(shape_rects(Some(&rect), (6, 3), Scale::new(150, Scaling::Sharp)), [(2, 0, 6, 2), (2, 2, 6, 1)]);
+        let x15 = Scale::new(150, Scaling::Sharp);
+        assert_eq!(shape_rects(Some(&region(&rect, 6, 3, x15)), (9, 5)), [(2, 0, 6, 2), (2, 2, 6, 1)]);
     }
 
     #[test]
-    fn empty_region_is_ignored() {
+    fn empty_masks_are_ignored() {
         let nothing = vec![vec![(0, 0), (0, 0), (0, 0)]];
-        assert_eq!(shape_rects(Some(&nothing), (10, 4), Scale::ONE), [(0, 0, 10, 4)]);
+        assert_eq!(shape_rects(Some(&region(&nothing, 10, 4, Scale::ONE)), (10, 4)), [(0, 0, 10, 4)]);
     }
 }

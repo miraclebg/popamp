@@ -121,6 +121,16 @@ pub struct Mode {
     pub height: Dim,
     pub cursor: CursorKind,
     pub elements: Vec<Element>,
+    /// The visible part of the window; all of it when `None`.
+    pub shape: Option<Shape>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Shape {
+    /// Classic `region.txt` polygons in skin pixels.
+    Polygons(Vec<Vec<(i32, i32)>>),
+    /// The opaque part of a picture stretched over the window.
+    Picture(Paint),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

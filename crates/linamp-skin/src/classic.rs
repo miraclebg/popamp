@@ -119,7 +119,7 @@ fn main_shade() -> Mode {
     for (rc, (action, _)) in m::SHADE_TRANSPORT.iter().zip(transport()) {
         v.push(hot_spot(rect(*rc), action));
     }
-    Mode { width: Dim::Fixed(m::SHADE_SIZE.0), height: Dim::Fixed(m::SHADE_SIZE.1), cursor: C::WSNormal, elements: v }
+    Mode { width: Dim::Fixed(m::SHADE_SIZE.0), height: Dim::Fixed(m::SHADE_SIZE.1), cursor: C::WSNormal, elements: v, shape: None }
 }
 
 fn single_frame(sheet: Sheet, src: Rect) -> Frames {
@@ -189,7 +189,7 @@ fn main_normal(volume_h: i32, balance_h: i32) -> Mode {
         el.menu = menu;
         v.push(el);
     }
-    Mode { width: Dim::Fixed(m::SIZE.0), height: Dim::Fixed(m::SIZE.1), cursor: C::Normal, elements: v }
+    Mode { width: Dim::Fixed(m::SIZE.0), height: Dim::Fixed(m::SIZE.1), cursor: C::Normal, elements: v, shape: None }
 }
 
 /// The O A I D V buttons; A and D light up while their option is on.
@@ -315,7 +315,7 @@ fn eq_shade() -> Mode {
         Element::new(Place::fixed(0, 0, 275, 14), Kind::Drag { double: Some(Command::ToggleEqShade) }).cursor(C::EqTitle),
     ];
     v.extend(eq_title_buttons(x, Some(e::SHADE_CLOSE_PRESSED), Some(e::UNSHADE_PRESSED)));
-    Mode { width: Dim::Fixed(e::SHADE_SIZE.0), height: Dim::Fixed(e::SHADE_SIZE.1), cursor: C::EqNormal, elements: v }
+    Mode { width: Dim::Fixed(e::SHADE_SIZE.0), height: Dim::Fixed(e::SHADE_SIZE.1), cursor: C::EqNormal, elements: v, shape: None }
 }
 
 fn eq_normal() -> Mode {
@@ -340,7 +340,7 @@ fn eq_normal() -> Mode {
         v.push(eq_slider(Value::EqBand(i), e::BAND_X0 + i as i32 * e::BAND_STEP));
     }
     v.push(Element::new(at(e::AT_GRAPH, e::GRAPH_BG.w, e::GRAPH_BG.h), Kind::EqGraph));
-    Mode { width: Dim::Fixed(e::SIZE.0), height: Dim::Fixed(e::SIZE.1), cursor: C::EqNormal, elements: v }
+    Mode { width: Dim::Fixed(e::SIZE.0), height: Dim::Fixed(e::SIZE.1), cursor: C::EqNormal, elements: v, shape: None }
 }
 
 fn eq_slider(value: Value, x: i32) -> Element {
@@ -426,7 +426,7 @@ fn playlist_shade() -> Mode {
             .cursor(C::PClose),
         Element::new(span(Start(5), Start(4), End(-55), Start(10)), Kind::Text(Text::Title)),
     ];
-    Mode { width: Dim::Free { min: p::MIN_SIZE.0, step: p::STEP.0 }, height: Dim::Fixed(14), cursor: C::PWSNorm, elements: v }
+    Mode { width: Dim::Free { min: p::MIN_SIZE.0, step: p::STEP.0 }, height: Dim::Fixed(14), cursor: C::PWSNorm, elements: v, shape: None }
 }
 
 fn playlist_normal() -> Mode {
@@ -473,6 +473,7 @@ fn playlist_normal() -> Mode {
         height: Dim::Free { min: p::MIN_SIZE.1, step: p::STEP.1 },
         cursor: C::PNormal,
         elements: v,
+        shape: None,
     }
 }
 

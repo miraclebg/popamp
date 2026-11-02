@@ -7,16 +7,17 @@ use crate::font::Fonts;
 use crate::menu::{self, Layout, MenuItem};
 use crate::model::{AddMode, AppEvent, Model, UiReq};
 use crate::panels::{Panel, PanelKind};
-use crate::platform::{self, Platform, WindowRole};
+use crate::platform::{self, Mask, Platform, WindowRole};
 use crate::scale::Scale;
 use crate::skinwin::{Nav, SkinWin};
 use crate::ui::{Input, Out};
 use crate::widgets::{self, Event};
 use linamp_audio::PlayState;
 use linamp_core::Command;
-use linamp_skin::layout::{Placement, WindowKey};
-use linamp_skin::Bitmap;
+use linamp_skin::layout::{Paint, Placement, Shape, WindowKey};
+use linamp_skin::textcfg::region_mask;
 use linamp_skin::CursorKind;
+use linamp_skin::{Bitmap, Picture, Skin};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -42,7 +43,7 @@ struct SkinWindow {
     /// Cursor in physical window coordinates.
     cursor: (i32, i32),
     frame: Bitmap,
-    shape_sig: Option<(usize, i32, i32, i32)>,
+    shape_sig: Option<(usize, i32, i32)>,
     /// The skin cursor last set on this window.
     cursor_kind: Option<CursorKind>,
 }
@@ -307,26 +308,21 @@ impl App {
         self.update_shapes();
     }
 
-    /// Applies `region.txt` window shapes.
+    /// Applies the window shapes of the modes on screen.
     fn update_shapes(&mut self) {
         let scale = self.scale();
-        let regions = &self.model.skin.regions;
-        let s = &self.model.config.settings;
-        let skin_ptr = &self.model.skin as *const _ as usize;
-        for k in [WindowKey::Main, WindowKey::Eq] {
-            let polys = match k {
-                WindowKey::Main if s.windowshade => regions.window_shade.as_ref(),
-                WindowKey::Main => regions.normal.as_ref(),
-                _ if s.eq_ws => regions.equalizer_ws.as_ref(),
-                _ => regions.equalizer.as_ref(),
-            };
+        for k in WindowKey::ALL {
+            let def = self.model.skin.layout.window(k);
+            let shape = def.and_then(|d| d.mode(crate::bind::shaded(&self.model, k)).shape.as_ref());
             let Some(w) = self.wins[k.index()].as_mut() else { continue };
-            let sig = (skin_ptr ^ polys.map(|p| p.len()).unwrap_or(0), w.size.0, w.size.1, scale.px(100));
+            let size = (scale.px(w.size.0), scale.px(w.size.1));
+            let sig = (shape.map_or(0, |s| s as *const Shape as usize), size.0, size.1);
             if w.shape_sig == Some(sig) {
                 continue;
             }
             w.shape_sig = Some(sig);
-            if let Err(e) = self.platform.set_shape(&w.window, polys.map(|v| v.as_slice()), w.size, scale) {
+            let mask = shape.and_then(|s| shape_mask(&self.model.skin, s, w.size, scale));
+            if let Err(e) = self.platform.set_shape(&w.window, mask.as_ref(), size) {
                 log::debug!("shape: {e}");
             }
         }
@@ -1389,6 +1385,20 @@ impl ApplicationHandler<AppEvent> for App {
         if !self.model.quit {
             self.model.save_session();
         }
+    }
+}
+
+/// The pixels of a window `size` skin pixels big that `shape` shows.
+fn shape_mask(skin: &Skin, shape: &Shape, size: (i32, i32), scale: Scale) -> Option<Mask> {
+    let (w, h) = size;
+    match shape {
+        Shape::Polygons(polys) => Some(Mask { w, h, on: region_mask(polys, w, h), scale }),
+        Shape::Picture(Paint { picture: Picture::Svg(id), src, .. }) => {
+            let (pw, ph) = (scale.px(w), scale.px(h));
+            let r = skin.svgs.raster(*id, *src, pw, ph)?;
+            Some(Mask { w: pw, h: ph, on: r.px.iter().map(|p| p >> 24 >= 128).collect(), scale: Scale::ONE })
+        }
+        Shape::Picture(_) => None,
     }
 }
 
