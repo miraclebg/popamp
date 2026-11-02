@@ -17,6 +17,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `skins/steel/`: Popamp Steel, a silver and navy vector skin laid out
+  like the "modern" players of the 2000s: a dotted blue display with a
+  segmented analyzer, round transport buttons, toggles with blue lamps, an
+  equalizer with a tab and a dB scale, and a shade mode for all three
+  windows. Its texts use its own pixel fonts (`fonts/*.ttf`, Latin and
+  Cyrillic). `tools/gen_steel_skin.py skins/steel` regenerates it.
 - Bar skins: `placement = "bar-bottom"` (or `"bar-top"`) makes a vector
   skin's main window a strip across the screen at that edge, inside the
   desktop's own panels (it moves when they appear or resize). Its strip is

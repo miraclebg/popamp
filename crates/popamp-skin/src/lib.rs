@@ -410,6 +410,16 @@ mod tests {
     }
 
     #[test]
+    fn the_steel_example_skin_loads() {
+        let skin = Skin::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../skins/steel")).unwrap();
+        assert_eq!(skin.name, "Popamp Steel");
+        assert!(skin.text.is_some() && skin.clock.is_some(), "its own pixel fonts");
+        for key in WindowKey::ALL {
+            assert!(skin.layout.window(key).unwrap().shade.is_some(), "{key:?} has a shade mode");
+        }
+    }
+
+    #[test]
     fn the_bar_example_skin_loads() {
         let skin = Skin::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../skins/bar")).unwrap();
         assert_eq!(skin.name, "Popamp Bar");

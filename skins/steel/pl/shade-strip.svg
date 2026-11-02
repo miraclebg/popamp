@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="275" height="14" viewBox="0 0 275 14">
+<defs>
+<clipPath id="c1"><path d="M0 3 A3 3 0 0 1 3 0 H272 A3 3 0 0 1 275 3 V11 A3 3 0 0 1 272 14 H3 A3 3 0 0 1 0 11 Z"/></clipPath>
+<pattern id="p2" x="0" y="0" width="2" height="2" patternUnits="userSpaceOnUse"><rect width="1" height="1" fill="#002263"/></pattern>
+<clipPath id="c3"><path d="M8 2.5 H248 V11.5 H8 Z"/></clipPath>
+</defs>
+<g clip-path="url(#c1)">
+<rect x="0" y="0" width="275" height="1" fill="#0b1427"/>
+<rect x="0" y="1" width="275" height="1" fill="#9ba3b5"/>
+<rect x="0" y="2" width="275" height="1" fill="#b3b9c9"/>
+<rect x="0" y="3" width="275" height="1" fill="#6b768e"/>
+<rect x="0" y="4" width="275" height="1" fill="#1b2c4c"/>
+<rect x="0" y="5" width="275" height="1" fill="#172647"/>
+<rect x="0" y="6" width="275" height="1" fill="#16264b"/>
+<rect x="0" y="7" width="275" height="1" fill="#16274d"/>
+<rect x="0" y="8" width="275" height="1" fill="#16284e"/>
+<rect x="0" y="9" width="275" height="1" fill="#1c2c51"/>
+<rect x="0" y="10" width="275" height="1" fill="#233458"/>
+<rect x="0" y="11" width="275" height="1" fill="#354566"/>
+<rect x="0" y="12" width="275" height="1" fill="#354566"/>
+<rect x="0" y="13" width="275" height="1" fill="#0d1119"/>
+<path d="M8 2.5 H248 V11.5 H8 Z" fill="none" stroke="#141822" stroke-width="2"/>
+<path d="M8 2.5 H248 V11.5 H8 Z" fill="#284a89"/>
+<path d="M8 2.5 H248 V11.5 H8 Z" fill="url(#p2)"/>
+<g clip-path="url(#c3)">
+<path d="M8 2.5 H248 V11.5 H8 Z" fill="none" stroke="#7d95c8" stroke-width="16" opacity="0.18"/>
+<path d="M8 2.5 H248 V11.5 H8 Z" fill="none" stroke="#7d95c8" stroke-width="10" opacity="0.25"/>
+<path d="M8 2.5 H248 V11.5 H8 Z" fill="none" stroke="#8aa0cc" stroke-width="6" opacity="0.45"/>
+<path d="M8 2.5 H248 V11.5 H8 Z" fill="none" stroke="#8095c0" stroke-width="4" opacity="0.7"/>
+<path d="M8 2.5 H248 V11.5 H8 Z" fill="none" stroke="#c6d4f0" stroke-width="2" opacity="0.9"/>
+</g>
+</g>
+<path d="M0 3 A3 3 0 0 1 3 0 H272 A3 3 0 0 1 275 3 V11 A3 3 0 0 1 272 14 H3 A3 3 0 0 1 0 11 Z" fill="none" stroke="#000000"/>
+</svg>

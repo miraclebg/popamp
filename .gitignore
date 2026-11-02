@@ -4,3 +4,6 @@
 /local/
 *.swp
 /dist
+__pycache__/
+*.pyc
+.metrics/

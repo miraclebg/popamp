@@ -10,16 +10,14 @@ DejaVu Sans Condensed Bold outlines.
 import os
 import sys
 
-from fontTools.pens.svgPathPen import SVGPathPen
-from fontTools.pens.transformPen import TransformPen
-from fontTools.ttLib import TTFont
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import skinsvg  # noqa: E402
+from skinsvg import Outlines, Svg, Toml, look2, look4, part, rrect, val  # noqa: E402
 
-OUT = sys.argv[1]
+skinsvg.OUT = sys.argv[1]
 BAR = sys.argv[2:] == ["bar"]
-FONT = TTFont("/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf")
-GLYPHS = FONT.getGlyphSet()
-CMAP = FONT.getBestCmap()
-UPM = FONT["head"].unitsPerEm
+FONT = Outlines("/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf")
+text_path, label = FONT.text_path, FONT.label
 
 # --- palette -----------------------------------------------------------------
 BODY = ("#f1f3f6", "#d6dbe1", "#b3bac3")
@@ -35,61 +33,7 @@ FACE_DOWN = ("#aab2bc", "#e2e6ea")
 RING = "#66707c"
 
 
-# --- svg helpers ---------------------------------------------------------------
-class Svg:
-    def __init__(self, w, h):
-        self.w, self.h, self.defs, self.body, self.n = w, h, [], [], 0
-
-    def grad(self, stops, x2=0, y2=1):
-        self.n += 1
-        gid = f"g{self.n}"
-        s = "".join(f'<stop offset="{o}" stop-color="{c}"/>' for o, c in spread(stops))
-        self.defs.append(f'<linearGradient id="{gid}" x1="0" y1="0" x2="{x2}" y2="{y2}">{s}</linearGradient>')
-        return f"url(#{gid})"
-
-    def add(self, s):
-        self.body.append(s)
-
-    def save(self, name):
-        text = (
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="{self.w}" height="{self.h}" viewBox="0 0 {self.w} {self.h}">\n'
-            f"<defs>\n" + "\n".join(self.defs) + "\n</defs>\n" + "\n".join(self.body) + "\n</svg>\n"
-        )
-        path = os.path.join(OUT, name)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
-            f.write(text)
-
-
-def spread(colors):
-    if isinstance(colors, str):
-        colors = (colors, colors)
-    n = len(colors) - 1
-    return [(i / n, c) for i, c in enumerate(colors)]
-
-
-def rrect(x, y, w, h, r, fill, stroke=None, sw=1, extra=""):
-    st = f' stroke="{stroke}" stroke-width="{sw}"' if stroke else ""
-    return f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{r}" fill="{fill}"{st}{extra}/>'
-
-
-def text_path(s, size):
-    pen = SVGPathPen(GLYPHS)
-    scale, x = size / UPM, 0.0
-    for ch in s:
-        g = CMAP[ord(ch)]
-        GLYPHS[g].draw(TransformPen(pen, (scale, 0, 0, -scale, x, 0)))
-        x += GLYPHS[g].width * scale
-    return pen.getCommands(), x
-
-
-def label(s, x, y, size, fill, anchor="middle"):
-    """`s` with its baseline at y; anchored at x."""
-    d, w = text_path(s, size)
-    dx = {"start": x, "middle": x - w / 2, "end": x - w}[anchor]
-    return f'<path transform="translate({dx:.2f},{y:.2f})" d="{d}" fill="{fill}"/>'
-
-
+# --- drawing -------------------------------------------------------------------
 def panel(svg, x, y, w, h, r=3):
     """A dark display set into the body."""
     svg.add(rrect(x - 0.5, y - 0.5, w + 1, h + 1, r + 0.5, "none", "#ffffff", 1, ' opacity="0.8"'))
@@ -216,53 +160,7 @@ def cornered(w, h, corner, r=7):
     }[corner]
 
 
-# --- toml ------------------------------------------------------------------------
-
-
-def val(v):
-    if isinstance(v, bool):
-        return "true" if v else "false"
-    if isinstance(v, str):
-        return f'"{v}"'
-    if isinstance(v, dict):
-        return "{ " + ", ".join(f"{k} = {val(x)}" for k, x in v.items()) + " }"
-    if isinstance(v, (list, tuple)):
-        return "[" + ", ".join(val(x) for x in v) + "]"
-    return str(v)
-
-
-def part(file, x, y, w, h):
-    return {"file": file, "area": [x, y, w, h]}
-
-
-class Toml:
-    def __init__(self):
-        self.lines = []
-
-    def table(self, header, **kv):
-        self.lines.append(f"\n{header}")
-        for k, v in kv.items():
-            self.lines.append(f"{k} = {val(v)}")
-
-    def el(self, mode, **kv):
-        self.table(f"[[window.{mode}.element]]", **kv)
-
-
 T = Toml()
-
-
-def look2(file, w, h):
-    """normal/pressed from a two-frame file."""
-    return {"normal": part(file, 0, 0, w, h), "pressed": part(file, w, 0, w, h)}
-
-
-def look4(file, w, h):
-    return {
-        "normal": part(file, 0, 0, w, h),
-        "pressed": part(file, w, 0, w, h),
-        "on": part(file, 2 * w, 0, w, h),
-        "on_pressed": part(file, 3 * w, 0, w, h),
-    }
 
 
 GLYPH_MENU = f'<path d="M2.5 3.5 h5 M2.5 5 h5 M2.5 6.5 h5" stroke="{INK}" stroke-width="0.9"/>'
@@ -778,8 +676,7 @@ def main():
         main_window()
     eq_window()
     playlist_window()
-    with open(os.path.join(OUT, "skin.toml"), "w") as f:
-        f.write("\n".join(T.lines).lstrip() + "\n")
+    T.save()
 
 
 main()

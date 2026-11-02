@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="42" height="18" viewBox="0 0 42 18">
+<defs>
+<linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0.0" stop-color="#ffffff"/><stop offset="0.3333333333333333" stop-color="#f4f5f8"/><stop offset="0.6666666666666666" stop-color="#d3d7df"/><stop offset="1.0" stop-color="#9aa1ae"/></linearGradient>
+<linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0.0" stop-color="#9aa1ae"/><stop offset="0.3333333333333333" stop-color="#c3c8d1"/><stop offset="0.6666666666666666" stop-color="#e6e8ed"/><stop offset="1.0" stop-color="#f4f5f8"/></linearGradient>
+</defs>
+<g transform="translate(0,0)">
+<rect x="0.5" y="0.5" width="20" height="17" rx="8.5" fill="url(#g1)" stroke="#3b414c" stroke-width="1"/>
+<path d="M1.0 6h1v1h-1zM1.0 7h1v1h-1zM1.0 8h1v1h-1zM1.0 9h1v1h-1zM1.0 10h1v1h-1zM1.0 11h4v1h-4zM7.0 6h2v1h-2zM6.0 7h1v1h-1zM9.0 7h1v1h-1zM6.0 8h1v1h-1zM9.0 8h1v1h-1zM6.0 9h1v1h-1zM9.0 9h1v1h-1zM6.0 10h1v1h-1zM9.0 10h1v1h-1zM7.0 11h2v1h-2zM12.0 6h2v1h-2zM11.0 7h1v1h-1zM14.0 7h1v1h-1zM11.0 8h1v1h-1zM14.0 8h1v1h-1zM11.0 9h4v1h-4zM11.0 10h1v1h-1zM14.0 10h1v1h-1zM11.0 11h1v1h-1zM14.0 11h1v1h-1zM16.0 6h3v1h-3zM16.0 7h1v1h-1zM19.0 7h1v1h-1zM16.0 8h1v1h-1zM19.0 8h1v1h-1zM16.0 9h1v1h-1zM19.0 9h1v1h-1zM16.0 10h1v1h-1zM19.0 10h1v1h-1zM16.0 11h3v1h-3z" fill="#000000"/>
+</g>
+<g transform="translate(21,0)">
+<rect x="0.5" y="0.5" width="20" height="17" rx="8.5" fill="url(#g2)" stroke="#3b414c" stroke-width="1"/>
+<path d="M1.5 7h1v1h-1zM1.5 8h1v1h-1zM1.5 9h1v1h-1zM1.5 10h1v1h-1zM1.5 11h1v1h-1zM1.5 12h4v1h-4zM7.5 7h2v1h-2zM6.5 8h1v1h-1zM9.5 8h1v1h-1zM6.5 9h1v1h-1zM9.5 9h1v1h-1zM6.5 10h1v1h-1zM9.5 10h1v1h-1zM6.5 11h1v1h-1zM9.5 11h1v1h-1zM7.5 12h2v1h-2zM12.5 7h2v1h-2zM11.5 8h1v1h-1zM14.5 8h1v1h-1zM11.5 9h1v1h-1zM14.5 9h1v1h-1zM11.5 10h4v1h-4zM11.5 11h1v1h-1zM14.5 11h1v1h-1zM11.5 12h1v1h-1zM14.5 12h1v1h-1zM16.5 7h3v1h-3zM16.5 8h1v1h-1zM19.5 8h1v1h-1zM16.5 9h1v1h-1zM19.5 9h1v1h-1zM16.5 10h1v1h-1zM19.5 10h1v1h-1zM16.5 11h1v1h-1zM19.5 11h1v1h-1zM16.5 12h3v1h-3z" fill="#000000"/>
+</g>
+</svg>
