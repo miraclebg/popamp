@@ -1343,13 +1343,13 @@ impl ApplicationHandler<AppEvent> for App {
                 self.render(k);
             }
             WindowEvent::Moved(p) => {
-                // The WM may adjust positions; trust it when not dragging.
-                if self.drag.is_none() {
-                    if let Some(w) = self.win_mut(k) {
-                        w.pos = (p.x, p.y);
-                    }
-                    self.store_pos(k, (p.x, p.y));
+                // Always trust the WM: it may hold a window back (at a panel,
+                // say), and the pointer's screen position is counted from
+                // where the window really is.
+                if let Some(w) = self.win_mut(k) {
+                    w.pos = (p.x, p.y);
                 }
+                self.store_pos(k, (p.x, p.y));
             }
             WindowEvent::ModifiersChanged(m) => self.mods = m.state(),
             WindowEvent::CursorMoved { position, .. } => {
