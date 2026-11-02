@@ -171,7 +171,10 @@ as the screen at that edge, inside the desktop's own panels, which other
 windows keep out of like a taskbar. Its `size` gives the height and the narrowest width; place its
 elements with `edges` so they follow the width. The playlist and the
 equalizer sit against the bar at the screen's right end and do not move;
-the main menu's "Bar position" puts the bar at the other edge.
+the main menu's "Bar position" puts the bar at the other edge. A bar has
+its own size, set in the main menu's "Bar size" and ×2 at first, apart
+from the other windows' size: a bar 14 skin pixels high is 28 screen
+pixels high.
 
 `[window.shade]` describes the shade mode the same way. Elements are drawn
 in the order they are listed; the mouse goes to the last one under it.

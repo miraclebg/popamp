@@ -213,7 +213,7 @@ pub fn stored_size(model: &Model, key: WindowKey) -> (i32, i32) {
     match key {
         WindowKey::Playlist => (s.pe_width, s.pe_height),
         // A bar covers its monitor's width.
-        WindowKey::Main => (model.screen.map_or(0, |m| Scale::of(s).skin_up(m.w)), 0),
+        WindowKey::Main => (model.screen.map_or(0, |m| scale(model, key).skin_up(m.w)), 0),
         _ => (0, 0),
     }
 }
@@ -234,6 +234,16 @@ pub fn resize(model: &mut Model, key: WindowKey, start: (i32, i32), dx: i32, dy:
     true
 }
 
+/// The scale a window is shown at: a bar's own size for a bar, the
+/// window size for the rest.
+pub fn scale(model: &Model, key: WindowKey) -> Scale {
+    let s = model.settings();
+    match key {
+        WindowKey::Main if crate::bar::edge(model).is_some() => Scale::new(s.bar_zoom, s.wsz_scaling),
+        _ => Scale::of(s),
+    }
+}
+
 pub fn window_size(model: &Model, key: WindowKey) -> (i32, i32) {
     let Some(def) = model.skin.layout.window(key) else { return (0, 0) };
     let mode = def.mode(shaded(model, key));
@@ -248,6 +258,8 @@ pub fn window_size(model: &Model, key: WindowKey) -> (i32, i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use popamp_core::config::BarEdge;
+    use popamp_skin::layout::Placement;
 
     #[test]
     fn sizes_come_from_the_layout_and_settings() {
@@ -263,17 +275,32 @@ mod tests {
     }
 
     #[test]
-    fn a_bar_is_as_wide_as_its_monitor_at_the_window_size() {
+    fn a_bar_is_as_wide_as_its_monitor_at_the_bar_size() {
         let mut m = Model::for_tests();
+        m.skin.layout.windows[0].placement = Placement::Bar(BarEdge::Bottom);
         m.skin.layout.windows[0].normal.width = Dim::Free { min: 400, step: 1 };
         assert_eq!(window_size(&m, WindowKey::Main).0, 400, "no monitor yet: the narrowest");
         m.screen = Some(crate::bar::Screen { x: 0, y: 0, w: 1920, h: 1080 });
+        m.settings_mut().bar_zoom = 100;
         assert_eq!(window_size(&m, WindowKey::Main).0, 1920);
-        m.settings_mut().dsize = true;
-        m.settings_mut().zoom = 150;
+        m.settings_mut().bar_zoom = 150;
         assert_eq!(window_size(&m, WindowKey::Main).0, 1280);
-        m.settings_mut().zoom = 175;
+        m.settings_mut().bar_zoom = 175;
         assert_eq!(window_size(&m, WindowKey::Main).0, 1098, "covers the monitor: 1097 would leave a pixel");
+    }
+
+    #[test]
+    fn a_bar_has_its_own_size_whatever_size_the_windows_are() {
+        let mut m = Model::for_tests();
+        assert_eq!(scale(&m, WindowKey::Main).px(14), 14, "no bar: the window size");
+        m.skin.layout.windows[0].placement = Placement::Bar(BarEdge::Bottom);
+        assert_eq!(scale(&m, WindowKey::Main).px(14), 28, "as thick as jetAudio's bar");
+        m.settings_mut().dsize = true;
+        m.settings_mut().zoom = 300;
+        assert_eq!(scale(&m, WindowKey::Main).px(14), 28);
+        assert_eq!(scale(&m, WindowKey::Eq).px(14), 42, "the other windows follow the window size");
+        m.settings_mut().bar_zoom = 150;
+        assert_eq!(scale(&m, WindowKey::Main).px(14), 21);
     }
 
     #[test]

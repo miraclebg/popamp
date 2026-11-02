@@ -200,6 +200,9 @@ settings! {
     keeponscreen: bool = true,
     /// Where a bar skin's bar is; the skin's own edge when unset.
     bar_edge: Option<BarEdge> = None,
+    /// How big a bar skin's bar is, in percent, whatever size the other
+    /// windows are: 200 makes it as thick as jetAudio's bar.
+    bar_zoom: i32 = 200,
     dim_inactive: bool = true,
     // Main window.
     timeleftmode: bool = false,
@@ -263,6 +266,7 @@ impl Settings {
         self.pe_fontsize = self.pe_fontsize.clamp(6, 40);
         self.snaplen = self.snaplen.clamp(0, 100);
         self.zoom = self.zoom.clamp(125, 300);
+        self.bar_zoom = self.bar_zoom.clamp(100, 300);
         self.vis_fps = self.vis_fps.clamp(1, 70);
         self.sa = self.sa.clamp(0, 2);
         self.buffer_ms = self.buffer_ms.clamp(40, 2000);
@@ -401,6 +405,7 @@ mod tests {
             zoom: 150,
             wsz_scaling: Scaling::Nearest,
             bar_edge: Some(BarEdge::Top),
+            bar_zoom: 150,
             ..Default::default()
         };
         s.set_eq_bands(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 63]);

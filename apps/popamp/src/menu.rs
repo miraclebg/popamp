@@ -23,6 +23,8 @@ pub enum MenuAction {
     Zoom(i32),
     Scaling(popamp_core::config::Scaling),
     BarEdge(popamp_core::config::BarEdge),
+    /// A bar's size in percent.
+    BarZoom(i32),
     TitleFormat(String),
     EqPreset(usize, bool),
     EqDialog(DialogKind),
