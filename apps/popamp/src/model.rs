@@ -1379,6 +1379,10 @@ impl Model {
                 self.settings_mut().bar_edge = Some(edge);
                 self.ui.push(UiReq::Layout);
             }
+            MenuAction::BarZoom(pct) => {
+                self.settings_mut().bar_zoom = pct;
+                self.ui.push(UiReq::Layout);
+            }
             MenuAction::ReplayGain(mode) => {
                 let s = self.settings_mut();
                 match mode {
@@ -1437,6 +1441,7 @@ impl Model {
                 "Bar position",
                 vec![at("Top of the screen", BarEdge::Top), at("Bottom of the screen", BarEdge::Bottom)],
             ));
+            items.push(MenuItem::sub("Bar size", zooms(s.bar_zoom, MenuAction::BarZoom)));
         }
         items.extend([
             MenuItem::sep(),
@@ -1473,16 +1478,9 @@ impl Model {
 
     /// The window sizes and how classic skins are scaled to them.
     fn size_menu(&self) -> Vec<MenuItem> {
-        use popamp_core::config::{Scaling, ZOOMS};
+        use popamp_core::config::Scaling;
         let s = self.settings();
-        let current = if s.dsize { s.zoom } else { 100 };
-        let mut items: Vec<MenuItem> = ZOOMS
-            .iter()
-            .map(|&pct| {
-                let label = format!("×{}", pct as f32 / 100.0);
-                MenuItem::action(&label, "", MenuAction::Zoom(pct)).checked(pct == current)
-            })
-            .collect();
+        let mut items = zooms(if s.dsize { s.zoom } else { 100 }, MenuAction::Zoom);
         items.push(MenuItem::sep());
         let modes = [(Scaling::Sharp, "Sharp scaling"), (Scaling::Integer, "Whole multiples only"), (Scaling::Nearest, "Nearest pixel")];
         items.extend(modes.map(|(m, label)| MenuItem::action(label, "", MenuAction::Scaling(m)).checked(s.wsz_scaling == m)));
@@ -1746,6 +1744,14 @@ impl Model {
     }
 }
 
+/// A menu of the sizes, ×1 to ×3, with `current` checked.
+fn zooms(current: i32, action: fn(i32) -> MenuAction) -> Vec<MenuItem> {
+    popamp_core::config::ZOOMS
+        .iter()
+        .map(|&pct| MenuItem::action(&format!("×{}", pct as f32 / 100.0), "", action(pct)).checked(pct == current))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1814,12 +1820,27 @@ mod tests {
     fn a_bar_skin_offers_the_edge_in_the_main_menu() {
         let mut m = Model::for_tests();
         let edge_menu = |m: &Model| m.main_menu().into_iter().find(|i| i.label == "Bar position");
+        assert!(m.main_menu().iter().all(|i| i.label != "Bar size"));
         assert!(edge_menu(&m).is_none(), "no bar, no choice");
         m.skin.layout.windows[0].placement = popamp_skin::layout::Placement::Bar(BarEdge::Bottom);
         let items = edge_menu(&m).unwrap().sub;
         assert!(items[1].checked && !items[0].checked, "the skin's edge");
         m.on_menu(items[0].action.clone().unwrap());
         assert_eq!(crate::bar::edge(&m), Some(BarEdge::Top));
+        assert!(matches!(m.ui.last(), Some(UiReq::Layout)));
+    }
+
+    #[test]
+    fn a_bar_has_its_own_size_in_the_main_menu() {
+        let mut m = Model::for_tests();
+        m.skin.layout.windows[0].placement = popamp_skin::layout::Placement::Bar(BarEdge::Bottom);
+        let sizes = m.main_menu().into_iter().find(|i| i.label == "Bar size").unwrap().sub;
+        let checked: Vec<_> = sizes.iter().filter(|i| i.checked).map(|i| i.label.as_str()).collect();
+        assert_eq!(checked, ["×2"]);
+        let x15 = sizes.iter().find(|i| i.label == "×1.5").unwrap();
+        m.on_menu(x15.action.clone().unwrap());
+        assert_eq!(m.settings().bar_zoom, 150);
+        assert!(!m.settings().dsize, "the windows keep their size");
         assert!(matches!(m.ui.last(), Some(UiReq::Layout)));
     }
 

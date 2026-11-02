@@ -44,6 +44,8 @@ struct SkinWindow {
     pos: (i32, i32),
     /// Logical (1x) size.
     size: (i32, i32),
+    /// The scale the window is shown at now.
+    shown: Scale,
     visible: bool,
     focused: bool,
     /// Cursor in physical window coordinates.
@@ -118,8 +120,6 @@ pub struct App {
     snapshot: Option<(std::path::PathBuf, u32)>,
     platform: Platform,
     mpris: Option<crate::mpris::Mpris>,
-    /// The scale the windows are shown at now.
-    shown_scale: Scale,
     /// The monitor the main window is on.
     monitor: Option<Screen>,
 }
@@ -127,7 +127,6 @@ pub struct App {
 impl App {
     pub fn new(model: Model, start_minimized: bool, mpris: Option<crate::mpris::Mpris>) -> App {
         let fonts = Fonts::for_skin(&model.skin);
-        let shown_scale = Scale::of(model.settings());
         App {
             model,
             fonts,
@@ -151,13 +150,12 @@ impl App {
             snapshot: std::env::var_os("POPAMP_SNAPSHOT").map(|d| (std::path::PathBuf::from(d), 0)),
             platform: Platform::connect(),
             mpris,
-            shown_scale,
             monitor: None,
         }
     }
 
-    fn scale(&self) -> Scale {
-        Scale::of(self.model.settings())
+    fn scale(&self, k: WindowKey) -> Scale {
+        crate::bind::scale(&self.model, k)
     }
 
     fn logical_size(&self, k: WindowKey) -> (i32, i32) {
@@ -219,12 +217,11 @@ impl App {
     /// Finds again what a bar spans on the main window's monitor; true
     /// when it changed, as when a desktop panel appears or resizes.
     fn update_bar_area(&mut self) -> bool {
-        let shown = self.shown_scale;
         let bar = self.win(WindowKey::Main).filter(|w| w.role == WindowRole::Bar && w.visible).map(|w| Screen {
             x: w.pos.0,
             y: w.pos.1,
-            w: shown.px(w.size.0),
-            h: shown.px(w.size.1),
+            w: w.shown.px(w.size.0),
+            h: w.shown.px(w.size.1),
         });
         let area = self.monitor.map(|m| bar::usable(m, &self.platform.work_areas(), bar));
         let changed = area != self.model.screen;
@@ -255,7 +252,7 @@ impl App {
 
     /// Makes the window for `k`, hidden; false if the system cannot.
     fn create_window(&mut self, el: &ActiveEventLoop, k: WindowKey, monitors: &[Screen]) -> bool {
-        let scale = self.scale();
+        let scale = self.scale(k);
         let (w, h) = self.logical_size(k);
         let mut pos = self.saved_pos(k);
         // Keep windows on a connected monitor.
@@ -298,6 +295,7 @@ impl App {
             strut: None,
             pos,
             size: (w, h),
+            shown: scale,
             visible: false,
             focused: false,
             cursor: (0, 0),
@@ -340,19 +338,18 @@ impl App {
     /// Applies sizes, scale and visibility; keeps docked windows attached
     /// when windows change size; `anchor` stays where it is.
     fn apply_layout(&mut self, anchor: WindowKey) {
-        let (scale, shown) = (self.scale(), self.shown_scale);
         let old: Vec<Option<Rect>> = WindowKey::ALL
             .iter()
             .map(|&k| {
                 let w = self.win(k).filter(|w| w.visible)?;
-                Some((w.pos.0, w.pos.1, shown.px(w.size.0), shown.px(w.size.1)))
+                Some((w.pos.0, w.pos.1, w.shown.px(w.size.0), w.shown.px(w.size.1)))
             })
             .collect();
         let sizes: Vec<(i32, i32)> = WindowKey::ALL
             .iter()
             .map(|&k| {
                 let (lw, lh) = self.logical_size(k);
-                (scale.px(lw), scale.px(lh))
+                (self.scale(k).px(lw), self.scale(k).px(lh))
             })
             .collect();
         let bar = bar::edge(&self.model).zip(self.model.screen);
@@ -361,6 +358,8 @@ impl App {
                 bar::places(edge, screen, [sizes[0], sizes[1], sizes[2]], self.wanted_visible(WindowKey::Playlist)).to_vec()
             }
             None => {
+                // Without a bar all windows have one scale: the equalizer's.
+                let (scale, shown) = (self.scale(WindowKey::Eq), self.win(WindowKey::Eq).map_or(Scale::ONE, |w| w.shown));
                 let moved = follow_docked(&old, &sizes, anchor.index(), |d| scale.px(shown.skin(d)));
                 WindowKey::ALL.iter().zip(moved).map(|(&k, p)| self.win(k).map_or((0, 0), |w| if w.visible { p } else { w.pos })).collect()
             }
@@ -369,6 +368,7 @@ impl App {
             let visible = self.wanted_visible(k);
             let (lw, lh) = self.logical_size(k);
             let pos = new_pos[i];
+            let scale = self.scale(k);
             if let Some(w) = self.win_mut(k) {
                 let _ = w.window.request_inner_size(PhysicalSize::new(scale.px(lw) as u32, scale.px(lh) as u32));
                 if w.pos != pos {
@@ -376,6 +376,7 @@ impl App {
                     w.pos = pos;
                 }
                 w.size = (lw, lh);
+                w.shown = scale;
                 if w.visible != visible {
                     w.window.set_visible(visible);
                     w.visible = visible;
@@ -384,7 +385,6 @@ impl App {
             }
             self.store_pos(k, pos);
         }
-        self.shown_scale = scale;
         if let Some((edge, screen)) = bar {
             self.reserve_bar_strip(edge, screen, sizes[0].1);
         }
@@ -407,8 +407,8 @@ impl App {
 
     /// Applies the window shapes of the modes on screen.
     fn update_shapes(&mut self) {
-        let scale = self.scale();
         for k in WindowKey::ALL {
+            let scale = self.scale(k);
             let def = self.model.skin.layout.window(k);
             let shape = def.and_then(|d| d.mode(crate::bind::shaded(&self.model, k)).shape.as_ref());
             let Some(w) = self.wins[k.index()].as_mut() else { continue };
@@ -427,7 +427,7 @@ impl App {
     }
 
     fn render(&mut self, k: WindowKey) {
-        let scale = self.scale();
+        let scale = self.scale(k);
         let i = k.index();
         let Some(w) = self.wins[i].as_mut() else { return };
         if !w.visible {
@@ -746,8 +746,7 @@ impl App {
         if !w.visible {
             return None;
         }
-        let s = self.scale();
-        Some((w.pos.0, w.pos.1, s.px(w.size.0), s.px(w.size.1)))
+        Some((w.pos.0, w.pos.1, w.shown.px(w.size.0), w.shown.px(w.size.1)))
     }
 
     fn docked_group(&self, root: WindowKey) -> Vec<WindowKey> {
@@ -784,7 +783,7 @@ impl App {
         let group = if self.placement(k) == Placement::Free { self.docked_group(k) } else { vec![k] };
         let start = self.cursor_screen(k);
         let group: Vec<_> = group.into_iter().filter_map(|g| self.win(g).map(|w| (g, w.pos))).collect();
-        log::debug!(target: "moves", "begin {k:?}: group {group:?}, cursor {start:?}, x1 is 100 px wide: {}", self.scale().px(100));
+        log::debug!(target: "moves", "begin {k:?}: group {group:?}, cursor {start:?}, x1 is 100 px wide: {}", self.scale(k).px(100));
         self.drag = Some(Drag::Move { group, start });
     }
 
@@ -794,7 +793,6 @@ impl App {
             return (dx, dy);
         }
         let snap = s.snaplen;
-        let scale = self.scale();
         let in_group = |k: WindowKey| group.iter().any(|(g, _)| *g == k);
         let mut targets: Vec<(i32, i32, i32, i32)> =
             WindowKey::ALL.iter().filter(|&&k| !in_group(k)).filter_map(|&k| self.rect(k)).collect();
@@ -812,7 +810,7 @@ impl App {
             if !w.visible {
                 continue;
             }
-            let (gw, gh) = (scale.px(w.size.0), scale.px(w.size.1));
+            let (gw, gh) = (w.shown.px(w.size.0), w.shown.px(w.size.1));
             let (gx, gy) = (start.0 + dx, start.1 + dy);
             for &(tx, ty, tw, th) in &targets {
                 let v_near = gy < ty + th + snap && gy + gh > ty - snap;
@@ -857,7 +855,7 @@ impl App {
                 }
             }
             Some(Drag::Resize { start_size, start }) => {
-                let s = self.scale();
+                let s = self.scale(WindowKey::Playlist);
                 let (dx, dy) = (s.skin(cursor.0 - start.0), s.skin(cursor.1 - start.1));
                 if crate::bind::resize(&mut self.model, WindowKey::Playlist, *start_size, dx, dy) {
                     self.apply_layout(WindowKey::Playlist);
@@ -870,7 +868,7 @@ impl App {
     // --- input -----------------------------------------------------------------
 
     fn input(&self, k: WindowKey, right: bool, double: bool) -> Input {
-        let s = self.scale();
+        let s = self.scale(k);
         let c = self.win(k).map(|w| w.cursor).unwrap_or((0, 0));
         Input { x: s.skin(c.0), y: s.skin(c.1), right, shift: self.mods.shift_key(), ctrl: self.mods.control_key(), double }
     }

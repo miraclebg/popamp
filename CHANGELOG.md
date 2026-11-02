@@ -22,7 +22,8 @@ All notable changes to this project are documented here. The format follows
   desktop's own panels (it moves when they appear or resize). Its strip is
   reserved like a taskbar's, the playlist and the equalizer sit against it
   at the right end, and the main menu's "Bar position" moves it to the
-  other edge. `skins/bar/`, Popamp Bar, is Popamp Modern with a 14 pixel
+  other edge. The bar has its own size, ×2 unless "Bar size" in the main
+  menu says otherwise, whatever size the other windows are. `skins/bar/`, Popamp Bar, is Popamp Modern with a 14 pixel
   high bar, as high as a classic window shade;
   `tools/gen_modern_skin.py skins/bar bar` regenerates it.
 - A marquee without `area` writes the title in all of its element, so it
