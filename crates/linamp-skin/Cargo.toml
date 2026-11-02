@@ -14,3 +14,4 @@ linamp-core.workspace = true
 image.workspace = true
 zip.workspace = true
 log.workspace = true
+resvg.workspace = true

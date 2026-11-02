@@ -3,10 +3,24 @@
 use crate::canvas::Canvas;
 use linamp_skin::sprites::{main, Rect};
 use linamp_skin::textcfg::{glyph_cell, GLYPH_H, GLYPH_W};
-use linamp_skin::{Sheet, Skin};
+use linamp_skin::{Picture, Sheet, Skin};
 
 pub fn sprite(b: &mut Canvas, skin: &Skin, sheet: Sheet, src: Rect, x: i32, y: i32) {
-    b.blit(skin.sheet(sheet), src.x, src.y, src.w, src.h, x, y);
+    picture(b, skin, Picture::Sheet(sheet), src, Rect { x, y, w: src.w, h: src.h });
+}
+
+/// Draws area `src` of a picture at `(clip.x, clip.y)`, cut to `clip`'s size.
+pub fn picture(b: &mut Canvas, skin: &Skin, pic: Picture, src: Rect, clip: Rect) {
+    match pic {
+        Picture::Sheet(s) => b.blit(skin.sheet(s), src.x, src.y, clip.w.min(src.w), clip.h.min(src.h), clip.x, clip.y),
+        Picture::Svg(id) => {
+            let at = Rect { x: clip.x, y: clip.y, w: src.w, h: src.h };
+            let (w, h) = b.screen_size(at);
+            if let Some(r) = skin.svgs.raster(id, src, w, h) {
+                b.overlay(&r, at, clip);
+            }
+        }
+    }
 }
 
 /// Draws `text` with the skin's `text.bmp` font, clipped to `area`, starting

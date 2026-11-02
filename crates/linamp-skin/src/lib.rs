@@ -7,11 +7,12 @@ pub mod cursors;
 pub mod default_skin;
 pub mod layout;
 pub mod sprites;
+pub mod svg;
 pub mod textcfg;
 
-pub use bitmap::Bitmap;
+pub use bitmap::{Bitmap, Rgba};
 pub use cursors::{CursorImage, CursorKind};
-pub use layout::Layout;
+pub use layout::{Layout, Picture};
 pub use sprites::{Rect, Sheet};
 pub use textcfg::{PlColors, Regions};
 
@@ -31,6 +32,8 @@ pub struct Skin {
     pub cursors: HashMap<CursorKind, CursorImage>,
     /// The windows and their elements.
     pub layout: Layout,
+    /// A vector skin's pictures.
+    pub svgs: svg::Svgs,
 }
 
 impl Skin {
@@ -45,6 +48,7 @@ impl Skin {
             regions: Regions::default(),
             cursors: HashMap::new(),
             layout: Layout::default(),
+            svgs: svg::Svgs::default(),
         }
         .with_layout()
     }

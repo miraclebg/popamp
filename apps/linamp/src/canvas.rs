@@ -4,7 +4,7 @@
 
 use crate::font::Font;
 use crate::scale::Scale;
-use linamp_skin::{Bitmap, Rect};
+use linamp_skin::{Bitmap, Rect, Rgba};
 
 pub struct Canvas<'a> {
     pub bitmap: &'a mut Bitmap,
@@ -50,6 +50,19 @@ impl<'a> Canvas<'a> {
                 }
             }
         }
+    }
+
+    /// Lays `src` over the screen rectangle that skin rectangle `at`
+    /// covers (`src` is that size), clipped to skin rectangle `clip`.
+    pub fn overlay(&mut self, src: &Rgba, at: Rect, clip: Rect) {
+        let (x, y, _, _) = self.screen(at.x, at.y, at.w, at.h);
+        self.bitmap.overlay(src, x, y, self.screen(clip.x, clip.y, clip.w, clip.h));
+    }
+
+    /// The screen size of skin rectangle `r`.
+    pub fn screen_size(&self, r: Rect) -> (i32, i32) {
+        let (_, _, w, h) = self.screen(r.x, r.y, r.w, r.h);
+        (w, h)
     }
 
     /// Draws `text` in a TrueType font `size` skin pixels tall with its top

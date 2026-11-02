@@ -2,7 +2,7 @@
 //! named bitmap; positions are within the window at 1x scale. Verified
 //! against a reference skin sheet.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Rect {
     pub x: i32,
     pub y: i32,

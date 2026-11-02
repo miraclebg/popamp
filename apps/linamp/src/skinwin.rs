@@ -6,7 +6,7 @@ use crate::bind;
 use crate::canvas::Canvas;
 use crate::font::Font;
 use crate::model::Model;
-use crate::render::{skin_text, skin_text_width, sprite, time_digits};
+use crate::render::{picture, skin_text, skin_text_width, sprite, time_digits};
 use crate::ui::{Input, Out};
 use linamp_audio::PlayState;
 use linamp_core::text::format_duration_ms;
@@ -454,7 +454,8 @@ impl SkinWin {
         let Some((v, min, max)) = bind::value(model, s.value) else { return };
         let shown = if held && !s.live { self.preview.unwrap_or(v) } else { v };
         if let Some(f) = &s.track {
-            sprite(b, &model.skin, f.sheet, f.frame(shown, min, max), r.x, r.y);
+            let src = f.frame(shown, min, max);
+            picture(b, &model.skin, f.picture, src, Rect { x: r.x, y: r.y, ..src });
         }
         if let Some(p) = s.thumb.pick(false, held, true) {
             let off = thumb_offset(s, r, shown, min, max);
@@ -708,7 +709,7 @@ fn thumb_offset(s: &Slider, r: Rect, v: i64, min: i64, max: i64) -> i32 {
 
 fn draw_paint(b: &mut Canvas, skin: &Skin, p: Paint, r: Rect, fill: Fill) {
     match fill {
-        Fill::Once => sprite(b, skin, p.sheet, p.src, r.x + p.dx, r.y + p.dy),
+        Fill::Once => picture(b, skin, p.picture, p.src, Rect { x: r.x + p.dx, y: r.y + p.dy, ..p.src }),
         Fill::Tile => {
             let (tw, th) = (p.src.w.max(1), p.src.h.max(1));
             let mut y = r.y;
@@ -716,7 +717,7 @@ fn draw_paint(b: &mut Canvas, skin: &Skin, p: Paint, r: Rect, fill: Fill) {
                 let mut x = r.x;
                 while x < r.x + r.w {
                     let (w, h) = (tw.min(r.x + r.w - x), th.min(r.y + r.h - y));
-                    b.blit(skin.sheet(p.sheet), p.src.x, p.src.y, w, h, x, y);
+                    picture(b, skin, p.picture, p.src, Rect { x, y, w, h });
                     x += tw;
                 }
                 y += th;
