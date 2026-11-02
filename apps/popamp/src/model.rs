@@ -225,7 +225,23 @@ impl Model {
         let _ = std::fs::remove_dir_all(&dir);
         Self::headless(Paths::resolve(Some(dir.clone())), Config::load(dir.join("popamp.ini")))
     }
+}
 
+/// A test model's settings folder goes with it; only folders made by
+/// `for_tests` are touched.
+#[cfg(test)]
+impl Drop for Model {
+    fn drop(&mut self) {
+        let dir = &self.paths.config_dir;
+        let made_for_tests = dir.parent() == Some(std::env::temp_dir().as_path())
+            && dir.file_name().is_some_and(|n| n.to_string_lossy().starts_with("popamp-test-"));
+        if made_for_tests {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+}
+
+impl Model {
     fn with_engine(paths: Paths, config: Config, engine: Engine, events: Events) -> Model {
         let meta_tx = spawn_meta_workers(events.clone());
         let eq_presets = eqf::read_file(&paths.eq_library()).unwrap_or_else(|_| eqf::builtin_presets());
@@ -1724,6 +1740,16 @@ mod tests {
 
     fn titles(m: &Model) -> Vec<String> {
         m.bookmarks.iter().map(|b| b.title.clone().unwrap_or_default()).collect()
+    }
+
+    #[test]
+    fn a_test_model_takes_its_settings_folder_with_it() {
+        let m = Model::for_tests();
+        let dir = m.paths.config_dir.clone();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("bookmarks.m3u8"), "#EXTM3U\n").unwrap();
+        drop(m);
+        assert!(!dir.exists(), "{dir:?} left behind");
     }
 
     #[test]
