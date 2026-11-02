@@ -61,7 +61,7 @@ impl Renderer {
         let config = Config::load(paths.ini_file());
         let mut m = Model::headless(paths, config);
         if let Some(p) = &self.skin {
-            m.skin = Skin::load(p).map_err(|e| format!("{}: {e}", p.display()))?;
+            m.skin = Skin::load(p)?;
         }
         m.add_now(self.files.clone(), AddMode::Append);
         Ok(m)
@@ -205,5 +205,16 @@ mod tests {
         assert_ne!(read("eq-values.png"), read("eq-default.png"));
         assert_ne!(read("main-toggles.png"), read("main-stopped.png"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_broken_skin_is_named_once() {
+        let dir = std::env::temp_dir().join(format!("popamp-render-broken-{}", std::process::id()));
+        let skin = dir.join("broken.wsz");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&skin, b"not a zip").unwrap();
+        let e = render_all(&dir.join("out"), Some(skin.clone()), Vec::new()).unwrap_err();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(e.matches(&*skin.to_string_lossy()).count(), 1, "{e}");
     }
 }
