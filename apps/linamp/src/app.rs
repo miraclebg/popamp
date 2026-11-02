@@ -1,6 +1,7 @@
 //! Windowing: winit event loop, skinned windows, docking/snapping, pop-up
 //! menus, keyboard shortcuts and drag & drop.
 
+use crate::canvas::Canvas;
 use crate::dialogs::{self, DialogResult};
 use crate::font::Font;
 use crate::menu::{self, Layout, MenuItem};
@@ -343,7 +344,7 @@ impl App {
             w.frame = Bitmap::new(lw, lh, 0);
         }
         let active = w.focused;
-        self.skins[k.index()].draw(&self.model, &mut self.font, &mut w.frame, active);
+        self.skins[k.index()].draw(&self.model, &mut self.font, &mut Canvas::new(&mut w.frame, Scale::ONE), active);
         let (pw, ph) = (scale.px(lw) as u32, scale.px(lh) as u32);
         let (Some(nw), Some(nh)) = (NonZeroU32::new(pw), NonZeroU32::new(ph)) else { return };
         if w.surface.resize(nw, nh).is_err() {

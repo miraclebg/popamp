@@ -3,6 +3,7 @@
 //! code serves every window of every skin.
 
 use crate::bind;
+use crate::canvas::Canvas;
 use crate::font::Font;
 use crate::model::Model;
 use crate::render::{skin_text, skin_text_width, sprite, time_digits};
@@ -14,7 +15,7 @@ use linamp_skin::layout::{
     Action, Element, EmptyPress, Fill, Kind, Look, MenuRef, Mode, Paint, PopupItem, Slider, Value, Wheel, WindowDef, WindowKey,
 };
 use linamp_skin::sprites::{eq as e, main as m, Rect};
-use linamp_skin::{Bitmap, CursorKind, Sheet, Skin};
+use linamp_skin::{CursorKind, Sheet, Skin};
 use std::time::{Duration, Instant};
 
 const MARQUEE_STEP: Duration = Duration::from_millis(180);
@@ -344,7 +345,7 @@ impl SkinWin {
         Out::Redraw
     }
 
-    fn draw_popup(&self, model: &Model, b: &mut Bitmap) {
+    fn draw_popup(&self, model: &Model, b: &mut Canvas) {
         let Some(((_, i), hover)) = self.popup else { return };
         let items = self.popup_items(model);
         for (k, (item, r)) in items.iter().enumerate() {
@@ -359,7 +360,7 @@ impl SkinWin {
 
     // --- drawing -------------------------------------------------------------
 
-    pub fn draw(&self, model: &Model, font: &mut Font, b: &mut Bitmap, active: bool) {
+    pub fn draw(&self, model: &Model, font: &mut Font, b: &mut Canvas, active: bool) {
         let Some(c) = self.current(model) else { return };
         let active = active || !model.settings().dim_inactive;
         let pressed = self.pressed_index(model);
@@ -412,7 +413,7 @@ impl SkinWin {
         self.draw_popup(model, b);
     }
 
-    fn draw_list(&self, model: &Model, font: &mut Font, b: &mut Bitmap, list: Rect, active: bool) {
+    fn draw_list(&self, model: &Model, font: &mut Font, b: &mut Canvas, list: Rect, active: bool) {
         let colors = &model.skin.pl;
         b.fill(list.x, list.y, list.w, list.h, colors.normal_bg);
         let s = model.settings();
@@ -430,15 +431,15 @@ impl SkinWin {
             }
             let color = if Some(i) == current { colors.current } else { colors.normal };
             let time = e.length_ms.map(format_duration_ms).unwrap_or_default();
-            let tw = font.width(&time, px);
+            let tw = b.text_width(font, &time, px);
             let label = match (s.shownumsinpl, s.zeropadplnum) {
                 (true, true) => format!("{:0digits$}. {}", i + 1, e.display),
                 (true, false) => format!("{}. {}", i + 1, e.display),
                 _ => e.display.clone(),
             };
-            let fitted = font.fit(&label, px, list.w - tw - 8);
-            font.draw(b, list.x + 2, ry + 1, &fitted, px, color, list.x, list.w);
-            font.draw(b, list.x + list.w - tw - 2, ry + 1, &time, px, color, list.x, list.w);
+            let fitted = font.fit(&label, b.scale.px(px as i32) as u32, b.scale.px(list.w - tw - 8));
+            b.text(font, list.x + 2, ry + 1, &fitted, px, color, list);
+            b.text(font, list.x + list.w - tw - 2, ry + 1, &time, px, color, list);
             if i == model.playlist.cursor && active {
                 // Focus rectangle (dotted).
                 for xx in (list.x..list.x + list.w).step_by(2) {
@@ -449,7 +450,7 @@ impl SkinWin {
         }
     }
 
-    fn draw_slider(&self, model: &Model, b: &mut Bitmap, s: &Slider, r: Rect, held: bool) {
+    fn draw_slider(&self, model: &Model, b: &mut Canvas, s: &Slider, r: Rect, held: bool) {
         let Some((v, min, max)) = bind::value(model, s.value) else { return };
         let shown = if held && !s.live { self.preview.unwrap_or(v) } else { v };
         if let Some(f) = &s.track {
@@ -462,7 +463,7 @@ impl SkinWin {
         }
     }
 
-    fn draw_marquee(&self, model: &Model, b: &mut Bitmap, area: Rect) {
+    fn draw_marquee(&self, model: &Model, b: &mut Canvas, area: Rect) {
         let text = self.marquee_text(model);
         if skin_text_width(&text) > area.w {
             let full = format!("{text}  ***  ");
@@ -475,7 +476,7 @@ impl SkinWin {
     }
 
     /// The big time display; paused time blinks once a second.
-    fn draw_clock(&self, model: &Model, b: &mut Bitmap, r: Rect) {
+    fn draw_clock(&self, model: &Model, b: &mut Canvas, r: Rect) {
         let sh = model.engine.shared();
         let blink_off = sh.state() == PlayState::Paused
             && (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() / 500) % 2 == 1;
@@ -705,7 +706,7 @@ fn thumb_offset(s: &Slider, r: Rect, v: i64, min: i64, max: i64) -> i32 {
     ((v - min).clamp(0, (max - min).max(0)) * range / (max - min).max(1)) as i32
 }
 
-fn draw_paint(b: &mut Bitmap, skin: &Skin, p: Paint, r: Rect, fill: Fill) {
+fn draw_paint(b: &mut Canvas, skin: &Skin, p: Paint, r: Rect, fill: Fill) {
     match fill {
         Fill::Once => sprite(b, skin, p.sheet, p.src, r.x + p.dx, r.y + p.dy),
         Fill::Tile => {
@@ -725,7 +726,7 @@ fn draw_paint(b: &mut Bitmap, skin: &Skin, p: Paint, r: Rect, fill: Fill) {
 }
 
 /// Spline through the band values, coloured from the skin's colour strip.
-fn draw_eq_graph(model: &Model, b: &mut Bitmap, r: Rect) {
+fn draw_eq_graph(model: &Model, b: &mut Canvas, r: Rect) {
     let skin = &model.skin;
     let (gx, gy) = (r.x, r.y);
     sprite(b, skin, Sheet::EqMain, e::GRAPH_BG, gx, gy);

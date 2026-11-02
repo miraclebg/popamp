@@ -2,6 +2,7 @@
 
 mod app;
 mod bind;
+mod canvas;
 mod cli;
 mod dialogs;
 mod font;

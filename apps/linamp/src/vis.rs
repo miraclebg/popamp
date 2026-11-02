@@ -1,7 +1,7 @@
 //! Classic in-window visualizer: spectrum analyzer and oscilloscope (B9.2).
 
+use crate::canvas::Canvas;
 use linamp_core::config::Settings;
-use linamp_skin::Bitmap;
 use rustfft::{num_complex::Complex, Fft, FftPlanner};
 use std::sync::Arc;
 
@@ -77,7 +77,7 @@ impl Vis {
         }
     }
 
-    fn background(b: &mut Bitmap, x: i32, y: i32, w: i32, h: i32, colors: &[u32; 24]) {
+    fn background(b: &mut Canvas, x: i32, y: i32, w: i32, h: i32, colors: &[u32; 24]) {
         b.fill(x, y, w, h, colors[0]);
         for yy in (1..h).step_by(2) {
             for xx in (1..w).step_by(2) {
@@ -88,7 +88,7 @@ impl Vis {
 
     /// Draws the analyzer or scope into a `w`x`h` area (16 px tall classic).
     #[allow(clippy::too_many_arguments)]
-    pub fn draw(&self, b: &mut Bitmap, x: i32, y: i32, w: i32, h: i32, s: &Settings, colors: &[u32; 24]) {
+    pub fn draw(&self, b: &mut Canvas, x: i32, y: i32, w: i32, h: i32, s: &Settings, colors: &[u32; 24]) {
         Self::background(b, x, y, w, h, colors);
         match s.sa {
             1 => self.draw_spectrum(b, x, y, w, h, s, colors),
@@ -98,7 +98,7 @@ impl Vis {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn draw_spectrum(&self, b: &mut Bitmap, x: i32, y: i32, w: i32, h: i32, s: &Settings, colors: &[u32; 24]) {
+    fn draw_spectrum(&self, b: &mut Canvas, x: i32, y: i32, w: i32, h: i32, s: &Settings, colors: &[u32; 24]) {
         let (bar_w, step) = if s.sa_thick { (3, 4) } else { (1, 1) };
         let n = ((w + (step - bar_w)) / step) as usize;
         let scale = h as f32 / 16.0;
@@ -130,7 +130,7 @@ impl Vis {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn draw_scope(&self, b: &mut Bitmap, x: i32, y: i32, w: i32, h: i32, s: &Settings, colors: &[u32; 24]) {
+    fn draw_scope(&self, b: &mut Canvas, x: i32, y: i32, w: i32, h: i32, s: &Settings, colors: &[u32; 24]) {
         let mid = h / 2;
         let tail = &self.samples[FFT_N - 576..];
         let mut prev: Option<i32> = None;

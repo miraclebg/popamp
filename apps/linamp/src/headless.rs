@@ -5,6 +5,7 @@
 //! if there is none) and changes only what it shows. The set of states
 //! follows Ferramp's `--render` (see THIRD_PARTY.md).
 
+use crate::canvas::Canvas;
 use crate::font::Font;
 use crate::model::{AddMode, Model};
 use crate::scale::Scale;
@@ -69,7 +70,7 @@ impl Renderer {
     fn save(&self, m: &mut Model, k: WindowKey, name: &str) -> Result<(), String> {
         let (w, h) = crate::bind::window_size(m, k);
         let mut b = Bitmap::new(w, h, 0);
-        SkinWin::new(k).draw(m, &mut Font::load(&m.skin.pl.font), &mut b, true);
+        SkinWin::new(k).draw(m, &mut Font::load(&m.skin.pl.font), &mut Canvas::new(&mut b, Scale::ONE), true);
         let path = self.dir.join(format!("{name}.png"));
         b.save_png(&path).map_err(|e| format!("{}: {e}", path.display()))
     }
@@ -95,7 +96,7 @@ impl Renderer {
         let m = self.playing()?;
         let (w, h) = crate::bind::window_size(&m, WindowKey::Main);
         let mut b = Bitmap::new(w, h, 0);
-        SkinWin::new(WindowKey::Main).draw(&m, &mut Font::load(&m.skin.pl.font), &mut b, true);
+        SkinWin::new(WindowKey::Main).draw(&m, &mut Font::load(&m.skin.pl.font), &mut Canvas::new(&mut b, Scale::ONE), true);
         for (mode, name) in [(Scaling::Sharp, "main-x1.5-sharp"), (Scaling::Nearest, "main-x1.5-nearest")] {
             let s = Scale::new(150, mode);
             let mut out = Bitmap::new(s.px(w), s.px(h), 0);

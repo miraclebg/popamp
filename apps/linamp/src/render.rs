@@ -1,16 +1,17 @@
 //! Skin drawing helpers shared by the windows.
 
+use crate::canvas::Canvas;
 use linamp_skin::sprites::{main, Rect};
 use linamp_skin::textcfg::{glyph_cell, GLYPH_H, GLYPH_W};
-use linamp_skin::{Bitmap, Sheet, Skin};
+use linamp_skin::{Sheet, Skin};
 
-pub fn sprite(b: &mut Bitmap, skin: &Skin, sheet: Sheet, src: Rect, x: i32, y: i32) {
+pub fn sprite(b: &mut Canvas, skin: &Skin, sheet: Sheet, src: Rect, x: i32, y: i32) {
     b.blit(skin.sheet(sheet), src.x, src.y, src.w, src.h, x, y);
 }
 
 /// Draws `text` with the skin's `text.bmp` font, clipped to `area`, starting
 /// `offset` pixels into the text (for scrolling).
-pub fn skin_text(b: &mut Bitmap, skin: &Skin, area: Rect, text: &str, offset: i32) {
+pub fn skin_text(b: &mut Canvas, skin: &Skin, area: Rect, text: &str, offset: i32) {
     let font = skin.sheet(Sheet::Text);
     let chars: Vec<char> = text.chars().collect();
     let first = (offset / GLYPH_W).max(0) as usize;
@@ -39,7 +40,7 @@ pub fn skin_text_width(text: &str) -> i32 {
 }
 
 /// Draws the big `m:ss` time display; `negative` shows a minus sign.
-pub fn time_digits(b: &mut Bitmap, skin: &Skin, secs: Option<u64>, negative: bool, ox: i32, oy: i32) {
+pub fn time_digits(b: &mut Canvas, skin: &Skin, secs: Option<u64>, negative: bool, ox: i32, oy: i32) {
     let sheet = if skin.has_nums_ex { Sheet::NumsEx } else { Sheet::Numbers };
     let blank = Rect { x: main::NUMBERS_BLANK_X, y: 0, w: main::DIGIT_W, h: main::DIGIT_H };
     let digits: [Option<u64>; 4] = match secs {
