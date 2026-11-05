@@ -7,13 +7,14 @@
 //! on a worker thread, never on the engine or UI thread.
 
 use crate::pipe::Pipe;
-use parking_lot::RwLock;
+use parking_lot::{Condvar, Mutex};
 use popamp_core::meta::TrackMeta;
 use popamp_core::playlist::is_url;
 use popamp_core::plformats::{self, is_playlist, Item};
 use popamp_core::{is_audio_file, text};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 /// What a call needs from the player's settings.
 #[derive(Debug, Clone, Default)]
@@ -48,29 +49,62 @@ pub trait Source: Send + Sync {
 }
 
 /// The sources in the order they are asked: plug-ins, then HTTP and
-/// files. Shared by every thread that
-/// asks; plug-ins can be swapped while it runs.
+/// files. Shared by every thread that asks; plug-ins can be swapped while
+/// it runs.
 pub struct Sources {
-    plugins: RwLock<Vec<Arc<dyn Source>>>,
+    /// `None` until the plug-ins are known: they load on a thread of their
+    /// own while the player starts.
+    plugins: Mutex<Option<Vec<Arc<dyn Source>>>>,
+    loaded: Condvar,
     built_in: Vec<Arc<dyn Source>>,
 }
 
+/// How long a worker waits for the plug-ins before it does without them.
+const PLUGINS_WAIT: Duration = Duration::from_secs(30);
+
 impl Sources {
+    /// Sources whose plug-ins are still loading: [`Sources::of`] waits
+    /// for them, so a track given at startup goes to its plug-in.
+    pub fn waiting() -> Sources {
+        Sources { plugins: Mutex::new(None), ..Sources::default() }
+    }
+
     /// Replaces the plug-ins asked before the built-in sources.
     pub fn set_plugins(&self, plugins: Vec<Arc<dyn Source>>) {
-        *self.plugins.write() = plugins;
+        *self.plugins.lock() = Some(plugins);
+        self.loaded.notify_all();
     }
 
     /// The source that takes `location`; anything not a URL is a file.
+    /// Waits while the plug-ins load, so call it on a worker thread.
     pub fn of(&self, location: &str) -> Arc<dyn Source> {
-        let plugin = self.plugins.read().iter().find(|s| s.handles(location)).cloned();
+        let mut plugins = self.plugins.lock();
+        if plugins.is_none() && self.loaded.wait_while_for(&mut plugins, |p| p.is_none(), PLUGINS_WAIT).timed_out() {
+            log::warn!("plug-ins did not load in {PLUGINS_WAIT:?}; going on without them");
+            *plugins = Some(Vec::new());
+        }
+        self.pick(plugins.as_deref().unwrap_or_default(), location)
+    }
+
+    /// Like [`Sources::of`], without waiting for the plug-ins: for the UI
+    /// thread, which only asks how a location behaves.
+    pub fn of_now(&self, location: &str) -> Arc<dyn Source> {
+        self.pick(self.plugins.lock().as_deref().unwrap_or_default(), location)
+    }
+
+    fn pick(&self, plugins: &[Arc<dyn Source>], location: &str) -> Arc<dyn Source> {
+        let plugin = plugins.iter().find(|s| s.handles(location)).cloned();
         plugin.or_else(|| self.built_in.iter().find(|s| s.handles(location)).cloned()).unwrap_or_else(|| Arc::new(FileSource))
     }
 }
 
 impl Default for Sources {
     fn default() -> Self {
-        Sources { plugins: RwLock::new(Vec::new()), built_in: vec![Arc::new(HttpSource), Arc::new(FileSource)] }
+        Sources {
+            plugins: Mutex::new(Some(Vec::new())),
+            loaded: Condvar::new(),
+            built_in: vec![Arc::new(HttpSource), Arc::new(FileSource)],
+        }
     }
 }
 
@@ -201,6 +235,19 @@ mod tests {
         }
         sources.set_plugins(Vec::new());
         assert_eq!(sources.of("test:1").id(), "file");
+    }
+
+    #[test]
+    fn a_track_opened_while_plugins_load_waits_for_them() {
+        let sources = Arc::new(Sources::waiting());
+        assert_eq!(sources.of_now("test:1").id(), "file", "the UI does not wait");
+        let asker = {
+            let sources = sources.clone();
+            std::thread::spawn(move || sources.of("test:1").id().to_string())
+        };
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        sources.set_plugins(vec![Arc::new(Test)]);
+        assert_eq!(asker.join().unwrap(), "test");
     }
 
     #[test]
