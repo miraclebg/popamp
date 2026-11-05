@@ -43,8 +43,20 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-CI runs the same checks, plus a build with the minimum supported Rust
-version (1.89).
+CI runs the same checks, again with `--features popamp/plugins`, plus a
+build with the minimum supported Rust version (1.89).
+
+## Repositories
+
+The name of a repository in the [popamp](https://github.com/popamp)
+organization says whether it needs Popamp to be rebuilt:
+
+- `popamp-<name>`: built into the program, even when it is optional, such
+  as [popamp-plugin-api](https://github.com/popamp/popamp-plugin-api), the
+  crate behind `--features plugins`.
+- No prefix: added to an installed Popamp without rebuilding it, such as
+  `plugin-<name>` (plug-ins, [plugin-youtube](https://github.com/popamp/plugin-youtube))
+  and `skin-<name>` (skins, [skin-steel](https://github.com/popamp/skin-steel)).
 
 Guidelines:
 
