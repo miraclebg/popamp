@@ -16,6 +16,17 @@ open an issue first for larger items.
   [plugins.md](plugins.md). YouTube moves out of the core into the first
   one.
 
+## First release
+
+The first release ships packages (deb for Linux, exe for Windows) and a
+Linux package repository. Two builds:
+
+- **popamp:** the player without plug-in support.
+- **popamp-plus:** the same player built with `--features plugins`.
+
+Until then version numbers stay as they are, including the plug-in API
+(1.0), and change in place; they start to move with this release.
+
 ## Planned
 
 - **Preferences window:** output device and file-type registration (the

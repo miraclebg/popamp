@@ -7,6 +7,7 @@ use popamp_plugin_api::{config as keys, ExecOutput, ExecRequest, Play, Tags, Tra
 #[host_fn]
 extern "ExtismHost" {
     fn popamp_exec(req: Json<ExecRequest>) -> Json<ExecOutput>;
+    fn popamp_now() -> Json<u64>;
 }
 
 fn path(location: &str) -> &str {
@@ -46,6 +47,7 @@ pub fn open(Json(location): Json<String>) -> FnResult<Json<Play>> {
             let proxy = config::get(keys::PROXY)?.unwrap_or_default();
             Play::Http { url: format!("http://{greeting}/{proxy}") }
         }
+        "/now" => Play::Http { url: format!("http://now/{}", unsafe { popamp_now()? }.0) },
         // Asks a program for the rate, then plays 4 frames of silence.
         "/pipe" => {
             let out = exec("sh", "echo 44100")?;

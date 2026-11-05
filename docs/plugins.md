@@ -52,7 +52,7 @@ file: calls pass bytes. So:
 - Calls pass JSON. The types live in one small crate,
   [`popamp-plugin-api`](https://github.com/popamp/popamp-plugin-api), a
   repository of its own, used by the core and by plug-ins written in Rust
-  as a git dependency on a version tag, so both sides are checked by the
+  as a git dependency, so both sides are checked by the
   compiler. The crate's `MAJOR.MINOR` is the API version. This document
   lists the calls; the crate is their definition.
 - Audio blocks for `dsp` plug-ins pass as raw little-endian `f32`
@@ -133,7 +133,9 @@ plug-in code runs on the UI or engine thread.
 ## Security
 
 By default a plug-in can compute and nothing else: no files, no network,
-no clock beyond what the host passes in. Two permissions widen this, and
+and no clock but the host function `popamp_now`, which returns
+the time in milliseconds since 1970 UTC, so a plug-in can tell when what
+it keeps has expired. Two permissions widen this, and
 the user confirms them when turning the plug-in on, and again when a new
 version asks for more:
 
@@ -216,6 +218,11 @@ major version and the same or an older minor version; minor versions
 only add calls or optional fields. A plug-in built for another major
 version stays off, with a message naming both versions.
 
+Until the first release (the one that ships packages) the API stays
+1.0 and changes in place: dependents follow the crate's `main` branch,
+and `Cargo.lock` pins the commit. Versions start to move with that
+release.
+
 ## What leaves the core
 
 When the YouTube plug-in works:
@@ -238,7 +245,7 @@ When the YouTube plug-in works:
    and `Playback` in `crates/popamp-audio/src/source.rs`, the pipe player
    in `pipe.rs`; YouTube is a built-in source until step 4.
 3. Host: Extism, the `popamp-plugin-api` crate, manifest, permissions dialog, the "Plug-ins…" window,
-   settings form. Done: the `popamp-plugin-api` repository (tag `v1.0.0`), `crates/popamp-plugins`
+   settings form. Done: the `popamp-plugin-api` repository, `crates/popamp-plugins`
    (manifest, host, installed plug-ins) and its test plug-in in
    `crates/popamp-plugins/tests/test-plugin`; the "Plug-ins…" window in
    the Options menu shows what each plug-in may do next to its check

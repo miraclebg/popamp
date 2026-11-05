@@ -1,6 +1,7 @@
 //! Runs one plug-in: its module compiled once, a small pool of instances
-//! so two worker threads can call it at once, and the one host function
-//! it may use, `popamp_exec`, limited to the programs its manifest names.
+//! so two worker threads can call it at once, and the host functions it
+//! may use: `popamp_exec`, limited to the programs its manifest names, and
+//! `popamp_now`, the time.
 
 use crate::manifest::{Kind, Manifest, SourceSpec, MODULE};
 use extism::{CurrentPlugin, Function, Pool, PoolBuilder, UserData, Val, PTR};
@@ -88,7 +89,7 @@ impl Plugin {
             .with_config(config.into_iter());
         let compiled = extism::PluginBuilder::new(em)
             .with_wasi(false)
-            .with_functions([exec_function(programs.clone())])
+            .with_functions([exec_function(programs.clone()), now_function()])
             .compile()
             .map_err(|e| format!("cannot compile {MODULE}: {e}"))?;
         let compiled = Arc::new(compiled);
@@ -163,6 +164,18 @@ fn is_crash(error: &str) -> bool {
 
 fn exec_function(programs: Arc<Programs>) -> Function {
     Function::new(host::EXEC, [PTR], [PTR], UserData::new(programs), exec)
+}
+
+fn now_function() -> Function {
+    Function::new(host::NOW, [], [PTR], UserData::new(()), now)
+}
+
+/// `popamp_now`: milliseconds since 1970 UTC, as JSON.
+fn now(plugin: &mut CurrentPlugin, _: &[Val], outputs: &mut [Val], _: UserData<()>) -> Result<(), extism::Error> {
+    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis() as u64;
+    let handle = plugin.memory_new(ms.to_string())?;
+    outputs[0] = plugin.memory_to_val(handle);
+    Ok(())
 }
 
 /// `popamp_exec`: runs a program the manifest names, until it exits or
@@ -384,6 +397,14 @@ default = "/opt/ffmpeg"
     fn a_plugin_gets_its_settings_and_the_proxy() {
         assert_eq!(open(&test_plugin(&[], CALL_TIME), "/config"), Ok(Playback::Http("http://hello/proxy:3128".into())));
         assert_eq!(open(&test_plugin(&[("greeting", "hi")], CALL_TIME), "/config"), Ok(Playback::Http("http://hi/proxy:3128".into())));
+    }
+
+    #[test]
+    fn a_plugin_is_told_the_time() {
+        let Ok(Playback::Http(url)) = open(&test_plugin(&[], CALL_TIME), "/now") else { panic!() };
+        let told: u64 = url.strip_prefix("http://now/").unwrap().parse().unwrap();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+        assert!(now.abs_diff(told) < 5_000, "told {told}, now {now}");
     }
 
     #[test]
