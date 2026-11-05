@@ -53,6 +53,11 @@ Sayooj K Karun and keeps its history; see [THIRD_PARTY.md](THIRD_PARTY.md).
 - **Equalizer:** 10 bands plus preamp, with either the Winamp or the ISO
   band set and an optional limiter. Reads and writes `.eqf` and `.q1`
   presets, and can auto-load presets per file.
+- **Plug-ins** (in a build with `--features plugins`): WebAssembly
+  sources such as [YouTube](https://github.com/popamp/plugin-youtube) and
+  sound effects such as [Crossfeed](https://github.com/popamp/plugin-crossfeed),
+  each allowed by you in Options > Plug-ins…. See
+  [docs/plugins.md](docs/plugins.md).
 - **Playlist:**
   - M3U, M3U8, PLS and XSPF.
   - Sort, reverse, randomize, crop, remove dead entries.
@@ -162,7 +167,7 @@ cargo build --release
 The first build downloads and compiles all crates (a few minutes). The
 binary is `target/release/popamp`.
 
-This builds the player and its skins. For source plug-ins (see
+This builds the player and its skins. For plug-ins (see
 [docs/plugins.md](docs/plugins.md)), build with the `plugins` feature;
 it adds a WebAssembly runtime, so the build takes longer and the binary
 is larger:
@@ -267,8 +272,8 @@ versions move to the plug-in's settings (`[plugin.youtube]` in
 ```sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets    # expected: no warnings
-cargo test --workspace                    # 209 tests
-cargo test --workspace --features popamp/plugins   # 213: adds the Plug-ins window
+cargo test --workspace                    # 215 tests
+cargo test --workspace --features popamp/plugins   # 219: adds the Plug-ins window
 ```
 
 The unit tests cover:

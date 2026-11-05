@@ -1,8 +1,10 @@
 # Plug-ins: design
 
-Status: **agreed 2026-11-05**. Steps 1 to 4 of the order of work are
-built; the first plug-in is
-[plugin-youtube](https://github.com/popamp/plugin-youtube).
+Status: **agreed 2026-11-05**. Steps 1 to 5 of the order of work are
+built; the plug-ins are
+[plugin-youtube](https://github.com/popamp/plugin-youtube) (`source`)
+and [plugin-crossfeed](https://github.com/popamp/plugin-crossfeed)
+(`dsp`).
 
 Popamp's core plays local files, HTTP streams and playlists, and draws
 skins. Everything else that only some users want, such as YouTube, more
@@ -117,6 +119,10 @@ type = "text"
 default = "bestaudio[ext=m4a]/bestaudio"
 ```
 
+A `dsp` plug-in has `kind = "dsp"`, no `[source]` table and no
+permissions: it runs on every block of sound, so it may not start
+programs or reach the network. It may have settings.
+
 The core checks the manifest strictly, like `skin.toml`: an unknown key
 or a missing file keeps the plug-in off, and the error is shown.
 Settings are stored in `popamp.ini` under `[plugin.<id>]`; the core draws
@@ -187,9 +193,25 @@ An error is a string the core shows in the title display.
 For YouTube, `open` runs yt-dlp, reads the stream URL and headers from
 its JSON and returns a `pipe` that starts ffmpeg on that URL.
 
+## How a dsp plug-in changes the sound
+
+| Call | Input | Output |
+|---|---|---|
+| `api_version` | none | `"1.0"` |
+| `reset` | `{"rate": 44100}` | none |
+| `process` | a block, raw bytes | the block changed, as long |
+
+A block is interleaved stereo 32-bit float samples, little-endian, as
+the decoder gave them (any length). The core calls `reset` before the
+first block, when a track starts, on a seek and when the rate changes;
+whatever the plug-in keeps between blocks starts afresh then. The
+engine runs dsp plug-ins in folder order, after the equalizer and
+before the visualizer, volume and balance. Each one has an instance of
+its own, called only by the engine, so it may keep state in statics.
+
 ## Threads and time limits
 
-- **No plug-in call runs on the audio callback, the UI thread or the
+- **No source call runs on the audio callback, the UI thread or the
   engine thread.** `expand`, `describe` and `open` run on a pool of
   worker threads. The engine asks for a track, goes on handling
   commands, and receives the opened source when it is ready. Stop or a
@@ -204,11 +226,12 @@ its JSON and returns a `pipe` that starts ffmpeg on that URL.
   fails that call; three such failures in a row switch it off until the
   user presses OK in "Plug-ins…". An error the plug-in returns itself
   ("video unavailable") is not a failure.
-- A `dsp` plug-in runs on the decoding thread, never in the callback,
-  over blocks of 1024 frames in shared memory. The output buffer
-  (`buffer_ms`) already sits between it and the sound card. A block over
-  its time budget passes through unchanged; repeated overruns switch the
-  plug-in off.
+- A `dsp` plug-in runs on the engine thread, which decodes and fills
+  the output buffer (`buffer_ms`), never in a sound card callback. A
+  block that fails, comes back with another length or takes longer
+  than half its playing time plays unchanged; three in a row switch the
+  plug-in off until the user presses OK in "Plug-ins…". A call that
+  hangs is stopped after 250 ms.
 
 ## Versions
 
@@ -253,7 +276,10 @@ With the YouTube plug-in:
 4. The YouTube plug-in in its own repository, `popamp/plugin-youtube`;
    YouTube code leaves the core. Done; the host gives plug-ins the time
    (`popamp_now`) for the plug-in's cache of stream URLs.
-5. The `dsp` interface and a small example plug-in.
+5. The `dsp` interface and a small example plug-in. Done: `reset` and
+   `process` in the API, the engine's effect chain
+   (`popamp_audio::dsp::Effect`), `host::Dsp`, and
+   [plugin-crossfeed](https://github.com/popamp/plugin-crossfeed).
 6. Later: `decoder` (version 2), `vis`.
 
 ## Decisions

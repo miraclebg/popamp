@@ -40,7 +40,9 @@ All notable changes to this project are documented here. The format follows
   may do next to its check box, turns it on and edits its settings; a new
   version that asks for more stays off until it is allowed again. A
   plug-in that crashes or runs over 60 seconds three times in a row is
-  switched off. A track given at startup waits for the plug-ins to
+  switched off. A dsp plug-in changes the sound after the equalizer,
+  block by block, on the engine thread; a block that fails or is late
+  plays unchanged. A track given at startup waits for the plug-ins to
   load (up to 30 seconds), so it goes to its plug-in. The calls are in the
   [`popamp-plugin-api`](https://github.com/popamp/popamp-plugin-api) crate and in
   [docs/plugins.md](docs/plugins.md). Plug-ins are built only with
