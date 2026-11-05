@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><title>Popamp</title><defs>
+<linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#343842"/><stop offset="1" stop-color="#1d2027"/></linearGradient>
+<radialGradient id="sun" cx="0.45" cy="0.38" r="0.7"><stop offset="0" stop-color="#fff3c4"/><stop offset="0.45" stop-color="#ffd23f"/><stop offset="1" stop-color="#f0a800"/></radialGradient>
+<filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6"/></filter></defs>
+<rect width="256" height="256" rx="56" fill="url(#tile)"/>
+<circle cx="128" cy="128" r="92" fill="none" stroke="#ff3d6e" stroke-width="28.8" filter="url(#glow)" opacity="0.9"/>
+<circle cx="128" cy="128" r="92" fill="none" stroke="#ff3d6e" stroke-width="16"/>
+<circle cx="128" cy="128" r="70" fill="url(#sun)"/></svg>
