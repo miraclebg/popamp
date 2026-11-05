@@ -88,7 +88,7 @@ fn main() {
         }
     }
 
-    if let Err(e) = popamp_audio::alsa::available() {
+    if let Err(e) = popamp_audio::output::available() {
         log::error!("{e} — audio output will not work");
     }
     let paths = Paths::resolve(opts.ini_dir.clone());

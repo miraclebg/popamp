@@ -1,9 +1,9 @@
-//! Audio side of Popamp: decoding, DSP, ALSA output and the engine thread.
+//! Audio side of Popamp: decoding, DSP, sound output and the engine thread.
 
-pub mod alsa;
 pub mod decoder;
 pub mod dsp;
 pub mod engine;
+pub mod output;
 pub mod pipe;
 pub mod source;
 pub mod stream;
