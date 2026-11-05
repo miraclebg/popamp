@@ -49,10 +49,12 @@ limits, per-plug-in configuration, HTTP limited to listed hosts, and a
 simple way to add host functions. What it lacks is a typed interface
 file: calls pass bytes. So:
 
-- Calls pass JSON. The types live in one small crate, `popamp-plugin-api`,
-  used by the core and by plug-ins written in Rust, so both sides are
-  checked by the compiler. This document lists the calls; the crate is
-  their definition.
+- Calls pass JSON. The types live in one small crate,
+  [`popamp-plugin-api`](https://github.com/popamp/popamp-plugin-api), a
+  repository of its own, used by the core and by plug-ins written in Rust
+  as a git dependency on a version tag, so both sides are checked by the
+  compiler. The crate's `MAJOR.MINOR` is the API version. This document
+  lists the calls; the crate is their definition.
 - Audio blocks for `dsp` plug-ins pass as raw little-endian `f32`
   samples, not JSON.
 
@@ -236,7 +238,7 @@ When the YouTube plug-in works:
    and `Playback` in `crates/popamp-audio/src/source.rs`, the pipe player
    in `pipe.rs`; YouTube is a built-in source until step 4.
 3. Host: Extism, the `popamp-plugin-api` crate, manifest, permissions dialog, the "Plug-ins…" window,
-   settings form. Done: `crates/popamp-plugin-api`, `crates/popamp-plugins`
+   settings form. Done: the `popamp-plugin-api` repository (tag `v1.0.0`), `crates/popamp-plugins`
    (manifest, host, installed plug-ins) and its test plug-in in
    `crates/popamp-plugins/tests/test-plugin`; the "Plug-ins…" window in
    the Options menu shows what each plug-in may do next to its check
