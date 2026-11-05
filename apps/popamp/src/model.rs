@@ -16,7 +16,6 @@ use popamp_core::playlist::{is_url, Entry, Playlist, SortKey};
 use popamp_core::plformats::{self, Item};
 use popamp_core::text::format_duration_ms;
 use popamp_core::Command;
-use popamp_plugins::installed::{self, Installed};
 use popamp_skin::Skin;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -48,7 +47,8 @@ pub enum AppEvent {
     Remote(crate::ipc::Request),
     Museum(crate::museum::Fetched),
     /// The plug-ins, loaded anew; the number is that of the request.
-    Plugins(u64, Vec<Installed>),
+    #[cfg(feature = "plugins")]
+    Plugins(u64, Vec<popamp_plugins::installed::Installed>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,13 +103,11 @@ pub struct Model {
     pub vis: Vis,
     pub ui: Vec<UiReq>,
     pub quit: bool,
-    events: Events,
+    pub(crate) events: Events,
     meta_tx: crossbeam_channel::Sender<(u64, String)>,
-    sources: Arc<Sources>,
-    /// The plug-ins in the plug-ins folder and what became of each.
-    pub plugins: Vec<Installed>,
-    /// Requests to load the plug-ins; only the last one's answer counts.
-    plugin_loads: u64,
+    pub(crate) sources: Arc<Sources>,
+    #[cfg(feature = "plugins")]
+    pub plugins: crate::plugins::Plugins,
     error_skips: usize,
     pub last_dir: Option<PathBuf>,
     /// Increments when anything visible in the playlist changes.
@@ -237,8 +235,8 @@ impl Model {
             events,
             meta_tx,
             sources,
-            plugins: Vec::new(),
-            plugin_loads: 0,
+            #[cfg(feature = "plugins")]
+            plugins: Default::default(),
             error_skips: 0,
             last_dir: None,
             pl_dirty: 0,
@@ -248,28 +246,9 @@ impl Model {
             m.set_skin(Some(PathBuf::from(skin)));
         }
         m.push_engine_settings();
+        #[cfg(feature = "plugins")]
         m.load_plugins();
         m
-    }
-
-    /// Loads the plug-ins the user allowed, on a thread of its own:
-    /// compiling a module takes a while.
-    pub fn load_plugins(&mut self) {
-        self.plugin_loads += 1;
-        let n = self.plugin_loads;
-        let (root, config, cx, events) = (self.paths.plugins_dir(), self.config.plugins(), self.source_context(), self.events.clone());
-        let _ = std::thread::Builder::new().name("popamp-plugins".into()).spawn(move || {
-            events.send(AppEvent::Plugins(n, installed::load_all(&root, &config, &cx)));
-        });
-    }
-
-    /// Puts the plug-ins that are on in front of the built-in sources.
-    pub fn on_plugins(&mut self, n: u64, list: Vec<Installed>) {
-        if n != self.plugin_loads {
-            return;
-        }
-        self.sources.set_plugins(installed::sources(&list));
-        self.plugins = list;
     }
 
     pub fn settings(&self) -> &Settings {
@@ -285,7 +264,7 @@ impl Model {
     }
 
     /// What sources need from the settings.
-    fn source_context(&self) -> Context {
+    pub(crate) fn source_context(&self) -> Context {
         Context { proxy: self.settings().proxy.clone() }
     }
 
@@ -1170,7 +1149,10 @@ impl Model {
             }
             C::SkinBrowser => self.request_dialog(DialogKind::Skin),
             C::SkinMuseum => self.ui.push(UiReq::Panel(PanelKind::SkinMuseum)),
+            #[cfg(feature = "plugins")]
             C::Plugins => self.ui.push(UiReq::Panel(PanelKind::Plugins)),
+            #[cfg(not(feature = "plugins"))]
+            C::Plugins => {}
             C::EqPresetLoad => self.request_dialog(DialogKind::EqLoadPreset { auto: false }),
             C::EqPresetSave => self.request_dialog(DialogKind::EqSavePreset { auto: false }),
             C::EqPresetDelete => self.request_dialog(DialogKind::EqDeletePreset { auto: false }),
@@ -1487,6 +1469,7 @@ impl Model {
         let fmt = |label: &str, f: &str| MenuItem::action(label, "", MenuAction::TitleFormat(f.to_string())).checked(s.titlefmt == f);
         vec![
             MenuItem::cmd("Skin browser…", "Alt+S", C::SkinBrowser),
+            #[cfg(feature = "plugins")]
             MenuItem::cmd("Plug-ins…", "", C::Plugins),
             MenuItem::sep(),
             MenuItem::cmd("Time elapsed", "Ctrl+T", C::TimeElapsed).checked(!s.timeleftmode),
@@ -1765,27 +1748,10 @@ mod tests {
     }
 
     #[test]
-    fn an_allowed_plugin_takes_its_links_before_the_built_in_sources() {
-        let mut m = Model::for_tests();
-        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/popamp-plugins/tests/fixtures/test");
-        let dir = m.paths.plugins_dir().join("test");
-        std::fs::create_dir_all(&dir).unwrap();
-        for f in ["plugin.toml", "plugin.wasm"] {
-            std::fs::copy(fixture.join(f), dir.join(f)).unwrap();
-        }
-        let load = |m: &Model| installed::load_all(&m.paths.plugins_dir(), &m.config.plugins(), &m.source_context());
-        let list = load(&m);
-        m.on_plugins(m.plugin_loads, list);
-        assert_eq!(m.sources.of("https://test.invalid/list").id(), "http", "not allowed yet");
-        m.config.set_plugin_grant("test", "exec=sh;net=");
-        let list = load(&m);
-        m.on_plugins(m.plugin_loads, list);
-        assert_eq!(m.sources.of("https://test.invalid/list").id(), "test");
-        m.add_now(vec!["https://test.invalid/list".into()], AddMode::Append);
-        let got: Vec<_> = m.playlist.entries().iter().map(|e| (e.location.clone(), e.file_title.clone())).collect();
-        assert_eq!(got[1], ("https://test.invalid/list/2".to_string(), Some("Track 2".to_string())));
-        m.on_plugins(m.plugin_loads - 1, Vec::new());
-        assert_eq!(m.plugins.len(), 1, "an older answer is dropped");
+    fn the_options_menu_offers_plugins_only_in_a_build_with_them() {
+        let m = Model::for_tests();
+        let offered = m.options_menu().iter().any(|i| i.label == "Plug-ins…");
+        assert_eq!(offered, cfg!(feature = "plugins"));
     }
 
     #[test]

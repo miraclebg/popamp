@@ -59,6 +59,17 @@ file: calls pass bytes. So:
 Plug-ins are compiled to native code by wasmtime when loaded; the binary
 grows by several MB for that compiler.
 
+So plug-in support is a Cargo feature, off by default:
+
+- `cargo build` makes the player and its skins, without wasmtime: no
+  "Plug-ins…" menu item, and the plug-ins folder is not read.
+- `cargo build --features plugins` adds `popamp-plugins` and with it the
+  host, the loading at start-up and the "Plug-ins…" window. That code is
+  in `apps/popamp/src/plugins.rs`; the rest of the app marks the few
+  places that reach it with `#[cfg(feature = "plugins")]`.
+- The source interface (`Sources`) is in both builds; without the
+  feature it holds the built-in sources only. CI checks both builds.
+
 ## Where plug-ins live
 
 ```
@@ -214,6 +225,7 @@ When the YouTube plug-in works:
   asks the sources, and says "CONNECTING…" for any slow one);
 - a YouTube link with the plug-in missing or off fails like any
   unplayable entry: "no plug-in plays this link".
+- a build without the `plugins` feature has no YouTube at all.
 
 ## Order of work
 

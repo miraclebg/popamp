@@ -138,7 +138,7 @@ impl<A: Copy + PartialEq> Form<A> {
         &self.controls[i].1
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "plugins"))]
     pub fn count(&self) -> usize {
         self.controls.len()
     }

@@ -21,6 +21,9 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+      # The player with plug-ins (cargo build --features plugins).
+      - run: cargo clippy --workspace --all-targets --locked --features popamp/plugins -- -D warnings
+      - run: cargo test --workspace --locked --features popamp/plugins
 
   msrv:
     name: minimum Rust version (1.89)

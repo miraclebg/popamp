@@ -16,7 +16,7 @@ categories = ["multimedia::audio"]
 popamp-core.workspace = true
 popamp-audio.workspace = true
 popamp-skin.workspace = true
-popamp-plugins.workspace = true
+popamp-plugins = { workspace = true, optional = true }
 winit.workspace = true
 softbuffer.workspace = true
 fontdue.workspace = true
@@ -30,6 +30,11 @@ log.workspace = true
 env_logger.workspace = true
 x11rb = { version = "0.13", features = ["shape"] }
 zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
+
+[features]
+# Source plug-ins (WebAssembly, run by Extism). Off by default: without
+# it Popamp is the player and its skins, and builds without wasmtime.
+plugins = ["dep:popamp-plugins"]
 
 [dev-dependencies]
 zip.workspace = true

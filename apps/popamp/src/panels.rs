@@ -1,5 +1,5 @@
-//! Popamp's own dialog windows: Jump to file, File info, Preferences,
-//! Plug-ins and the Skin Museum.
+//! Popamp's own dialog windows: Jump to file, File info, Preferences
+//! and the Skin Museum (the Plug-ins window is in `plugins.rs`).
 //! Each is a [`Form`] plus the logic that turns its events into changes to
 //! the [`Model`]; the windows themselves live in `app.rs`.
 
@@ -8,7 +8,6 @@ use crate::museum::{self, Fetched, Job};
 use crate::widgets::{Event, Form, Rect, Widget, BUTTON, ROW_H};
 use popamp_core::config::Settings;
 use popamp_core::Command;
-use popamp_plugins::installed::{Installed, State};
 use popamp_skin::Bitmap;
 use std::collections::HashMap;
 
@@ -17,6 +16,7 @@ pub enum PanelKind {
     JumpToFile,
     FileInfo,
     Preferences,
+    #[cfg(feature = "plugins")]
     Plugins,
     SkinMuseum,
 }
@@ -30,6 +30,7 @@ pub enum Act {
     Search,
     More,
     /// The check box of the n-th plug-in.
+    #[cfg(feature = "plugins")]
     Plugin(usize),
 }
 
@@ -37,7 +38,8 @@ pub enum Panel {
     Jump(JumpToFile),
     Info(FileInfo),
     Prefs(Preferences),
-    Plugins(PluginsPanel),
+    #[cfg(feature = "plugins")]
+    Plugins(crate::plugins::PluginsPanel),
     Museum(SkinMuseum),
 }
 
@@ -47,7 +49,8 @@ impl Panel {
             PanelKind::JumpToFile => Panel::Jump(JumpToFile::new(model)),
             PanelKind::FileInfo => Panel::Info(FileInfo::new(model)),
             PanelKind::Preferences => Panel::Prefs(Preferences::new(model.settings())),
-            PanelKind::Plugins => Panel::Plugins(PluginsPanel::new(model)),
+            #[cfg(feature = "plugins")]
+            PanelKind::Plugins => Panel::Plugins(crate::plugins::PluginsPanel::new(model)),
             PanelKind::SkinMuseum => Panel::Museum(SkinMuseum::new()),
         }
     }
@@ -57,6 +60,7 @@ impl Panel {
             Panel::Jump(_) => PanelKind::JumpToFile,
             Panel::Info(_) => PanelKind::FileInfo,
             Panel::Prefs(_) => PanelKind::Preferences,
+            #[cfg(feature = "plugins")]
             Panel::Plugins(_) => PanelKind::Plugins,
             Panel::Museum(_) => PanelKind::SkinMuseum,
         }
@@ -67,6 +71,7 @@ impl Panel {
             Panel::Jump(_) => "Jump to file",
             Panel::Info(_) => "File info",
             Panel::Prefs(_) => "Popamp Preferences",
+            #[cfg(feature = "plugins")]
             Panel::Plugins(_) => "Plug-ins",
             Panel::Museum(_) => "Winamp Skin Museum",
         }
@@ -77,6 +82,7 @@ impl Panel {
             Panel::Jump(p) => &p.form,
             Panel::Info(p) => &p.form,
             Panel::Prefs(p) => &p.form,
+            #[cfg(feature = "plugins")]
             Panel::Plugins(p) => &p.form,
             Panel::Museum(p) => &p.form,
         }
@@ -87,6 +93,7 @@ impl Panel {
             Panel::Jump(p) => &mut p.form,
             Panel::Info(p) => &mut p.form,
             Panel::Prefs(p) => &mut p.form,
+            #[cfg(feature = "plugins")]
             Panel::Plugins(p) => &mut p.form,
             Panel::Museum(p) => &mut p.form,
         }
@@ -99,6 +106,7 @@ impl Panel {
             Panel::Jump(p) => p.handle(ev, model),
             Panel::Info(_) => !matches!(ev, Event::Clicked(_) | Event::Cancel),
             Panel::Prefs(p) => p.handle(ev, model),
+            #[cfg(feature = "plugins")]
             Panel::Plugins(p) => p.handle(ev, model),
             Panel::Museum(p) => p.handle(ev, model),
         }
@@ -127,7 +135,7 @@ impl Panel {
     }
 }
 
-fn button(form: &mut Form<Act>, x: i32, y: i32, label: &str, action: Act, default: bool) {
+pub(crate) fn button(form: &mut Form<Act>, x: i32, y: i32, label: &str, action: Act, default: bool) {
     form.add(Rect::new(x, y, BUTTON.0, BUTTON.1), Widget::Button { label: label.into(), action, default });
 }
 
@@ -437,131 +445,20 @@ impl Preferences {
             self.form.set_label(self.status, e);
             return true;
         }
+        #[cfg(feature = "plugins")]
         let proxy = model.settings().proxy.clone();
         for &(f, i) in &self.fields {
             f.apply(model, self.form.text(i));
         }
         model.settings_mut().sanitize();
         model.push_engine_settings();
+        #[cfg(feature = "plugins")]
         if model.settings().proxy != proxy {
             // Plug-ins get the proxy when they load.
             model.load_plugins();
         }
         model.pl_dirty += 1;
         false
-    }
-}
-
-// --- Plug-ins --------------------------------------------------------------------
-
-/// Turns plug-ins on and off and edits their settings. Ticking a plug-in
-/// and pressing OK allows what it says it may do, shown under its name.
-pub struct PluginsPanel {
-    form: Form<Act>,
-    rows: Vec<PluginRow>,
-}
-
-struct PluginRow {
-    /// Its place in `Model::plugins`.
-    plugin: usize,
-    id: String,
-    /// The permissions it asks for now, stored as allowed when it is on.
-    grant: String,
-    on: bool,
-    fields: Vec<(String, usize)>,
-}
-
-impl PluginsPanel {
-    fn new(model: &Model) -> PluginsPanel {
-        let w = 480;
-        let mut form = Form::new(w, 0);
-        let mut rows = Vec::new();
-        let mut y = 10;
-        let line = |form: &mut Form<Act>, y: &mut i32, text: String, dim: bool| {
-            form.add(Rect::new(34, *y, w - 44, 20), Widget::Label { text, dim });
-            *y += 20;
-        };
-        if model.plugins.is_empty() {
-            let text = format!("No plug-ins in {}", model.paths.plugins_dir().display());
-            form.add(Rect::new(10, y, w - 20, 20), Widget::Label { text, dim: true });
-            y += 30;
-        }
-        let config = model.config.plugins();
-        for (n, p) in model.plugins.iter().enumerate() {
-            let Some(m) = p.manifest() else {
-                form.add(Rect::new(14, y, w - 24, 20), Widget::Label { text: p.folder.clone(), dim: false });
-                y += 20;
-                line(&mut form, &mut y, problem(p).unwrap_or_default(), true);
-                y += 8;
-                continue;
-            };
-            let on = matches!(p.state, State::On(_) | State::Failed(..));
-            let label = format!("{} {}", m.name, m.version);
-            form.add(Rect::new(14, y, w - 24, 20), Widget::Check { label, checked: on, action: Act::Plugin(n) });
-            y += 22;
-            if !m.description.is_empty() {
-                line(&mut form, &mut y, m.description.clone(), true);
-            }
-            let grant = m.permissions.grant();
-            let allowed = config.grant(&m.id);
-            let more = if !allowed.is_empty() && allowed != grant { " (more than you allowed)" } else { "" };
-            line(&mut form, &mut y, format!("It {}{more}.", m.permissions.describe()), false);
-            if let Some(text) = problem(p) {
-                line(&mut form, &mut y, text, true);
-            }
-            let mut fields = Vec::new();
-            for s in &m.settings {
-                form.add(Rect::new(34, y + 2, 140, 24), Widget::Label { text: s.label.clone(), dim: false });
-                let text = config.value(&m.id, &s.key).unwrap_or(&s.default).to_string();
-                let cursor = text.chars().count();
-                fields.push((s.key.clone(), form.add(Rect::new(176, y, w - 186, 24), Widget::Input { text, cursor })));
-                y += 28;
-            }
-            rows.push(PluginRow { plugin: n, id: m.id.clone(), grant, on, fields });
-            y += 8;
-        }
-        button(&mut form, w - 2 * BUTTON.0 - 16, y, "OK", Act::Ok, true);
-        button(&mut form, w - BUTTON.0 - 10, y, "Cancel", Act::Close, false);
-        form.h = y + BUTTON.1 + 10;
-        PluginsPanel { form, rows }
-    }
-
-    fn handle(&mut self, ev: Event<Act>, model: &mut Model) -> bool {
-        match ev {
-            Event::Toggled(Act::Plugin(n), on) => {
-                if let Some(row) = self.rows.iter_mut().find(|r| r.plugin == n) {
-                    row.on = on;
-                }
-                true
-            }
-            Event::Clicked(Act::Ok) => {
-                self.apply(model);
-                false
-            }
-            Event::Clicked(_) | Event::Cancel => false,
-            _ => true,
-        }
-    }
-
-    /// Stores what is ticked and typed, and loads the plug-ins anew.
-    fn apply(&self, model: &mut Model) {
-        for row in &self.rows {
-            model.config.set_plugin_grant(&row.id, if row.on { &row.grant } else { "" });
-            for (key, i) in &row.fields {
-                model.config.set_plugin_value(&row.id, key, self.form.text(*i));
-            }
-        }
-        model.load_plugins();
-    }
-}
-
-/// Why a plug-in is not working, in words.
-fn problem(p: &Installed) -> Option<String> {
-    match &p.state {
-        State::Broken(e) => Some(format!("Broken: {e}")),
-        State::Failed(_, e) => Some(format!("Did not load: {e}")),
-        State::On(plugin) if plugin.is_off() => Some("Stopped after failing; OK starts it again.".into()),
-        _ => None,
     }
 }
 
@@ -735,7 +632,7 @@ impl SkinMuseum {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::widgets::Key;
     use popamp_core::plformats::Item;
@@ -751,14 +648,14 @@ mod tests {
         m
     }
 
-    fn type_text(p: &mut Panel, m: &mut Model, s: &str) -> bool {
+    pub(crate) fn type_text(p: &mut Panel, m: &mut Model, s: &str) -> bool {
         s.chars().all(|c| {
             let ev = p.form_mut().key(Key::Char(c));
             p.handle(ev, m)
         })
     }
 
-    fn press(p: &mut Panel, m: &mut Model, k: Key) -> bool {
+    pub(crate) fn press(p: &mut Panel, m: &mut Model, k: Key) -> bool {
         let ev = p.form_mut().key(k);
         p.handle(ev, m)
     }
@@ -833,78 +730,7 @@ mod tests {
         pr.form.rect(i)
     }
 
-    /// A model with plug-in folders holding `manifests`; their modules are
-    /// not WebAssembly, so a plug-in that is allowed fails to load.
-    fn with_plugins(manifests: &[(&str, &str)], allowed: &[(&str, &str)]) -> Model {
-        let mut m = Model::for_tests();
-        let root = m.paths.plugins_dir();
-        for (id, text) in manifests {
-            std::fs::create_dir_all(root.join(id)).unwrap();
-            std::fs::write(root.join(id).join("plugin.toml"), text).unwrap();
-            std::fs::write(root.join(id).join("plugin.wasm"), b"").unwrap();
-        }
-        for (id, grant) in allowed {
-            m.config.set_plugin_grant(id, grant);
-        }
-        m.plugins = popamp_plugins::installed::load_all(&root, &m.config.plugins(), &Default::default());
-        m
-    }
-
-    const YT: &str = "id = \"yt\"\nname = \"YT\"\nversion = \"2\"\napi = \"1.0\"\nkind = \"source\"\ndescription = \"Videos.\"\n[source]\nhosts = [\"x.invalid\"]\n[permissions]\nexec = [\"yt-dlp\"]\n[[setting]]\nkey = \"format\"\nlabel = \"Format\"\ntype = \"text\"\ndefault = \"best\"\n";
-
-    fn labels(p: &Panel) -> Vec<String> {
-        let f = p.form();
-        (0..f.count())
-            .filter_map(|i| match f.widget(i) {
-                Widget::Label { text, .. } => Some(text.clone()),
-                Widget::Check { label, checked, .. } => Some(format!("[{}] {label}", if *checked { "x" } else { " " })),
-                _ => None,
-            })
-            .collect()
-    }
-
-    #[test]
-    fn ticking_a_plugin_and_pressing_ok_allows_what_it_says_and_keeps_its_settings() {
-        let mut m = with_plugins(&[("yt", YT), ("bad", "id = 1")], &[]);
-        let mut p = Panel::open(PanelKind::Plugins, &m);
-        let shown = labels(&p);
-        assert!(shown.contains(&"[ ] YT 2".to_string()), "{shown:?}");
-        assert!(shown.contains(&"It runs yt-dlp with your rights.".to_string()), "{shown:?}");
-        assert!(shown.iter().any(|l| l.starts_with("Broken: plugin.toml:")), "{shown:?}");
-        let f = p.form();
-        let check = (0..f.count()).find(|&i| matches!(f.widget(i), Widget::Check { .. })).unwrap();
-        let input = (0..f.count()).find(|&i| matches!(f.widget(i), Widget::Input { .. })).unwrap();
-        let (check, input) = (f.rect(check), f.rect(input));
-        click(&mut p, &mut m, check);
-        click(&mut p, &mut m, input);
-        type_text(&mut p, &mut m, "!");
-        assert!(!press(&mut p, &mut m, Key::Enter), "OK closes");
-        assert_eq!(m.config.plugins().grant("yt"), "exec=yt-dlp;net=");
-        assert_eq!(m.config.plugins().value("yt", "format"), Some("best!"));
-    }
-
-    #[test]
-    fn a_plugin_asking_for_more_than_allowed_says_so_and_cancel_changes_nothing() {
-        let mut m = with_plugins(&[("yt", YT)], &[("yt", "exec=;net=")]);
-        let mut p = Panel::open(PanelKind::Plugins, &m);
-        let shown = labels(&p);
-        assert!(shown.contains(&"[ ] YT 2".to_string()), "{shown:?}");
-        assert!(shown.contains(&"It runs yt-dlp with your rights (more than you allowed).".to_string()), "{shown:?}");
-        assert!(!press(&mut p, &mut m, Key::Escape));
-        assert_eq!(m.config.plugins().grant("yt"), "exec=;net=");
-    }
-
-    #[test]
-    fn an_allowed_plugin_that_did_not_load_is_shown_ticked_with_the_reason() {
-        let m = with_plugins(&[("yt", YT)], &[("yt", "exec=yt-dlp;net=")]);
-        let shown = labels(&Panel::open(PanelKind::Plugins, &m));
-        assert!(shown.contains(&"[x] YT 2".to_string()), "{shown:?}");
-        assert!(shown.iter().any(|l| l.starts_with("Did not load: cannot compile")), "{shown:?}");
-        let empty = labels(&Panel::open(PanelKind::Plugins, &Model::for_tests()));
-        assert!(empty[0].starts_with("No plug-ins in "), "{empty:?}");
-    }
-
-    fn click(p: &mut Panel, m: &mut Model, r: Rect) -> bool {
+    pub(crate) fn click(p: &mut Panel, m: &mut Model, r: Rect) -> bool {
         let ev = p.form_mut().mouse_down(r.x + 2, r.y + 2, false);
         p.handle(ev, m)
     }

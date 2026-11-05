@@ -35,7 +35,9 @@ All notable changes to this project are documented here. The format follows
   version that asks for more stays off until it is allowed again. A
   plug-in that crashes or runs over 60 seconds three times in a row is
   switched off. The calls are in the `popamp-plugin-api` crate and in
-  [docs/plugins.md](docs/plugins.md).
+  [docs/plugins.md](docs/plugins.md). Plug-ins are built only with
+  `cargo build --features plugins`; the default build is the player and
+  its skins, without the WebAssembly runtime.
 - [Popamp Steel](https://github.com/popamp/skin-steel), a silver and navy vector skin laid out
   like the "modern" players of the 2000s: a dotted blue display with a
   segmented analyzer, round transport buttons, toggles with blue lamps, an

@@ -168,6 +168,15 @@ cargo build --release
 The first build downloads and compiles all crates (a few minutes). The
 binary is `target/release/popamp`.
 
+This builds the player and its skins. For source plug-ins (see
+[docs/plugins.md](docs/plugins.md)), build with the `plugins` feature;
+it adds a WebAssembly runtime, so the build takes longer and the binary
+is larger:
+
+```sh
+cargo build --release --features plugins
+```
+
 ### 3. Install for the current user (optional)
 
 ```sh
