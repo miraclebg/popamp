@@ -225,7 +225,7 @@ default = "yt-dlp"
     #[test]
     fn reads_a_source_manifest() {
         let m = Manifest::parse(YOUTUBE).unwrap();
-        assert_eq!((m.id.as_str(), m.api, m.version.as_str()), ("youtube", VERSION, "1.0.0"));
+        assert_eq!((m.id.as_str(), m.api.to_string(), m.version.as_str()), ("youtube", "1.0".into(), "1.0.0"));
         let Kind::Source(spec) = &m.kind;
         assert!(spec.slow);
         assert_eq!(m.permissions.exec, ["yt-dlp", "ffmpeg"]);
@@ -255,8 +255,9 @@ default = "yt-dlp"
 
     #[test]
     fn a_bad_manifest_says_what_is_wrong() {
+        let too_new = format!("built for plug-in API 2.0, this Popamp has {VERSION}");
         for (change, error) in [
-            (("api = \"1.0\"", "api = \"2.0\""), "built for plug-in API 2.0, this Popamp has 1.0"),
+            (("api = \"1.0\"", "api = \"2.0\""), too_new.as_str()),
             (("api = \"1.0\"", "api = \"1\""), "bad API version \"1\", expected MAJOR.MINOR"),
             (("id = \"youtube\"", "id = \"You Tube\""), "id \"You Tube\" must be [a-z0-9-]"),
             (("kind = \"source\"", "kind = \"vis\""), "unknown kind \"vis\"; this Popamp knows \"source\""),

@@ -1,5 +1,5 @@
 //! Sources: who takes a location, lists it, describes it and says how to
-//! play it. Files and HTTP are built in; YouTube and later plug-ins are
+//! play it. Files and HTTP are built in; plug-ins (with `--features plugins`) are
 //! sources too, asked first. A source never handles audio: it answers
 //! with a [`Playback`] and the engine plays.
 //!
@@ -47,8 +47,8 @@ pub trait Source: Send + Sync {
     }
 }
 
-/// The sources in the order they are asked: plug-ins, then the ones the
-/// player was built with, then HTTP and files. Shared by every thread that
+/// The sources in the order they are asked: plug-ins, then HTTP and
+/// files. Shared by every thread that
 /// asks; plug-ins can be swapped while it runs.
 pub struct Sources {
     plugins: RwLock<Vec<Arc<dyn Source>>>,
@@ -56,13 +56,6 @@ pub struct Sources {
 }
 
 impl Sources {
-    pub fn new(first: Vec<Arc<dyn Source>>) -> Sources {
-        let mut built_in = first;
-        built_in.push(Arc::new(HttpSource));
-        built_in.push(Arc::new(FileSource));
-        Sources { plugins: RwLock::new(Vec::new()), built_in }
-    }
-
     /// Replaces the plug-ins asked before the built-in sources.
     pub fn set_plugins(&self, plugins: Vec<Arc<dyn Source>>) {
         *self.plugins.write() = plugins;
@@ -77,7 +70,7 @@ impl Sources {
 
 impl Default for Sources {
     fn default() -> Self {
-        Sources::new(Vec::new())
+        Sources { plugins: RwLock::new(Vec::new()), built_in: vec![Arc::new(HttpSource), Arc::new(FileSource)] }
     }
 }
 

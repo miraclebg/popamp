@@ -249,10 +249,6 @@ settings! {
     replaygain_non_rg_gain: f32 = -6.0,
     // Network.
     proxy: String = String::new(),
-    // YouTube (yt-dlp + ffmpeg).
-    ytdlp_path: String = "yt-dlp".to_string(),
-    ffmpeg_path: String = "ffmpeg".to_string(),
-    ytdlp_format: String = "bestaudio[ext=m4a]/bestaudio".to_string(),
 }
 
 impl Settings {
@@ -365,7 +361,7 @@ pub struct Config {
 
 impl Config {
     pub fn load(path: PathBuf) -> Self {
-        let ini = match std::fs::read(&path) {
+        let mut ini = match std::fs::read(&path) {
             Ok(bytes) => Ini::parse_bytes(&bytes),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ini::new(),
             Err(e) => {
@@ -373,6 +369,7 @@ impl Config {
                 Ini::new()
             }
         };
+        move_youtube_settings(&mut ini);
         Self { settings: Settings::from_ini(&ini), ini, path }
     }
 
@@ -397,6 +394,21 @@ impl Config {
     pub fn save(&mut self) -> io::Result<()> {
         self.settings.write_ini(&mut self.ini);
         write_atomic(&self.path, self.ini.to_string_pretty().as_bytes())
+    }
+}
+
+/// YouTube left the core for the `youtube` plug-in: its old settings
+/// (key, default, plug-in key) become the plug-in's, unless they were
+/// left at their default or the plug-in has its own already.
+const MOVED_TO_YOUTUBE: [(&str, &str, &str); 3] =
+    [("ytdlp_path", "yt-dlp", "yt-dlp"), ("ffmpeg_path", "ffmpeg", "ffmpeg"), ("ytdlp_format", "bestaudio[ext=m4a]/bestaudio", "format")];
+
+fn move_youtube_settings(ini: &mut Ini) {
+    for (old, default, new) in MOVED_TO_YOUTUBE {
+        let Some(value) = ini.remove(SECTION, old) else { continue };
+        if value != default && ini.get("plugin.youtube", new).is_none() {
+            ini.set("plugin.youtube", new, value);
+        }
     }
 }
 
@@ -500,6 +512,28 @@ mod tests {
         let plugins = Config::load(path).plugins();
         assert_eq!(plugins.grant("youtube"), "exec=yt-dlp;net=");
         assert_eq!(plugins.value("youtube", "format"), Some("bestaudio"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn old_youtube_settings_move_to_the_plugin() {
+        let dir = std::env::temp_dir().join(format!("popamp-cfg-yt-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("popamp.ini");
+        let old = "[Popamp]\nytdlp_path=/opt/yt-dlp\nffmpeg_path=ffmpeg\nytdlp_format=best\n[plugin.youtube]\nformat=worst\n";
+        std::fs::write(&path, old).unwrap();
+        let mut cfg = Config::load(path.clone());
+        let plugins = cfg.plugins();
+        // A changed value moves; a default one is left to the plug-in's own
+        // default; a value already set for the plug-in wins.
+        assert_eq!(plugins.value("youtube", "yt-dlp"), Some("/opt/yt-dlp"));
+        assert_eq!(plugins.value("youtube", "ffmpeg"), None);
+        assert_eq!(plugins.value("youtube", "format"), Some("worst"));
+        cfg.save().unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("ytdlp") && !text.contains("ffmpeg_path"), "{text}");
+        let again = Config::load(path).plugins();
+        assert_eq!((again.value("youtube", "yt-dlp"), again.value("youtube", "format")), (Some("/opt/yt-dlp"), Some("worst")));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -877,6 +877,23 @@ mod tests {
         assert!(events.recv_timeout(Duration::from_millis(500)).is_err());
     }
 
+    #[test]
+    fn a_web_page_is_a_link_for_a_plugin_not_a_stream() {
+        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/watch?v=a", server.local_addr().unwrap());
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            let (mut c, _) = server.accept().unwrap();
+            let _ = c.read(&mut [0; 1024]);
+            let page = "<html><body>a video</body></html>";
+            let _ = write!(c, "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\n\r\n{page}", page.len());
+        });
+        let (engine, events) = engine_with(Sources::default());
+        engine.send(EngineCmd::Open { id: 1, location: url, start_ms: 0 });
+        let first = events.recv_timeout(Duration::from_secs(3));
+        assert!(matches!(&first, Ok(EngineEvent::Error { id: 1, message }) if message == "no plug-in plays this link"), "got {first:?}");
+    }
+
     /// A WAV file of `ms` milliseconds of silence, 44.1 kHz 16-bit stereo.
     fn silent_wav(name: &str, ms: u32) -> std::path::PathBuf {
         let data_len = 44_100 * 4 * ms / 1000;
@@ -929,7 +946,9 @@ mod tests {
 
     #[test]
     fn plays_what_an_added_source_says_to_play() {
-        let (engine, events) = engine_with(Sources::new(vec![Arc::new(ShellSource)]));
+        let sources = Sources::default();
+        sources.set_plugins(vec![Arc::new(ShellSource)]);
+        let (engine, events) = engine_with(sources);
         // 0.2 s of stereo f32 silence at 48 kHz.
         engine.send(EngineCmd::Open { id: 1, location: "pipe:head -c 76800 /dev/zero".into(), start_ms: 0 });
         assert_eq!(events_until_finished(&events), ["started 1", "finished 1"]);

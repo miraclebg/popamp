@@ -2,7 +2,7 @@
 //! 32-bit float samples, little-endian, at a rate the source names.
 //!
 //! The program knows nothing of Popamp; a source decides which program to
-//! run and with which arguments (YouTube runs ffmpeg on a stream URL).
+//! run and with which arguments (the YouTube plug-in runs ffmpeg on a stream URL).
 
 use crate::decoder::{AudioSource, Status, StreamInfo};
 use popamp_core::meta::TrackMeta;

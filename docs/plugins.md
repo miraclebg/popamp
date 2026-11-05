@@ -1,7 +1,8 @@
 # Plug-ins: design
 
-Status: **agreed 2026-11-05**. Steps 1 to 3 of the order of work are
-built; no plug-in other than the test one exists yet.
+Status: **agreed 2026-11-05**. Steps 1 to 4 of the order of work are
+built; the first plug-in is
+[plugin-youtube](https://github.com/popamp/plugin-youtube).
 
 Popamp's core plays local files, HTTP streams and playlists, and draws
 skins. Everything else that only some users want, such as YouTube, more
@@ -52,7 +53,7 @@ file: calls pass bytes. So:
 - Calls pass JSON. The types live in one small crate,
   [`popamp-plugin-api`](https://github.com/popamp/popamp-plugin-api), a
   repository of its own, used by the core and by plug-ins written in Rust
-  as a git dependency on a version tag, so both sides are checked by the
+  as a git dependency, so both sides are checked by the
   compiler. The crate's `MAJOR.MINOR` is the API version. This document
   lists the calls; the crate is their definition.
 - Audio blocks for `dsp` plug-ins pass as raw little-endian `f32`
@@ -133,7 +134,9 @@ plug-in code runs on the UI or engine thread.
 ## Security
 
 By default a plug-in can compute and nothing else: no files, no network,
-no clock beyond what the host passes in. Two permissions widen this, and
+and no clock but the host function `popamp_now`, which returns
+the time in milliseconds since 1970 UTC, so a plug-in can tell when what
+it keeps has expired. Two permissions widen this, and
 the user confirms them when turning the plug-in on, and again when a new
 version asks for more:
 
@@ -182,8 +185,7 @@ Calls (JSON in and out; Rust types in `popamp-plugin-api`):
 An error is a string the core shows in the title display.
 
 For YouTube, `open` runs yt-dlp, reads the stream URL and headers from
-its JSON and returns a `pipe` that starts ffmpeg on that URL: what
-the built-in YouTube source does today (`youtube::pipe`).
+its JSON and returns a `pipe` that starts ffmpeg on that URL.
 
 ## Threads and time limits
 
@@ -216,17 +218,22 @@ major version and the same or an older minor version; minor versions
 only add calls or optional fields. A plug-in built for another major
 version stays off, with a message naming both versions.
 
-## What leaves the core
+Until the first release (the one that ships packages) the API stays
+1.0 and changes in place: dependents follow the crate's `main` branch,
+and `Cargo.lock` pins the commit. Versions start to move with that
+release.
 
-When the YouTube plug-in works:
+## What left the core
 
-- `crates/popamp-audio/src/youtube.rs` is deleted;
+With the YouTube plug-in:
+
+- `crates/popamp-audio/src/youtube.rs` is gone; the core's sources are
+  HTTP and files, and plug-ins come before them;
 - the settings `ytdlp_path`, `ffmpeg_path` and `ytdlp_format` move to
-  `[plugin.youtube]`;
-- `model.rs` stops registering the built-in `YoutubeSource` (it already
-  asks the sources, and says "CONNECTING…" for any slow one);
-- a YouTube link with the plug-in missing or off fails like any
-  unplayable entry: "no plug-in plays this link".
+  `[plugin.youtube]` (`yt-dlp`, `ffmpeg`, `format`) when `popamp.ini` is
+  loaded, unless left at their defaults or already set there;
+- a link that answers with a web page (`text/html`), such as YouTube with
+  the plug-in missing or off, fails with "no plug-in plays this link";
 - a build without the `plugins` feature has no YouTube at all.
 
 ## Order of work
@@ -236,15 +243,16 @@ When the YouTube plug-in works:
 2. Core: the source interface inside the player, with the built-in HTTP
    and file sources behind it (SPEC section 6). Done: the `Source` trait
    and `Playback` in `crates/popamp-audio/src/source.rs`, the pipe player
-   in `pipe.rs`; YouTube is a built-in source until step 4.
+   in `pipe.rs`.
 3. Host: Extism, the `popamp-plugin-api` crate, manifest, permissions dialog, the "Plug-ins…" window,
-   settings form. Done: the `popamp-plugin-api` repository (tag `v1.0.0`), `crates/popamp-plugins`
+   settings form. Done: the `popamp-plugin-api` repository, `crates/popamp-plugins`
    (manifest, host, installed plug-ins) and its test plug-in in
    `crates/popamp-plugins/tests/test-plugin`; the "Plug-ins…" window in
    the Options menu shows what each plug-in may do next to its check
    box, so ticking it and pressing OK is the confirmation.
 4. The YouTube plug-in in its own repository, `popamp/plugin-youtube`;
-   YouTube code leaves the core.
+   YouTube code leaves the core. Done; the host gives plug-ins the time
+   (`popamp_now`) for the plug-in's cache of stream URLs.
 5. The `dsp` interface and a small example plug-in.
 6. Later: `decoder` (version 2), `vis`.
 
