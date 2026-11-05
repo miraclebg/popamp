@@ -11,7 +11,7 @@ env:
 jobs:
   check:
     name: fmt, clippy, test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -27,7 +27,7 @@ jobs:
 
   msrv:
     name: minimum Rust version (1.96)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.96
