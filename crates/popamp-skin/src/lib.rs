@@ -261,12 +261,18 @@ fn read_zip(file: impl Read + std::io::Seek, key: Key) -> Result<HashMap<String,
     Ok(out)
 }
 
+/// Hidden files and folders, such as `.git` in a skin cloned from its
+/// repository, are never part of a skin.
+fn visible(entry: &std::fs::DirEntry) -> bool {
+    !entry.file_name().to_string_lossy().starts_with('.')
+}
+
 fn read_dir_files(dir: &Path, key: Key) -> Result<HashMap<String, Vec<u8>>, String> {
     let mut out = HashMap::new();
     let mut stack = vec![(dir.to_path_buf(), 0)];
     while let Some((d, depth)) = stack.pop() {
         let entries = std::fs::read_dir(&d).map_err(|e| format!("{}: {e}", d.display()))?;
-        for entry in entries.flatten() {
+        for entry in entries.flatten().filter(visible) {
             let p = entry.path();
             if p.is_dir() {
                 if depth < 2 {
@@ -292,7 +298,7 @@ pub fn changed_at(path: &Path) -> Option<std::time::SystemTime> {
     let mut newest = std::fs::metadata(path).and_then(|m| m.modified()).ok()?;
     let mut stack = vec![(path.to_path_buf(), 0)];
     while let Some((d, depth)) = stack.pop() {
-        for entry in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+        for entry in std::fs::read_dir(&d).into_iter().flatten().flatten().filter(visible) {
             let Ok(meta) = entry.metadata() else { continue };
             newest = newest.max(meta.modified().unwrap_or(newest));
             if meta.is_dir() && depth < 3 {
@@ -401,31 +407,49 @@ mod tests {
         w.finish().unwrap().into_inner()
     }
 
-    #[test]
-    fn the_modern_example_skin_loads() {
-        let skin = Skin::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../skins/modern")).unwrap();
-        assert_eq!(skin.name, "Popamp Modern");
-        let main = skin.layout.window(WindowKey::Main).unwrap();
-        assert!(main.normal.elements.iter().filter(|e| e.hit.is_some()).count() >= 6, "round transport buttons");
+    /// A small skin in `tests/fixtures`, made to show one feature.
+    fn fixture(name: &str) -> Skin {
+        Skin::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)).unwrap()
     }
 
     #[test]
-    fn the_steel_example_skin_loads() {
-        let skin = Skin::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../skins/steel")).unwrap();
-        assert_eq!(skin.name, "Popamp Steel");
-        assert!(skin.text.is_some() && skin.clock.is_some(), "its own pixel fonts");
+    fn a_button_can_take_the_mouse_only_on_its_shape() {
+        let skin = fixture("shaped");
+        let main = skin.layout.window(WindowKey::Main).unwrap();
+        assert!(main.normal.elements.iter().any(|e| e.hit.is_some()), "a round button");
+    }
+
+    #[test]
+    fn a_skin_can_bring_its_own_fonts_and_shade_every_window() {
+        let skin = fixture("fonts-shade");
+        let own_font = |style: &Option<TextStyle>| style.as_ref().and_then(|t| t.font.as_ref()).is_some();
+        assert!(own_font(&skin.text) && own_font(&skin.clock), "its own fonts");
         for key in WindowKey::ALL {
             assert!(skin.layout.window(key).unwrap().shade.is_some(), "{key:?} has a shade mode");
         }
     }
 
     #[test]
-    fn the_bar_example_skin_loads() {
-        let skin = Skin::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../skins/bar")).unwrap();
-        assert_eq!(skin.name, "Popamp Bar");
+    fn a_main_window_can_be_a_bar() {
+        let skin = fixture("bar");
         let main = skin.layout.window(WindowKey::Main).unwrap();
         assert_eq!(main.placement, layout::Placement::Bar(popamp_core::config::BarEdge::Bottom));
         assert!(skin.layout.window(WindowKey::Playlist).is_some() && skin.layout.window(WindowKey::Eq).is_some());
+    }
+
+    #[test]
+    fn a_skin_folder_ignores_hidden_files_such_as_git() {
+        let dir = std::env::temp_dir().join(format!("popamp-skin-hidden-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join(".git/objects")).unwrap();
+        std::fs::write(dir.join("skin.toml"), b"").unwrap();
+        let git_file = std::fs::File::create(dir.join(".git/objects/pack")).unwrap();
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(3600);
+        git_file.set_modified(later).unwrap();
+        let names: Vec<String> = read_dir_files(&dir, vector_key).unwrap().into_keys().collect();
+        let changed = changed_at(&dir).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(names, ["skin.toml"]);
+        assert!(changed < later, "a commit is not a change to the skin");
     }
 
     #[test]

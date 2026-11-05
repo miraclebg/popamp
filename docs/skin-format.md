@@ -3,15 +3,19 @@
 A vector skin is drawn in SVG, so it stays sharp at every window size,
 including fractional ones such as x1.25 or x1.5. Popamp's own default skin
 is a vector skin: `skins/default/` in Popamp's source is a complete example
-that draws every classic sheet, `skins/modern/` one that describes its
-own windows, `skins/steel/` one with its own pixel fonts and a shade
-mode for every window, and `skins/bar/` one whose main window is a bar
-across the screen.
+that draws every classic sheet. Skins that describe their own windows
+live in repositories of their own:
+[Popamp Modern](https://github.com/popamp/skin-modern) (round buttons,
+rounded windows), [Popamp Steel](https://github.com/popamp/skin-steel)
+(own pixel fonts, a shade mode for every window) and
+[Popamp Bar](https://github.com/popamp/skin-bar) (a main window that is
+a bar across the screen).
 
 A vector skin is a folder, or a `.psz` archive (a zip file under another
 name), with a file named `skin.toml` at its top. Opening a `.psz` file in
 Popamp installs and applies it; a folder or `.zip` placed in the skins
-folder works too. Everything else in it (SVG pictures, TrueType
+folder works too, and so does a skin cloned there with git (hidden files
+such as `.git` are ignored). Everything else in it (SVG pictures, TrueType
 fonts) is referred to from `skin.toml` by its path inside the skin, for
 example `"buttons/play.svg"`.
 

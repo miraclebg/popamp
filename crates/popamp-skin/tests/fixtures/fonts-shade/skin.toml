@@ -1,0 +1,43 @@
+# Fonts of its own and a shade mode for every window.
+
+[meta]
+name = "Fonts and shade"
+author = "Popamp tests"
+format_version = 1
+
+[text]
+font = "fonts/display.ttf"
+size = 7
+color = "#ffffff"
+
+[clock]
+font = "fonts/clock.ttf"
+size = 13
+color = "#ffffff"
+
+[[window]]
+key = "main"
+
+[window.normal]
+size = [275, 116]
+
+[window.shade]
+size = [275, 14]
+
+[[window]]
+key = "eq"
+
+[window.normal]
+size = [275, 116]
+
+[window.shade]
+size = [275, 14]
+
+[[window]]
+key = "playlist"
+
+[window.normal]
+size = [275, 116]
+
+[window.shade]
+size = [275, 14]

@@ -17,29 +17,33 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- `skins/steel/`: Popamp Steel, a silver and navy vector skin laid out
+- [Popamp Steel](https://github.com/popamp/skin-steel), a silver and navy vector skin laid out
   like the "modern" players of the 2000s: a dotted blue display with a
   segmented analyzer, round transport buttons, toggles with blue lamps, an
   equalizer with a tab and a dB scale, and a shade mode for all three
   windows. Its texts use its own pixel fonts (`fonts/*.ttf`, Latin and
-  Cyrillic). `tools/gen_steel_skin.py skins/steel` regenerates it.
+  Cyrillic).
 - Bar skins: `placement = "bar-bottom"` (or `"bar-top"`) makes a vector
   skin's main window a strip across the screen at that edge, inside the
   desktop's own panels (it moves when they appear or resize). Its strip is
   reserved like a taskbar's, the playlist and the equalizer sit against it
   at the right end, and the main menu's "Bar position" moves it to the
   other edge. The bar has its own size, ×2 unless "Bar size" in the main
-  menu says otherwise, whatever size the other windows are. `skins/bar/`, Popamp Bar, is Popamp Modern with a 14 pixel
-  high bar, as high as a classic window shade;
-  `tools/gen_modern_skin.py skins/bar bar` regenerates it.
+  menu says otherwise, whatever size the other windows are.
+  [Popamp Bar](https://github.com/popamp/skin-bar) is Popamp Modern with
+  a 14 pixel high bar, as high as a classic window shade.
 - A marquee without `area` writes the title in all of its element, so it
   can stretch with a resizable window.
 - `see_through = true` in a vector skin's window: the window shows only
   where its images are opaque (and its list, vis and EQ graph), so a
   resizable window can have rounded corners.
-- `skins/modern/`: Popamp Modern, a silver vector skin with its own
+- [Popamp Modern](https://github.com/popamp/skin-modern), a silver vector skin with its own
   layout, round buttons that take clicks only on their shape (the new
-  `hit` key) and rounded windows. `tools/gen_modern_skin.py` regenerates it.
+  `hit` key) and rounded windows.
+- Popamp's own skins other than the default one live in repositories of
+  their own, each with the script that generates it. A skin folder skips
+  hidden files, so a skin cloned into the skins folder with git works and
+  a commit in it does not reload it.
 - The default skin is a vector skin folder, `skins/default/` (SVG files and
   `skin.toml`), built into the program; it replaces the skin drawn in code.
   Vector skins take any sheet they leave out from it.
