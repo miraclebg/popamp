@@ -85,6 +85,11 @@ pub fn open(url: &str, proxy: &str) -> Result<Opened, String> {
         bitrate: header("icy-br").and_then(|b| b.split(',').next().and_then(|v| v.trim().parse().ok())),
         content_type: resp.content_type().to_ascii_lowercase(),
     };
+    // A web page (a video site without its plug-in) is a link for a
+    // plug-in, not a stream.
+    if headers.content_type == "text/html" {
+        return Err("no plug-in plays this link".into());
+    }
     let metaint: usize = header("icy-metaint").and_then(|v| v.parse().ok()).unwrap_or(0);
     let ext = match headers.content_type.as_str() {
         "audio/mpeg" | "audio/mp3" => Some("mp3"),

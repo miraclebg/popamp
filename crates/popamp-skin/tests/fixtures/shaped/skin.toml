@@ -1,0 +1,19 @@
+# A button that takes the mouse only on its round picture.
+
+[meta]
+name = "Shaped"
+author = "Popamp tests"
+format_version = 1
+
+[[window]]
+key = "main"
+
+[window.normal]
+size = [275, 116]
+
+[[window.normal.element]]
+type = "button"
+rect = [10, 10, 10, 10]
+normal = "dot.svg"
+hit = "dot.svg"
+click = "play"

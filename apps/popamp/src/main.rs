@@ -15,6 +15,8 @@ mod mpris;
 mod museum;
 mod panels;
 mod platform;
+#[cfg(feature = "plugins")]
+mod plugins;
 mod render;
 mod scale;
 mod skinwin;

@@ -10,8 +10,17 @@ open an issue first for larger items.
   distributions.
 - **Golden-image tests in CI:** render windows with `POPAMP_SNAPSHOT` under
   Xvfb and compare against committed PNGs.
-- **Non-blocking YouTube startup:** resolve with `yt-dlp` off the audio
-  thread so Stop works while connecting.
+
+## First release
+
+The first release ships packages (deb for Linux, exe for Windows) and a
+Linux package repository. Two builds:
+
+- **popamp:** the player without plug-in support.
+- **popamp-plus:** the same player built with `--features plugins`.
+
+Until then version numbers stay as they are, including the plug-in API
+(1.0), and change in place; they start to move with this release.
 
 ## Planned
 
@@ -33,4 +42,4 @@ open an issue first for larger items.
 - MilkDrop-compatible visualizer window through libprojectM.
 - Local media library (folder scanning, search, library playlists).
 - Modern skins (Wasabi XML layout and the MAKI script VM).
-- A dynamic plug-in ABI for third-party decoders and effects.
+- Decoder and visualizer plug-ins.

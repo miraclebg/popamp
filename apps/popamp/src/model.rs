@@ -5,16 +5,16 @@ use crate::dialogs::{DialogKind, DialogResult, Request};
 use crate::menu::{MenuAction, MenuItem};
 use crate::panels::PanelKind;
 use crate::vis::Vis;
-use popamp_audio::youtube;
+use popamp_audio::source::{Context, Sources};
 use popamp_audio::{Engine, EngineCmd, EngineEvent, EqSettings, PlayState, ReplayGainSettings, StreamInfo};
 use popamp_core::atf::Format;
 use popamp_core::config::{BarEdge, Config, Paths, Settings};
 use popamp_core::eqf::{self, Preset};
 use popamp_core::meta::TrackMeta;
 use popamp_core::playlist::{is_url, Entry, Playlist, SortKey};
-use popamp_core::plformats::{self, is_playlist, Item};
+use popamp_core::plformats::{self, Item};
 use popamp_core::text::format_duration_ms;
-use popamp_core::{is_audio_file, Command};
+use popamp_core::Command;
 use popamp_skin::Skin;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -38,10 +38,17 @@ impl Events {
 pub enum AppEvent {
     Engine(EngineEvent),
     Meta(u64, Result<TrackMeta, String>),
-    Expanded { items: Vec<Item>, mode: AddMode },
+    Expanded {
+        items: Vec<Item>,
+        mode: AddMode,
+    },
     Dialog(DialogResult),
     Remote(crate::ipc::Request),
     Museum(crate::museum::Fetched),
+    /// The plug-ins, loaded anew, and an instance of each dsp one for the
+    /// engine; the number is that of the request.
+    #[cfg(feature = "plugins")]
+    Plugins(u64, Vec<popamp_plugins::installed::Installed>, Vec<Box<dyn popamp_audio::dsp::Effect>>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,8 +103,11 @@ pub struct Model {
     pub vis: Vis,
     pub ui: Vec<UiReq>,
     pub quit: bool,
-    events: Events,
+    pub(crate) events: Events,
     meta_tx: crossbeam_channel::Sender<(u64, String)>,
+    pub(crate) sources: Arc<Sources>,
+    #[cfg(feature = "plugins")]
+    pub plugins: crate::plugins::Plugins,
     error_skips: usize,
     pub last_dir: Option<PathBuf>,
     /// Increments when anything visible in the playlist changes.
@@ -112,20 +122,20 @@ fn bookmark_label(b: &Item) -> String {
     b.title.clone().filter(|t| !t.is_empty()).unwrap_or_else(|| b.location.clone())
 }
 
-/// Local files get their tags read; YouTube videos are resolved only when
-/// they came without a title (listings already carry one).
+/// Local files get their tags read; other entries only when they came
+/// without a title (listings already carry one) and their source has tags.
 fn wants_meta(e: &Entry) -> bool {
-    !e.is_url() || (youtube::is_youtube(&e.location) && e.file_title.is_none())
+    !e.is_url() || e.file_title.is_none()
 }
 
-fn spawn_meta_workers(events: Events) -> crossbeam_channel::Sender<(u64, String)> {
+fn spawn_meta_workers(events: Events, sources: Arc<Sources>) -> crossbeam_channel::Sender<(u64, String)> {
     let (tx, rx) = crossbeam_channel::unbounded::<(u64, String)>();
     for i in 0..2 {
         let rx = rx.clone();
-        let events = events.clone();
+        let (events, sources) = (events.clone(), sources.clone());
         let _ = std::thread::Builder::new().name(format!("popamp-meta{i}")).spawn(move || {
             for (id, path) in rx {
-                let res = if youtube::is_youtube(&path) { youtube::read_meta(&path) } else { popamp_audio::read_meta(Path::new(&path)) };
+                let Some(res) = sources.of(&path).describe(&path) else { continue };
                 if !events.send(AppEvent::Meta(id, res)) {
                     return;
                 }
@@ -135,87 +145,36 @@ fn spawn_meta_workers(events: Events) -> crossbeam_channel::Sender<(u64, String)
     tx
 }
 
-/// Expands files, directories and playlists into playlist items.
-fn expand(locations: Vec<String>, proxy_setting: &str) -> Vec<Item> {
+/// Expands folders, playlists and channels into playlist items; each
+/// location goes to the source that takes it.
+fn expand(sources: &Sources, locations: Vec<String>, cx: &Context) -> Vec<Item> {
     let mut out = Vec::new();
     for loc in locations {
-        if youtube::is_youtube(&loc) {
-            if youtube::is_single_video(&loc) {
-                out.push(Item { location: loc, title: None, length_ms: None });
-            } else {
-                match youtube::list(&loc) {
-                    Ok(list) => out.extend(list.into_iter().map(|i| Item { location: i.url, title: i.title, length_ms: i.length_ms })),
-                    Err(e) => log::warn!("cannot list {loc}: {e}"),
-                }
-            }
-            continue;
-        }
-        if is_url(&loc) {
-            if is_playlist(&loc) {
-                match popamp_audio::stream::fetch_text(&loc, proxy_setting) {
-                    Ok(text) => {
-                        let fmt = plformats::PlaylistFormat::from_path(Path::new(loc.split('?').next().unwrap_or(&loc)))
-                            .or_else(|| plformats::sniff(&text))
-                            .unwrap_or(plformats::PlaylistFormat::M3u);
-                        out.extend(plformats::parse(&text, fmt, None));
-                    }
-                    Err(e) => log::warn!("cannot fetch {loc}: {e}"),
-                }
-            } else {
-                out.push(Item { location: loc, title: None, length_ms: None });
-            }
-            continue;
-        }
-        let path = PathBuf::from(&loc);
-        if path.is_dir() {
-            let mut files = Vec::new();
-            walk(&path, &mut files, 0);
-            files.sort_by(|a, b| popamp_core::text::natural_cmp(a, b));
-            out.extend(files.into_iter().map(|f| Item { location: f, title: None, length_ms: None }));
-        } else if is_playlist(&loc) {
-            match plformats::read_file(&path) {
-                Ok(items) => out.extend(items),
-                Err(e) => log::warn!("cannot read playlist {loc}: {e}"),
-            }
-        } else {
-            out.push(Item { location: loc, title: None, length_ms: None });
+        match sources.of(&loc).expand(&loc, cx) {
+            Ok(Some(items)) => out.extend(items),
+            Ok(None) => out.push(Item { location: loc, title: None, length_ms: None }),
+            Err(e) => log::warn!("cannot expand {loc}: {e}"),
         }
     }
     out
 }
 
-fn walk(dir: &Path, out: &mut Vec<String>, depth: usize) {
-    if depth > 32 {
-        return;
-    }
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
-    for e in rd.flatten() {
-        let p = e.path();
-        let Ok(ft) = e.file_type() else { continue };
-        if ft.is_dir() || (ft.is_symlink() && p.is_dir()) {
-            walk(&p, out, depth + 1);
-        } else {
-            let s = p.to_string_lossy().into_owned();
-            if is_audio_file(&s) {
-                out.push(s);
-            }
-        }
-    }
-}
-
 impl Model {
     pub fn new(paths: Paths, config: Config, proxy: EventLoopProxy<AppEvent>) -> Model {
         let engine_proxy = proxy.clone();
-        let engine = Engine::spawn("default".into(), move |ev| {
+        // With plug-ins, tracks given at startup wait for them to load;
+        // headless models have no event loop to load them through.
+        let sources = Arc::new(if cfg!(feature = "plugins") { Sources::waiting() } else { Sources::default() });
+        let engine = Engine::spawn("default".into(), sources.clone(), move |ev| {
             let _ = engine_proxy.send_event(AppEvent::Engine(ev));
         });
-        Self::with_engine(paths, config, engine, Events(Some(proxy)))
+        Self::with_engine(paths, config, engine, sources, Events(Some(proxy)))
     }
 
     /// A model with no audio device and no event loop, for drawing the
     /// windows offline (`--render`).
     pub fn headless(paths: Paths, config: Config) -> Model {
-        Self::with_engine(paths, config, Engine::headless(), Events(None))
+        Self::with_engine(paths, config, Engine::headless(), Arc::default(), Events(None))
     }
 
     /// A headless model with default settings and its own empty settings
@@ -245,8 +204,8 @@ impl Drop for Model {
 }
 
 impl Model {
-    fn with_engine(paths: Paths, config: Config, engine: Engine, events: Events) -> Model {
-        let meta_tx = spawn_meta_workers(events.clone());
+    fn with_engine(paths: Paths, config: Config, engine: Engine, sources: Arc<Sources>, events: Events) -> Model {
+        let meta_tx = spawn_meta_workers(events.clone(), sources.clone());
         let eq_presets = eqf::read_file(&paths.eq_library()).unwrap_or_else(|_| eqf::builtin_presets());
         let eq_auto = eqf::read_file(&paths.eq_auto_library()).unwrap_or_default();
         let bookmarks = plformats::read_file(&paths.bookmarks_file()).unwrap_or_default();
@@ -272,6 +231,9 @@ impl Model {
             quit: false,
             events,
             meta_tx,
+            sources,
+            #[cfg(feature = "plugins")]
+            plugins: Default::default(),
             error_skips: 0,
             last_dir: None,
             pl_dirty: 0,
@@ -281,6 +243,8 @@ impl Model {
             m.set_skin(Some(PathBuf::from(skin)));
         }
         m.push_engine_settings();
+        #[cfg(feature = "plugins")]
+        m.load_plugins();
         m
     }
 
@@ -296,17 +260,16 @@ impl Model {
         &self.events
     }
 
+    /// What sources need from the settings.
+    pub(crate) fn source_context(&self) -> Context {
+        Context { proxy: self.settings().proxy.clone() }
+    }
+
     pub fn push_engine_settings(&mut self) {
         let s = self.settings().clone();
         self.engine.send(EngineCmd::Volume(s.volume as u8));
         self.engine.send(EngineCmd::Balance(s.balance as i8));
         self.engine.send(EngineCmd::Config { buffer_ms: s.buffer_ms, fade_ms: s.fade_ms, proxy: s.proxy.clone() });
-        youtube::configure(youtube::Config {
-            ytdlp: s.ytdlp_path.clone(),
-            ffmpeg: s.ffmpeg_path.clone(),
-            format: s.ytdlp_format.clone(),
-            proxy: s.proxy.clone(),
-        });
         self.engine.send(EngineCmd::ReplayGain(ReplayGainSettings {
             enabled: s.replaygain,
             album: s.replaygain_mode == 1,
@@ -357,9 +320,9 @@ impl Model {
             self.last_dir = if p.is_dir() { Some(p) } else { p.parent().map(Path::to_path_buf) };
         }
         let events = self.events.clone();
-        let proxy_setting = self.settings().proxy.clone();
+        let (sources, cx) = (self.sources.clone(), self.source_context());
         let _ = std::thread::Builder::new().name("popamp-expand".into()).spawn(move || {
-            let items = expand(locations, &proxy_setting);
+            let items = expand(&sources, locations, &cx);
             events.send(AppEvent::Expanded { items, mode });
         });
     }
@@ -370,7 +333,7 @@ impl Model {
         if locations.is_empty() {
             return;
         }
-        let items = expand(locations, &self.settings().proxy);
+        let items = expand(&self.sources, locations, &self.source_context());
         self.on_expanded(items, mode);
         let local: Vec<(u64, String)> =
             self.playlist.entries().iter().filter(|e| !e.is_url()).map(|e| (e.id, e.location.clone())).collect();
@@ -475,8 +438,8 @@ impl Model {
         self.playlist.cursor = idx;
         self.status.stream_title = None;
         self.status.stream_name = None;
-        if youtube::is_youtube(&loc) {
-            self.flash("CONNECTING TO YOUTUBE…");
+        if self.sources.of_now(&loc).slow() {
+            self.flash("CONNECTING…");
         }
         self.engine.send(EngineCmd::Open { id, location: loc, start_ms: 0 });
         self.pl_dirty += 1;
@@ -807,7 +770,7 @@ impl Model {
             DialogKind::OpenFolder { .. } => Request::Folder { title: "Open folder".into(), start },
             DialogKind::OpenUrl { .. } => Request::Entry {
                 title: "Open URL".into(),
-                text: "Enter a URL to open (stream, playlist, or YouTube video/playlist):".into(),
+                text: "Enter a URL to open (a stream or a playlist):".into(),
                 initial: String::new(),
             },
             DialogKind::LoadPlaylist => Request::Files {
@@ -1177,6 +1140,10 @@ impl Model {
             }
             C::SkinBrowser => self.request_dialog(DialogKind::Skin),
             C::SkinMuseum => self.ui.push(UiReq::Panel(PanelKind::SkinMuseum)),
+            #[cfg(feature = "plugins")]
+            C::Plugins => self.ui.push(UiReq::Panel(PanelKind::Plugins)),
+            #[cfg(not(feature = "plugins"))]
+            C::Plugins => {}
             C::EqPresetLoad => self.request_dialog(DialogKind::EqLoadPreset { auto: false }),
             C::EqPresetSave => self.request_dialog(DialogKind::EqSavePreset { auto: false }),
             C::EqPresetDelete => self.request_dialog(DialogKind::EqDeletePreset { auto: false }),
@@ -1493,6 +1460,8 @@ impl Model {
         let fmt = |label: &str, f: &str| MenuItem::action(label, "", MenuAction::TitleFormat(f.to_string())).checked(s.titlefmt == f);
         vec![
             MenuItem::cmd("Skin browser…", "Alt+S", C::SkinBrowser),
+            #[cfg(feature = "plugins")]
+            MenuItem::cmd("Plug-ins…", "", C::Plugins),
             MenuItem::sep(),
             MenuItem::cmd("Time elapsed", "Ctrl+T", C::TimeElapsed).checked(!s.timeleftmode),
             MenuItem::cmd("Time remaining", "Ctrl+T", C::TimeRemaining).checked(s.timeleftmode),
@@ -1767,6 +1736,29 @@ mod tests {
 
     fn titles(m: &Model) -> Vec<String> {
         m.bookmarks.iter().map(|b| b.title.clone().unwrap_or_default()).collect()
+    }
+
+    #[test]
+    fn the_options_menu_offers_plugins_only_in_a_build_with_them() {
+        let m = Model::for_tests();
+        let offered = m.options_menu().iter().any(|i| i.label == "Plug-ins…");
+        assert_eq!(offered, cfg!(feature = "plugins"));
+    }
+
+    #[test]
+    fn adding_expands_each_location_through_its_source() {
+        let dir = std::env::temp_dir().join(format!("popamp-add-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("album")).unwrap();
+        for f in ["album/2.mp3", "album/1.mp3"] {
+            std::fs::write(dir.join(f), b"").unwrap();
+        }
+        std::fs::write(dir.join("list.m3u"), "x.ogg\n").unwrap();
+        let mut m = Model::for_tests();
+        let at = |f: &str| dir.join(f).to_string_lossy().into_owned();
+        m.add_now(vec![at("album"), at("list.m3u"), "http://radio:8000/stream".into()], AddMode::Append);
+        let got: Vec<_> = m.playlist.entries().iter().map(|e| e.location.clone()).collect();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(got, [at("album/1.mp3"), at("album/2.mp3"), at("x.ogg"), "http://radio:8000/stream".into()]);
     }
 
     #[test]

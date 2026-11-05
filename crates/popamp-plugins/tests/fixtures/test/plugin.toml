@@ -1,0 +1,19 @@
+id = "test"
+name = "Test"
+version = "0.1.0"
+api = "1.0"
+kind = "source"
+description = "Answers the host's tests; see tests/test-plugin."
+
+[source]
+hosts = ["test.invalid"]
+slow = true
+
+[permissions]
+exec = ["sh"]
+
+[[setting]]
+key = "greeting"
+label = "Greeting"
+type = "text"
+default = "hello"

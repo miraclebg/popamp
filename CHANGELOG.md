@@ -8,6 +8,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- YouTube left the core for a plug-in,
+  [plugin-youtube](https://github.com/popamp/plugin-youtube), which needs
+  a build with plug-ins. The settings `ytdlp_path`, `ffmpeg_path` and
+  `ytdlp_format` move to `[plugin.youtube]` when the new version starts
+  (only those changed from their defaults). A YouTube link without the
+  plug-in fails with "no plug-in plays this link", as does any web page
+  opened as a stream.
+- Tracks open on a thread of their own. Stop, Next and Prev work while a
+  stream is still connecting, instead of waiting for it (up to 20
+  seconds for a silent server).
+- Each location is played, listed and described by a source: files,
+  HTTP streams, and plug-ins. A source names the program to run when a
+  track plays through one, and the player runs it. A slow source shows
+  "CONNECTING…" while it opens.
 - A menu that does not fit below the mouse opens above it instead of
   over it, so a second click on the button that opened it closes it.
 - The project is now Popamp, a separate project grown from
@@ -17,23 +31,50 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Plug-ins: WebAssembly modules run by [Extism](https://extism.org), each
+  in its own folder under `~/.local/share/popamp/plugins/` with a
+  `plugin.toml`. A source plug-in takes links on the hosts its manifest
+  names, lists them, describes them and tells the player how to play
+  them; it can start only the programs its manifest names, and reach only
+  the hosts it names. "Plug-ins…" in the Options menu shows what each one
+  may do next to its check box, turns it on and edits its settings; a new
+  version that asks for more stays off until it is allowed again. A
+  plug-in that crashes or runs over 60 seconds three times in a row is
+  switched off. A dsp plug-in changes the sound after the equalizer,
+  block by block, on the engine thread; a block that fails or is late
+  plays unchanged. A track given at startup waits for the plug-ins to
+  load (up to 30 seconds), so it goes to its plug-in. The calls are in the
+  [`popamp-plugin-api`](https://github.com/popamp/popamp-plugin-api) crate and in
+  [docs/plugins.md](docs/plugins.md). Plug-ins are built only with
+  `cargo build --features plugins`; the default build is the player and
+  its skins, without the WebAssembly runtime.
+- [Popamp Steel](https://github.com/popamp/skin-steel), a silver and navy vector skin laid out
+  like the "modern" players of the 2000s: a dotted blue display with a
+  segmented analyzer, round transport buttons, toggles with blue lamps, an
+  equalizer with a tab and a dB scale, and a shade mode for all three
+  windows. Its texts use its own pixel fonts (`fonts/*.ttf`, Latin and
+  Cyrillic).
 - Bar skins: `placement = "bar-bottom"` (or `"bar-top"`) makes a vector
   skin's main window a strip across the screen at that edge, inside the
   desktop's own panels (it moves when they appear or resize). Its strip is
   reserved like a taskbar's, the playlist and the equalizer sit against it
   at the right end, and the main menu's "Bar position" moves it to the
   other edge. The bar has its own size, ×2 unless "Bar size" in the main
-  menu says otherwise, whatever size the other windows are. `skins/bar/`, Popamp Bar, is Popamp Modern with a 14 pixel
-  high bar, as high as a classic window shade;
-  `tools/gen_modern_skin.py skins/bar bar` regenerates it.
+  menu says otherwise, whatever size the other windows are.
+  [Popamp Bar](https://github.com/popamp/skin-bar) is Popamp Modern with
+  a 14 pixel high bar, as high as a classic window shade.
 - A marquee without `area` writes the title in all of its element, so it
   can stretch with a resizable window.
 - `see_through = true` in a vector skin's window: the window shows only
   where its images are opaque (and its list, vis and EQ graph), so a
   resizable window can have rounded corners.
-- `skins/modern/`: Popamp Modern, a silver vector skin with its own
+- [Popamp Modern](https://github.com/popamp/skin-modern), a silver vector skin with its own
   layout, round buttons that take clicks only on their shape (the new
-  `hit` key) and rounded windows. `tools/gen_modern_skin.py` regenerates it.
+  `hit` key) and rounded windows.
+- Popamp's own skins other than the default one live in repositories of
+  their own, each with the script that generates it. A skin folder skips
+  hidden files, so a skin cloned into the skins folder with git works and
+  a commit in it does not reload it.
 - The default skin is a vector skin folder, `skins/default/` (SVG files and
   `skin.toml`), built into the program; it replaces the skin drawn in code.
   Vector skins take any sheet they leave out from it.

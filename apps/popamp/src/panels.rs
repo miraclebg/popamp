@@ -1,5 +1,5 @@
-//! Popamp's own dialog windows: Jump to file, File info, Preferences and
-//! the Skin Museum.
+//! Popamp's own dialog windows: Jump to file, File info, Preferences
+//! and the Skin Museum (the Plug-ins window is in `plugins.rs`).
 //! Each is a [`Form`] plus the logic that turns its events into changes to
 //! the [`Model`]; the windows themselves live in `app.rs`.
 
@@ -16,6 +16,8 @@ pub enum PanelKind {
     JumpToFile,
     FileInfo,
     Preferences,
+    #[cfg(feature = "plugins")]
+    Plugins,
     SkinMuseum,
 }
 
@@ -27,12 +29,17 @@ pub enum Act {
     Flag(Flag),
     Search,
     More,
+    /// The check box of the n-th plug-in.
+    #[cfg(feature = "plugins")]
+    Plugin(usize),
 }
 
 pub enum Panel {
     Jump(JumpToFile),
     Info(FileInfo),
     Prefs(Preferences),
+    #[cfg(feature = "plugins")]
+    Plugins(crate::plugins::PluginsPanel),
     Museum(SkinMuseum),
 }
 
@@ -42,6 +49,8 @@ impl Panel {
             PanelKind::JumpToFile => Panel::Jump(JumpToFile::new(model)),
             PanelKind::FileInfo => Panel::Info(FileInfo::new(model)),
             PanelKind::Preferences => Panel::Prefs(Preferences::new(model.settings())),
+            #[cfg(feature = "plugins")]
+            PanelKind::Plugins => Panel::Plugins(crate::plugins::PluginsPanel::new(model)),
             PanelKind::SkinMuseum => Panel::Museum(SkinMuseum::new()),
         }
     }
@@ -51,6 +60,8 @@ impl Panel {
             Panel::Jump(_) => PanelKind::JumpToFile,
             Panel::Info(_) => PanelKind::FileInfo,
             Panel::Prefs(_) => PanelKind::Preferences,
+            #[cfg(feature = "plugins")]
+            Panel::Plugins(_) => PanelKind::Plugins,
             Panel::Museum(_) => PanelKind::SkinMuseum,
         }
     }
@@ -60,6 +71,8 @@ impl Panel {
             Panel::Jump(_) => "Jump to file",
             Panel::Info(_) => "File info",
             Panel::Prefs(_) => "Popamp Preferences",
+            #[cfg(feature = "plugins")]
+            Panel::Plugins(_) => "Plug-ins",
             Panel::Museum(_) => "Winamp Skin Museum",
         }
     }
@@ -69,6 +82,8 @@ impl Panel {
             Panel::Jump(p) => &p.form,
             Panel::Info(p) => &p.form,
             Panel::Prefs(p) => &p.form,
+            #[cfg(feature = "plugins")]
+            Panel::Plugins(p) => &p.form,
             Panel::Museum(p) => &p.form,
         }
     }
@@ -78,6 +93,8 @@ impl Panel {
             Panel::Jump(p) => &mut p.form,
             Panel::Info(p) => &mut p.form,
             Panel::Prefs(p) => &mut p.form,
+            #[cfg(feature = "plugins")]
+            Panel::Plugins(p) => &mut p.form,
             Panel::Museum(p) => &mut p.form,
         }
     }
@@ -89,6 +106,8 @@ impl Panel {
             Panel::Jump(p) => p.handle(ev, model),
             Panel::Info(_) => !matches!(ev, Event::Clicked(_) | Event::Cancel),
             Panel::Prefs(p) => p.handle(ev, model),
+            #[cfg(feature = "plugins")]
+            Panel::Plugins(p) => p.handle(ev, model),
             Panel::Museum(p) => p.handle(ev, model),
         }
     }
@@ -116,7 +135,7 @@ impl Panel {
     }
 }
 
-fn button(form: &mut Form<Act>, x: i32, y: i32, label: &str, action: Act, default: bool) {
+pub(crate) fn button(form: &mut Form<Act>, x: i32, y: i32, label: &str, action: Act, default: bool) {
     form.add(Rect::new(x, y, BUTTON.0, BUTTON.1), Widget::Button { label: label.into(), action, default });
 }
 
@@ -426,11 +445,18 @@ impl Preferences {
             self.form.set_label(self.status, e);
             return true;
         }
+        #[cfg(feature = "plugins")]
+        let proxy = model.settings().proxy.clone();
         for &(f, i) in &self.fields {
             f.apply(model, self.form.text(i));
         }
         model.settings_mut().sanitize();
         model.push_engine_settings();
+        #[cfg(feature = "plugins")]
+        if model.settings().proxy != proxy {
+            // Plug-ins get the proxy when they load.
+            model.load_plugins();
+        }
         model.pl_dirty += 1;
         false
     }
@@ -606,7 +632,7 @@ impl SkinMuseum {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::widgets::Key;
     use popamp_core::plformats::Item;
@@ -622,14 +648,14 @@ mod tests {
         m
     }
 
-    fn type_text(p: &mut Panel, m: &mut Model, s: &str) -> bool {
+    pub(crate) fn type_text(p: &mut Panel, m: &mut Model, s: &str) -> bool {
         s.chars().all(|c| {
             let ev = p.form_mut().key(Key::Char(c));
             p.handle(ev, m)
         })
     }
 
-    fn press(p: &mut Panel, m: &mut Model, k: Key) -> bool {
+    pub(crate) fn press(p: &mut Panel, m: &mut Model, k: Key) -> bool {
         let ev = p.form_mut().key(k);
         p.handle(ev, m)
     }
@@ -704,7 +730,7 @@ mod tests {
         pr.form.rect(i)
     }
 
-    fn click(p: &mut Panel, m: &mut Model, r: Rect) -> bool {
+    pub(crate) fn click(p: &mut Panel, m: &mut Model, r: Rect) -> bool {
         let ev = p.form_mut().mouse_down(r.x + 2, r.y + 2, false);
         p.handle(ev, m)
     }

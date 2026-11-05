@@ -1390,6 +1390,8 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::Meta(id, m) => self.model.on_meta(id, m),
             AppEvent::Expanded { items, mode } => self.model.on_expanded(items, mode),
             AppEvent::Dialog(r) => self.model.on_dialog(r),
+            #[cfg(feature = "plugins")]
+            AppEvent::Plugins(n, list, effects) => self.model.on_plugins(n, list, effects),
             AppEvent::Museum(f) => {
                 if let Some(i) = self.panels.iter().position(|p| p.panel.kind() == PanelKind::SkinMuseum) {
                     self.panels[i].panel.fetched(f, &mut self.model);

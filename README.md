@@ -48,10 +48,16 @@ Sayooj K Karun and keeps its history; see [THIRD_PARTY.md](THIRD_PARTY.md).
     and ALAC, decoded by [Symphonia](https://github.com/pdeljanov/Symphonia).
   - Gapless playback, stop with fadeout, stop after current, ReplayGain.
   - HTTP(S)/Icecast/SHOUTcast streams with ICY titles.
-  - YouTube videos, playlists and channels through `yt-dlp` and `ffmpeg`.
+  - YouTube videos, playlists and channels through the
+    [YouTube plug-in](https://github.com/popamp/plugin-youtube).
 - **Equalizer:** 10 bands plus preamp, with either the Winamp or the ISO
   band set and an optional limiter. Reads and writes `.eqf` and `.q1`
   presets, and can auto-load presets per file.
+- **Plug-ins** (in a build with `--features plugins`): WebAssembly
+  sources such as [YouTube](https://github.com/popamp/plugin-youtube) and
+  sound effects such as [Crossfeed](https://github.com/popamp/plugin-crossfeed),
+  each allowed by you in Options > Plug-ins…. See
+  [docs/plugins.md](docs/plugins.md).
 - **Playlist:**
   - M3U, M3U8, PLS and XSPF.
   - Sort, reverse, randomize, crop, remove dead entries.
@@ -90,8 +96,6 @@ libraries below are loaded at runtime, not linked at build time.
 | `fontconfig` (`fc-match`) and any TrueType font | recommended | playlist and menu text (blank without them) |
 | `zenity` or `kdialog` | recommended | open-file, open-URL, save and preset dialogs |
 | D-Bus session bus | optional | MPRIS (media keys, desktop widgets) |
-| `yt-dlp` | optional | YouTube links |
-| `ffmpeg` | optional | YouTube links |
 
 ### Packages per distribution
 
@@ -103,7 +107,6 @@ package names but **have not been tested**.
 ```sh
 sudo dnf install gcc alsa-lib libX11 libX11-xcb libxcb libXcursor libXi \
     libxkbcommon libxkbcommon-x11 fontconfig zenity
-sudo dnf install yt-dlp ffmpeg-free          # optional, for YouTube
 ```
 
 **Debian / Ubuntu** (untested)
@@ -111,19 +114,15 @@ sudo dnf install yt-dlp ffmpeg-free          # optional, for YouTube
 ```sh
 sudo apt install build-essential libasound2t64 libx11-6 libx11-xcb1 libxcb1 \
     libxcursor1 libxi6 libxkbcommon0 libxkbcommon-x11-0 fontconfig zenity
-sudo apt install yt-dlp ffmpeg               # optional, for YouTube
 ```
 
-On Debian 12 and Ubuntu before 24.04 the ALSA package is `libasound2`. The
-distribution's `yt-dlp` is often too old for YouTube; prefer
-`pipx install yt-dlp`.
+On Debian 12 and Ubuntu before 24.04 the ALSA package is `libasound2`.
 
 **Arch Linux** (untested)
 
 ```sh
 sudo pacman -S --needed base-devel alsa-lib libx11 libxcb libxcursor libxi \
     libxkbcommon libxkbcommon-x11 fontconfig zenity
-sudo pacman -S yt-dlp ffmpeg                 # optional, for YouTube
 ```
 
 ## Installation
@@ -167,6 +166,15 @@ cargo build --release
 
 The first build downloads and compiles all crates (a few minutes). The
 binary is `target/release/popamp`.
+
+This builds the player and its skins. For plug-ins (see
+[docs/plugins.md](docs/plugins.md)), build with the `plugins` feature;
+it adds a WebAssembly runtime, so the build takes longer and the binary
+is larger:
+
+```sh
+cargo build --release --features plugins
+```
 
 ### 3. Install for the current user (optional)
 
@@ -229,22 +237,15 @@ Settings live in `~/.config/popamp/popamp.ini`. Its key names follow
 
 ## YouTube
 
-Install `yt-dlp` and `ffmpeg`, then open a YouTube link like any other URL:
+YouTube is a plug-in, [plugin-youtube](https://github.com/popamp/plugin-youtube),
+so it needs a build with plug-ins (`--features plugins`) and the plug-in
+installed; its README says how. It plays videos, playlists and channels
+through `yt-dlp` and `ffmpeg`. Without it a YouTube link fails with "no
+plug-in plays this link".
 
-- **A video** (`watch?v=…`, `youtu.be/…`, `/shorts/…`) plays as one track.
-- **A playlist or channel** (`playlist?list=…`, `/@name/videos`) expands into
-  its videos, up to 500.
-- **Saved playlists** keep the YouTube page URL. The audio URL expires, so it
-  is looked up again (cached for an hour) whenever the track plays.
-- **Seeking** restarts `ffmpeg` at the new position. Live streams cannot be
-  seeked.
-- **Startup** takes 2–3 seconds while `yt-dlp` resolves the video.
-
-Settings in `popamp.ini`: `ytdlp_path`, `ffmpeg_path` and `ytdlp_format`
-(default `bestaudio[ext=m4a]/bestaudio`). The HTTP `proxy` setting is passed
-to both tools. Keep `yt-dlp` up to date, because YouTube changes often break
-old versions. Recent `yt-dlp` versions also want a JavaScript runtime such
-as `deno` for full format support.
+The settings `ytdlp_path`, `ffmpeg_path` and `ytdlp_format` of earlier
+versions move to the plug-in's settings (`[plugin.youtube]` in
+`popamp.ini`) the first time the new version starts.
 
 ## Tested platforms
 
@@ -256,7 +257,6 @@ as `deno` for full format support.
 | Audio | PipeWire 1.6.7 via alsa-lib 1.2.16.1 (`default` device) |
 | Rust | rustc / cargo 1.96.0 (minimum supported version 1.89 checked with `cargo +1.89 check --locked`) |
 | Dialogs | zenity 4.2.2 |
-| YouTube tools | yt-dlp 2026.10.21, ffmpeg-free 8.1.2 |
 
 **Not tested:**
 - Other distributions, GNOME and other desktops.
@@ -272,7 +272,8 @@ as `deno` for full format support.
 ```sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets    # expected: no warnings
-cargo test --workspace                    # 57 unit tests
+cargo test --workspace                    # 215 tests
+cargo test --workspace --features popamp/plugins   # 219: adds the Plug-ins window
 ```
 
 The unit tests cover:
@@ -283,7 +284,8 @@ The unit tests cover:
 - EQ: frequency response of each band ±1.5 dB, limiter ceiling.
 - Skins: sprite rectangles inside their sheets, skin fallbacks, region
   rasterization, glyph mapping.
-- ICY metadata parsing, YouTube URL detection and `yt-dlp` JSON parsing.
+- ICY metadata parsing; a web page is not taken for a stream.
+- Plug-ins: manifests, permissions and calls through a test plug-in.
 - Command-line parsing and control-socket round trips.
 
 ### Manual checks performed
@@ -295,7 +297,6 @@ All playback checks ran at volume 0 through the real ALSA/PipeWire output.
 | Local formats | `cargo run --release -p popamp-audio --example play -- --vol 0 <file>` with one file per format (made from the same track with `ffmpeg`) | MP3, FLAC, Ogg Vorbis, WAV, AIFF, M4A (AAC), MKA (FLAC) play with correct length and bitrate. **Opus fails** (unsupported). |
 | Gapless and end of list | `play` example with two files | next track starts without a gap; "finished" is reported after the last one |
 | Internet radio | `play` example with `https://ice1.somafm.com/groovesalad-128-mp3` | plays at 127 kbps; station name and live ICY song titles shown |
-| YouTube | `popamp <watch-url>`, then `/STATUS`, two quick `/COMMAND=40148` (+5 s), and `/ADD <channel-url>` | plays with title, uploader and length. Seeking lands at the right time. The channel expands into the playlist. |
 | Window rendering | `POPAMP_SNAPSHOT=<dir> popamp /NEW /INIDIR=<tmp>` renders the windows to PNG | Default skin and the original Winamp 5.9.2 base skin both line up exactly. Windowshade, wide playlist (with vis) and oscilloscope modes correct. |
 | Skins | `popamp Base.wsz` | `.wsz` is installed to the skins folder and applied; loading the archive matches loading the unpacked folder |
 | Remote control | `/PLAY /PAUSE /PLAYPAUSE /NEXT /STOP /VOL= /SHUFFLE= /COMMAND= /STATUS /QUIT` against a running instance | all work |
@@ -318,11 +319,8 @@ Please report problems with these first.
 
 ## Known limitations
 
-- Opus, MIDI and tracker modules are not supported (YouTube Opus streams
-  still play, because `ffmpeg` decodes them).
+- Opus, MIDI and tracker modules are not supported.
 - No native Wayland windows: Popamp needs Xwayland on Wayland desktops.
-- Starting a YouTube track blocks other commands (such as Stop) for the 2–3 s
-  that `yt-dlp` needs.
 - The Preferences window (`Ctrl+P`) covers the common options; the rest are
   in the menus and `popamp.ini`.
 - No tag editing, album art, tray icon, media library or Modern (`.wal`)
@@ -347,7 +345,7 @@ settings in `out/popamp.ini` if that file exists.
 | Crate | Contents |
 |---|---|
 | `crates/popamp-core` | settings, playlist model and formats, title formatting, EQF, command ids |
-| `crates/popamp-audio` | decoding, EQ, limiter, ALSA output, engine thread, streams, YouTube |
+| `crates/popamp-audio` | decoding, EQ, limiter, ALSA output, engine thread, sources, streams |
 | `crates/popamp-skin` | skin loading, sprite geometry, default skin generator |
 | `apps/popamp` | windows, menus, input, dialogs, IPC, MPRIS |
 
