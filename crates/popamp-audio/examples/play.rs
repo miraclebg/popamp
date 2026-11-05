@@ -13,7 +13,7 @@ fn main() {
     }
     let seconds: u64 = std::env::var("PLAY_SECONDS").ok().and_then(|s| s.parse().ok()).unwrap_or(u64::MAX);
     let (tx, rx) = crossbeam_channel::unbounded();
-    let engine = Engine::spawn("default".into(), move |e| {
+    let engine = Engine::spawn("default".into(), Default::default(), move |e| {
         let _ = tx.send(e);
     });
     engine.send(EngineCmd::Volume(volume));

@@ -7,12 +7,12 @@
 use crate::alsa::AlsaPcm;
 use crate::decoder::{AudioSource, Decoder, Status, StreamInfo};
 use crate::dsp::{balance_gains, db_to_gain, volume_gain, EqSettings, Equalizer};
+use crate::pipe::PipeSource;
+use crate::source::{Context, Playback, Sources};
 use crate::stream::{self, StreamHeaders, TitleSlot};
 use crossbeam_channel::{Receiver, Sender};
 use parking_lot::Mutex;
 use popamp_core::meta::TrackMeta;
-use popamp_core::playlist::is_url;
-use std::path::Path;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -190,13 +190,14 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn spawn(device: String, on_event: impl Fn(EngineEvent) + Send + 'static) -> Engine {
+    /// An engine that plays what `sources` say how to play.
+    pub fn spawn(device: String, sources: Arc<Sources>, on_event: impl Fn(EngineEvent) + Send + 'static) -> Engine {
         let (tx, rx) = crossbeam_channel::unbounded();
         let shared = Arc::new(Shared::new());
         let worker_shared = shared.clone();
         let thread = std::thread::Builder::new()
             .name("popamp-audio".into())
-            .spawn(move || Worker::new(device, rx, worker_shared, Box::new(on_event)).run())
+            .spawn(move || Worker::new(device, sources, rx, worker_shared, Box::new(on_event)).run())
             .expect("spawn audio thread");
         Engine { tx, shared, thread: Some(thread) }
     }
@@ -291,7 +292,8 @@ struct Worker {
     rg: ReplayGainSettings,
     buffer_ms: u32,
     fade_ms: u32,
-    proxy: String,
+    sources: Arc<Sources>,
+    cx: Context,
     /// Remaining/total frames of a stop-fade.
     fade: Option<(u64, u64)>,
     /// Global frames written to the device.
@@ -313,7 +315,13 @@ struct Worker {
 }
 
 impl Worker {
-    fn new(device: String, rx: Receiver<EngineCmd>, shared: Arc<Shared>, emit: Box<dyn Fn(EngineEvent) + Send>) -> Self {
+    fn new(
+        device: String,
+        sources: Arc<Sources>,
+        rx: Receiver<EngineCmd>,
+        shared: Arc<Shared>,
+        emit: Box<dyn Fn(EngineEvent) + Send>,
+    ) -> Self {
         let (opened_tx, opened_rx) = crossbeam_channel::unbounded();
         Self {
             device,
@@ -330,7 +338,8 @@ impl Worker {
             rg: ReplayGainSettings::default(),
             buffer_ms: 150,
             fade_ms: 1000,
-            proxy: String::new(),
+            sources,
+            cx: Context::default(),
             fade: None,
             written: 0,
             track_start: 0,
@@ -447,7 +456,7 @@ impl Worker {
             EngineCmd::Config { buffer_ms, fade_ms, proxy } => {
                 self.buffer_ms = buffer_ms;
                 self.fade_ms = fade_ms;
-                self.proxy = proxy;
+                self.cx.proxy = proxy;
             }
             EngineCmd::Quit => {}
         }
@@ -480,13 +489,13 @@ impl Worker {
         self.tickets += 1;
         let ticket = self.tickets;
         self.opening = Some(ticket);
-        let (tx, proxy) = (self.opened_tx.clone(), self.proxy.clone());
+        let (tx, sources, cx) = (self.opened_tx.clone(), self.sources.clone(), self.cx.clone());
         let start_ms = match start {
             Start::Now { start_ms } => start_ms,
             Start::Gapless => 0,
         };
         let spawned = std::thread::Builder::new().name("popamp-open".into()).spawn(move || {
-            let result = open_location(&location, start_ms, &proxy);
+            let result = open_location(&sources, &location, start_ms, &cx);
             let _ = tx.send(OpenDone { ticket, id, start, result });
         });
         if let Err(e) = spawned {
@@ -767,21 +776,30 @@ impl Worker {
 }
 
 /// Opens a file or a stream; slow for streams, so never on the worker.
-fn open_location(location: &str, start_ms: u64, proxy: &str) -> Result<Opened, String> {
-    if crate::youtube::is_youtube(location) {
-        // ffmpeg seeks on its own; start where asked.
-        let (src, meta) = crate::pipe::PipeSource::open(crate::youtube::pipe(location)?, start_ms)?;
-        Ok((Box::new(src), meta, None, None, start_ms))
-    } else if is_url(location) {
-        let (src, ext, headers, title) = stream::open(location, proxy)?;
-        let (dec, mut meta) = Decoder::open_source(src, ext, false)?;
-        if meta.title.is_none() {
-            meta.title = headers.name.clone();
-        }
-        Ok((Box::new(dec), meta, Some(title), Some(headers), 0))
+fn open_location(sources: &Sources, location: &str, start_ms: u64, cx: &Context) -> Result<Opened, String> {
+    let playback = if crate::youtube::is_youtube(location) {
+        Playback::Pipe(Box::new(crate::youtube::pipe(location)?))
     } else {
-        let (dec, meta) = Decoder::open_file(Path::new(location))?;
-        Ok((Box::new(dec), meta, None, None, 0))
+        sources.of(location).open(location, cx)?
+    };
+    match playback {
+        Playback::Pipe(pipe) => {
+            // The program seeks on its own; start where asked.
+            let (src, meta) = PipeSource::open(*pipe, start_ms)?;
+            Ok((Box::new(src), meta, None, None, start_ms))
+        }
+        Playback::Http(url) => {
+            let (src, ext, headers, title) = stream::open(&url, &cx.proxy)?;
+            let (dec, mut meta) = Decoder::open_source(src, ext, false)?;
+            if meta.title.is_none() {
+                meta.title = headers.name.clone();
+            }
+            Ok((Box::new(dec), meta, Some(title), Some(headers), 0))
+        }
+        Playback::File(path) => {
+            let (dec, meta) = Decoder::open_file(&path)?;
+            Ok((Box::new(dec), meta, None, None, 0))
+        }
     }
 }
 
@@ -806,11 +824,33 @@ mod tests {
     /// An engine whose events arrive on a channel, and a server that
     /// accepts connections and never answers, so a stream hangs connecting.
     fn engine_and_silent_server() -> (Engine, Receiver<EngineEvent>, std::net::TcpListener) {
+        let (engine, rx) = engine_with(Sources::default());
+        (engine, rx, std::net::TcpListener::bind("127.0.0.1:0").unwrap())
+    }
+
+    fn engine_with(sources: Sources) -> (Engine, Receiver<EngineEvent>) {
         let (tx, rx) = crossbeam_channel::unbounded();
-        let engine = Engine::spawn("null".into(), move |e| {
+        let engine = Engine::spawn("null".into(), Arc::new(sources), move |e| {
             let _ = tx.send(e);
         });
-        (engine, rx, std::net::TcpListener::bind("127.0.0.1:0").unwrap())
+        (engine, rx)
+    }
+
+    /// The events up to the first `Finished`, in short form.
+    fn events_until_finished(events: &Receiver<EngineEvent>) -> Vec<String> {
+        let mut seen = Vec::new();
+        while let Ok(e) = events.recv_timeout(Duration::from_secs(3)) {
+            seen.push(match e {
+                EngineEvent::Started { id, .. } => format!("started {id}"),
+                EngineEvent::TrackChanged { id, .. } => format!("changed {id}"),
+                EngineEvent::Finished { id } => format!("finished {id}"),
+                other => format!("{other:?}"),
+            });
+            if seen.last().is_some_and(|s| s.starts_with("finished")) {
+                break;
+            }
+        }
+        seen
     }
 
     fn silent_url(server: &std::net::TcpListener) -> String {
@@ -866,20 +906,38 @@ mod tests {
         let (a, b) = (silent_wav("a", 300), silent_wav("b", 300));
         engine.send(EngineCmd::Open { id: 1, location: a.to_string_lossy().into(), start_ms: 0 });
         engine.send(EngineCmd::SetNext(Some((2, b.to_string_lossy().into()))));
-        let mut seen = Vec::new();
-        while let Ok(e) = events.recv_timeout(Duration::from_secs(3)) {
-            seen.push(match e {
-                EngineEvent::Started { id, .. } => format!("started {id}"),
-                EngineEvent::TrackChanged { id, .. } => format!("changed {id}"),
-                EngineEvent::Finished { id } => format!("finished {id}"),
-                other => format!("{other:?}"),
-            });
-            if seen.last().is_some_and(|s| s.starts_with("finished")) {
-                break;
-            }
-        }
+        let seen = events_until_finished(&events);
         let _ = (std::fs::remove_file(a), std::fs::remove_file(b));
         assert_eq!(seen, ["started 1", "changed 2", "finished 2"]);
+    }
+
+    /// Takes `pipe:` locations and plays them through a shell script.
+    struct ShellSource;
+
+    impl crate::source::Source for ShellSource {
+        fn id(&self) -> &str {
+            "shell"
+        }
+        fn handles(&self, location: &str) -> bool {
+            location.starts_with("pipe:")
+        }
+        fn expand(&self, _: &str, _: &Context) -> Result<Option<Vec<popamp_core::plformats::Item>>, String> {
+            Ok(None)
+        }
+        fn describe(&self, _: &str, _: &Context) -> Option<Result<TrackMeta, String>> {
+            None
+        }
+        fn open(&self, location: &str, _: &Context) -> Result<Playback, String> {
+            Ok(Playback::Pipe(Box::new(crate::pipe::tests::sh(location.trim_start_matches("pipe:")))))
+        }
+    }
+
+    #[test]
+    fn plays_what_an_added_source_says_to_play() {
+        let (engine, events) = engine_with(Sources::new(vec![Box::new(ShellSource)]));
+        // 0.2 s of stereo f32 silence at 48 kHz.
+        engine.send(EngineCmd::Open { id: 1, location: "pipe:head -c 76800 /dev/zero".into(), start_ms: 0 });
+        assert_eq!(events_until_finished(&events), ["started 1", "finished 1"]);
     }
 
     #[test]

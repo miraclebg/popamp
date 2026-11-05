@@ -206,7 +206,7 @@ fn walk(dir: &Path, out: &mut Vec<String>, depth: usize) {
 impl Model {
     pub fn new(paths: Paths, config: Config, proxy: EventLoopProxy<AppEvent>) -> Model {
         let engine_proxy = proxy.clone();
-        let engine = Engine::spawn("default".into(), move |ev| {
+        let engine = Engine::spawn("default".into(), Default::default(), move |ev| {
             let _ = engine_proxy.send_event(AppEvent::Engine(ev));
         });
         Self::with_engine(paths, config, engine, Events(Some(proxy)))
