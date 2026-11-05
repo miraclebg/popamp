@@ -8,7 +8,7 @@ use crate::alsa::AlsaPcm;
 use crate::decoder::{AudioSource, Decoder, Status, StreamInfo};
 use crate::dsp::{balance_gains, db_to_gain, volume_gain, EqSettings, Equalizer};
 use crate::stream::{self, StreamHeaders, TitleSlot};
-use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
+use crossbeam_channel::{Receiver, Sender};
 use parking_lot::Mutex;
 use popamp_core::meta::TrackMeta;
 use popamp_core::playlist::is_url;
@@ -243,6 +243,24 @@ impl Drop for Engine {
 /// A source plus its tags, ICY title slot, stream headers and start offset.
 type Opened = (Box<dyn AudioSource>, TrackMeta, Option<TitleSlot>, Option<StreamHeaders>, u64);
 
+/// What a track is opened for.
+#[derive(Clone, Copy)]
+enum Start {
+    /// Play it now, from `start_ms`.
+    Now { start_ms: u64 },
+    /// Continue with it when the current track ends, without a gap.
+    Gapless,
+}
+
+/// A track opened on a thread of its own. `ticket` tells which request
+/// it answers; the worker drops answers to requests it no longer wants.
+struct OpenDone {
+    ticket: u64,
+    id: u64,
+    start: Start,
+    result: Result<Opened, String>,
+}
+
 struct Track {
     id: u64,
     dec: Box<dyn AudioSource>,
@@ -285,10 +303,18 @@ struct Worker {
     resume_seek: Option<u64>,
     pending: Option<PendingSwitch>,
     buf: Vec<f32>,
+    /// Opening a track can take seconds (a stream connecting), so it runs
+    /// on its own thread and answers here; commands are handled meanwhile.
+    opened_tx: Sender<OpenDone>,
+    opened_rx: Receiver<OpenDone>,
+    /// The last ticket given out, and the one the worker is waiting for.
+    tickets: u64,
+    opening: Option<u64>,
 }
 
 impl Worker {
     fn new(device: String, rx: Receiver<EngineCmd>, shared: Arc<Shared>, emit: Box<dyn Fn(EngineEvent) + Send>) -> Self {
+        let (opened_tx, opened_rx) = crossbeam_channel::unbounded();
         Self {
             device,
             rx,
@@ -312,32 +338,35 @@ impl Worker {
             resume_seek: None,
             pending: None,
             buf: Vec::with_capacity(8192),
+            opened_tx,
+            opened_rx,
+            tickets: 0,
+            opening: None,
         }
     }
 
     fn run(mut self) {
+        let (commands, opened) = (self.rx.clone(), self.opened_rx.clone());
         loop {
-            let cmd = if self.state == PlayState::Playing {
-                match self.rx.try_recv() {
-                    Ok(c) => Some(c),
-                    Err(crossbeam_channel::TryRecvError::Empty) => None,
-                    Err(crossbeam_channel::TryRecvError::Disconnected) => return,
-                }
-            } else {
-                match self.rx.recv_timeout(Duration::from_millis(100)) {
-                    Ok(c) => Some(c),
-                    Err(RecvTimeoutError::Timeout) => None,
-                    Err(RecvTimeoutError::Disconnected) => return,
-                }
-            };
-            if let Some(cmd) = cmd {
-                if matches!(cmd, EngineCmd::Quit) {
-                    return;
-                }
-                self.handle(cmd);
-                continue; // drain all queued commands before decoding more
+            let decoding = self.state == PlayState::Playing && self.track.is_some();
+            let wait = if decoding { Duration::ZERO } else { Duration::from_millis(100) };
+            crossbeam_channel::select! {
+                recv(commands) -> cmd => match cmd {
+                    Ok(EngineCmd::Quit) | Err(_) => return,
+                    Ok(cmd) => {
+                        self.handle(cmd);
+                        continue; // drain all queued commands before decoding more
+                    }
+                },
+                recv(opened) -> done => {
+                    if let Ok(done) = done {
+                        self.opened(done);
+                    }
+                    continue;
+                },
+                default(wait) => {}
             }
-            if self.state == PlayState::Playing {
+            if decoding {
                 self.step();
             }
             self.publish();
@@ -395,7 +424,7 @@ impl Worker {
 
     fn handle(&mut self, cmd: EngineCmd) {
         match cmd {
-            EngineCmd::Open { id, location, start_ms } => self.open(id, &location, start_ms),
+            EngineCmd::Open { id, location, start_ms } => self.open(id, location, start_ms),
             EngineCmd::SetNext(n) => self.next = n,
             EngineCmd::Pause(on) => self.pause(on),
             EngineCmd::Stop => self.stop(true),
@@ -446,21 +475,34 @@ impl Worker {
         }
     }
 
-    fn open_decoder(&self, location: &str, start_ms: u64) -> Result<Opened, String> {
-        if crate::youtube::is_youtube(location) {
-            // ffmpeg seeks on its own; start where asked.
-            let (src, meta) = crate::youtube::PipeSource::open(location, start_ms)?;
-            Ok((Box::new(src), meta, None, None, start_ms))
-        } else if is_url(location) {
-            let (src, ext, headers, title) = stream::open(location, &self.proxy)?;
-            let (dec, mut meta) = Decoder::open_source(src, ext, false)?;
-            if meta.title.is_none() {
-                meta.title = headers.name.clone();
-            }
-            Ok((Box::new(dec), meta, Some(title), Some(headers), 0))
-        } else {
-            let (dec, meta) = Decoder::open_file(Path::new(location))?;
-            Ok((Box::new(dec), meta, None, None, 0))
+    /// Opens `location` on a new thread; the answer comes to `opened`.
+    fn request_open(&mut self, id: u64, location: String, start: Start) {
+        self.tickets += 1;
+        let ticket = self.tickets;
+        self.opening = Some(ticket);
+        let (tx, proxy) = (self.opened_tx.clone(), self.proxy.clone());
+        let start_ms = match start {
+            Start::Now { start_ms } => start_ms,
+            Start::Gapless => 0,
+        };
+        let spawned = std::thread::Builder::new().name("popamp-open".into()).spawn(move || {
+            let result = open_location(&location, start_ms, &proxy);
+            let _ = tx.send(OpenDone { ticket, id, start, result });
+        });
+        if let Err(e) = spawned {
+            self.opening = None;
+            self.fail(id, format!("cannot open a track: {e}"));
+        }
+    }
+
+    fn opened(&mut self, done: OpenDone) {
+        if self.opening != Some(done.ticket) {
+            return; // stopped or replaced meanwhile; dropping it closes it
+        }
+        self.opening = None;
+        match done.start {
+            Start::Now { start_ms } => self.start_now(done.id, start_ms, done.result),
+            Start::Gapless => self.continue_with(done.id, done.result),
         }
     }
 
@@ -488,13 +530,23 @@ impl Worker {
         Ok(())
     }
 
-    fn open(&mut self, id: u64, location: &str, start_ms: u64) {
+    fn open(&mut self, id: u64, location: String, start_ms: u64) {
         self.discard_output();
         self.track = None;
         self.fade = None;
         self.resume_seek = None;
         self.next = None;
-        match self.open_decoder(location, start_ms) {
+        // Playing while it connects: Next, Prev and Stop act on it.
+        self.track_start = self.written;
+        self.seek_base_ms = start_ms;
+        self.shared.length_ms.store(u64::MAX, Ordering::Relaxed);
+        self.shared.bitrate_kbps.store(0, Ordering::Relaxed);
+        self.set_state(PlayState::Playing);
+        self.request_open(id, location, Start::Now { start_ms });
+    }
+
+    fn start_now(&mut self, id: u64, start_ms: u64, opened: Result<Opened, String>) {
+        match opened {
             Ok((mut dec, meta, title, headers, started_at)) => {
                 if let Err(e) = self.ensure_pcm(dec.info().sample_rate) {
                     self.fail(id, e);
@@ -518,6 +570,34 @@ impl Worker {
         }
     }
 
+    fn continue_with(&mut self, id: u64, opened: Result<Opened, String>) {
+        match opened {
+            Ok((dec, meta, title, _, _)) => {
+                let same_rate = self.pcm.as_ref().is_some_and(|p| p.rate == dec.info().sample_rate);
+                if !same_rate {
+                    if let Err(e) = self.ensure_pcm(dec.info().sample_rate) {
+                        return self.fail(id, e);
+                    }
+                }
+                let info = dec.info().clone();
+                let gain = self.track_gain(&meta);
+                self.track = Some(Track { id, dec, gain, title, last_title: None });
+                self.track_start = self.written;
+                self.seek_base_ms = 0;
+                self.pending = Some(PendingSwitch { at_frame: self.written, id, info, meta });
+            }
+            Err(e) => {
+                // Let the controller decide what comes after a broken track.
+                if let Some(p) = &mut self.pcm {
+                    p.drain();
+                }
+                self.track = None;
+                self.set_state(PlayState::Stopped);
+                (self.emit)(EngineEvent::Error { id, message: e });
+            }
+        }
+    }
+
     fn fail(&mut self, id: u64, message: String) {
         log::warn!("playback error: {message}");
         self.track = None;
@@ -527,6 +607,9 @@ impl Worker {
     }
 
     fn pause(&mut self, on: bool) {
+        if self.track.is_none() {
+            return; // nothing to pause while the next track is opening
+        }
         match (on, self.state) {
             (true, PlayState::Playing) => {
                 let pos = self.position_ms();
@@ -592,6 +675,7 @@ impl Worker {
         self.fade = None;
         self.pending = None;
         self.resume_seek = None;
+        self.opening = None;
         self.set_state(PlayState::Stopped);
         self.shared.position_ms.store(0, Ordering::Relaxed);
         self.shared.bitrate_kbps.store(0, Ordering::Relaxed);
@@ -603,7 +687,9 @@ impl Worker {
 
     fn step(&mut self) {
         let Some(track) = &mut self.track else {
-            self.set_state(PlayState::Stopped);
+            if self.opening.is_none() {
+                self.set_state(PlayState::Stopped);
+            }
             return;
         };
         self.buf.clear();
@@ -664,33 +750,9 @@ impl Worker {
     fn end_of_track(&mut self) {
         let finished_id = self.track.as_ref().map(|t| t.id).unwrap_or(0);
         if let Some((id, location)) = self.next.take() {
-            match self.open_decoder(&location, 0) {
-                Ok((dec, meta, title, _, _)) => {
-                    let same_rate = self.pcm.as_ref().is_some_and(|p| p.rate == dec.info().sample_rate);
-                    if !same_rate {
-                        if let Err(e) = self.ensure_pcm(dec.info().sample_rate) {
-                            return self.fail(id, e);
-                        }
-                    }
-                    let info = dec.info().clone();
-                    let gain = self.track_gain(&meta);
-                    self.track = Some(Track { id, dec, gain, title, last_title: None });
-                    self.track_start = self.written;
-                    self.seek_base_ms = 0;
-                    self.pending = Some(PendingSwitch { at_frame: self.written, id, info, meta });
-                    return;
-                }
-                Err(e) => {
-                    // Let the controller decide what comes after a broken track.
-                    if let Some(p) = &mut self.pcm {
-                        p.drain();
-                    }
-                    self.track = None;
-                    self.set_state(PlayState::Stopped);
-                    (self.emit)(EngineEvent::Error { id, message: e });
-                    return;
-                }
-            }
+            // The device still plays its buffer while the next track opens.
+            self.track = None;
+            return self.request_open(id, location, Start::Gapless);
         }
         if let Some(p) = &mut self.pcm {
             p.drain();
@@ -701,6 +763,25 @@ impl Worker {
         self.shared.position_ms.store(0, Ordering::Relaxed);
         self.shared.length_ms.store(u64::MAX, Ordering::Relaxed);
         (self.emit)(EngineEvent::Finished { id: finished_id });
+    }
+}
+
+/// Opens a file or a stream; slow for streams, so never on the worker.
+fn open_location(location: &str, start_ms: u64, proxy: &str) -> Result<Opened, String> {
+    if crate::youtube::is_youtube(location) {
+        // ffmpeg seeks on its own; start where asked.
+        let (src, meta) = crate::youtube::PipeSource::open(location, start_ms)?;
+        Ok((Box::new(src), meta, None, None, start_ms))
+    } else if is_url(location) {
+        let (src, ext, headers, title) = stream::open(location, proxy)?;
+        let (dec, mut meta) = Decoder::open_source(src, ext, false)?;
+        if meta.title.is_none() {
+            meta.title = headers.name.clone();
+        }
+        Ok((Box::new(dec), meta, Some(title), Some(headers), 0))
+    } else {
+        let (dec, meta) = Decoder::open_file(Path::new(location))?;
+        Ok((Box::new(dec), meta, None, None, 0))
     }
 }
 
@@ -720,6 +801,85 @@ mod tests {
         assert_eq!(out, [196.0, 197.0, 198.0, 199.0]);
         v.read(1002, &mut out); // before the first frame
         assert_eq!(out, [0.0, 0.0, 0.0, 1.0]);
+    }
+
+    /// An engine whose events arrive on a channel, and a server that
+    /// accepts connections and never answers, so a stream hangs connecting.
+    fn engine_and_silent_server() -> (Engine, Receiver<EngineEvent>, std::net::TcpListener) {
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let engine = Engine::spawn("null".into(), move |e| {
+            let _ = tx.send(e);
+        });
+        (engine, rx, std::net::TcpListener::bind("127.0.0.1:0").unwrap())
+    }
+
+    fn silent_url(server: &std::net::TcpListener) -> String {
+        format!("http://{}/stream", server.local_addr().unwrap())
+    }
+
+    #[test]
+    fn stop_works_while_a_stream_is_connecting() {
+        let (engine, events, server) = engine_and_silent_server();
+        engine.send(EngineCmd::Open { id: 1, location: silent_url(&server), start_ms: 0 });
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(engine.shared().state(), PlayState::Playing, "connecting counts as playing");
+        engine.send(EngineCmd::Stop);
+        let first = events.recv_timeout(Duration::from_secs(2));
+        assert!(matches!(first, Ok(EngineEvent::Stopped)), "got {first:?}");
+        drop(server); // the connection fails now; nothing may come of it
+        assert!(events.recv_timeout(Duration::from_millis(500)).is_err());
+    }
+
+    #[test]
+    fn a_new_track_replaces_one_still_connecting() {
+        let (engine, events, server) = engine_and_silent_server();
+        engine.send(EngineCmd::Open { id: 1, location: silent_url(&server), start_ms: 0 });
+        std::thread::sleep(Duration::from_millis(100));
+        engine.send(EngineCmd::Open { id: 2, location: "/nonexistent/track.mp3".into(), start_ms: 0 });
+        let first = events.recv_timeout(Duration::from_secs(2));
+        assert!(matches!(first, Ok(EngineEvent::Error { id: 2, .. })), "got {first:?}");
+        drop(server);
+        assert!(events.recv_timeout(Duration::from_millis(500)).is_err());
+    }
+
+    /// A WAV file of `ms` milliseconds of silence, 44.1 kHz 16-bit stereo.
+    fn silent_wav(name: &str, ms: u32) -> std::path::PathBuf {
+        let data_len = 44_100 * 4 * ms / 1000;
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        for v in [16u32, 0x0002_0001, 44_100, 44_100 * 4, 0x0010_0004] {
+            wav.extend_from_slice(&v.to_le_bytes());
+        }
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_len.to_le_bytes());
+        wav.resize(wav.len() + data_len as usize, 0);
+        let path = std::env::temp_dir().join(format!("popamp-engine-{}-{name}.wav", std::process::id()));
+        std::fs::write(&path, wav).unwrap();
+        path
+    }
+
+    #[test]
+    fn plays_a_track_and_continues_with_the_next_one() {
+        let (engine, events, _server) = engine_and_silent_server();
+        let (a, b) = (silent_wav("a", 300), silent_wav("b", 300));
+        engine.send(EngineCmd::Open { id: 1, location: a.to_string_lossy().into(), start_ms: 0 });
+        engine.send(EngineCmd::SetNext(Some((2, b.to_string_lossy().into()))));
+        let mut seen = Vec::new();
+        while let Ok(e) = events.recv_timeout(Duration::from_secs(3)) {
+            seen.push(match e {
+                EngineEvent::Started { id, .. } => format!("started {id}"),
+                EngineEvent::TrackChanged { id, .. } => format!("changed {id}"),
+                EngineEvent::Finished { id } => format!("finished {id}"),
+                other => format!("{other:?}"),
+            });
+            if seen.last().is_some_and(|s| s.starts_with("finished")) {
+                break;
+            }
+        }
+        let _ = (std::fs::remove_file(a), std::fs::remove_file(b));
+        assert_eq!(seen, ["started 1", "changed 2", "finished 2"]);
     }
 
     #[test]
