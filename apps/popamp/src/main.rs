@@ -10,9 +10,9 @@ mod edition;
 mod font;
 mod headless;
 mod ipc;
+mod media;
 mod menu;
 mod model;
-mod mpris;
 mod museum;
 mod panels;
 mod platform;
@@ -78,11 +78,13 @@ fn main() {
                 }
                 return;
             }
-            Err(_) if opts.kill || forwarded.iter().all(|r| matches!(r, Remote::Quit | Remote::Status)) => {
-                eprintln!("popamp: no running instance");
-                std::process::exit(1);
+            Err(e) => {
+                log::debug!("no instance at {}: {e}", socket.display());
+                if opts.kill || forwarded.iter().all(|r| matches!(r, Remote::Quit | Remote::Status)) {
+                    eprintln!("popamp: no running instance");
+                    std::process::exit(1);
+                }
             }
-            Err(_) => {}
         }
     }
 
@@ -124,8 +126,8 @@ fn main() {
         println!("{reply}");
     }
 
-    let mpris = mpris::spawn(proxy.clone(), model.engine.shared().clone(), &class);
-    let mut app = app::App::new(model, opts.start_minimized, mpris);
+    let media = media::spawn(proxy.clone(), model.engine.shared().clone(), &class);
+    let mut app = app::App::new(model, opts.start_minimized, media);
     if let Err(e) = event_loop.run_app(&mut app) {
         log::error!("event loop: {e}");
     }

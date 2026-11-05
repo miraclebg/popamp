@@ -39,7 +39,7 @@ struct SkinWindow {
     /// What the window manager was told the window is.
     role: WindowRole,
     /// The strip reserved for a bar, as last set.
-    strut: Option<[u32; 12]>,
+    strip: Option<bar::Strip>,
     /// Top-left in physical screen pixels.
     pos: (i32, i32),
     /// Logical (1x) size.
@@ -119,13 +119,13 @@ pub struct App {
     /// `POPAMP_SNAPSHOT=<dir>`: write each window as PNG after a few frames and exit.
     snapshot: Option<(std::path::PathBuf, u32)>,
     platform: Platform,
-    mpris: Option<crate::mpris::Mpris>,
+    media: Option<crate::media::Controls>,
     /// The monitor the main window is on.
     monitor: Option<Screen>,
 }
 
 impl App {
-    pub fn new(model: Model, start_minimized: bool, mpris: Option<crate::mpris::Mpris>) -> App {
+    pub fn new(model: Model, start_minimized: bool, media: Option<crate::media::Controls>) -> App {
         let fonts = Fonts::for_skin(&model.skin);
         App {
             model,
@@ -149,7 +149,7 @@ impl App {
             popup_focus_check: None,
             snapshot: std::env::var_os("POPAMP_SNAPSHOT").map(|d| (std::path::PathBuf::from(d), 0)),
             platform: Platform::connect(),
-            mpris,
+            media,
             monitor: None,
         }
     }
@@ -292,7 +292,7 @@ impl App {
             window,
             surface,
             role,
-            strut: None,
+            strip: None,
             pos,
             size: (w, h),
             shown: scale,
@@ -393,14 +393,13 @@ impl App {
 
     /// Tells the window manager to keep other windows out of the bar's strip.
     fn reserve_bar_strip(&mut self, edge: BarEdge, screen: Screen, bar_h: i32) {
-        let Some(root_h) = self.platform.root_height() else { return };
-        let strut = bar::strut(edge, screen, root_h, bar_h);
+        let strip = bar::Strip { edge, screen, height: bar_h };
         let Some(w) = self.wins[WindowKey::Main.index()].as_mut() else { return };
-        if w.strut == Some(strut) {
+        if w.strip == Some(strip) {
             return;
         }
-        match self.platform.set_strut(&w.window, strut) {
-            Ok(()) => w.strut = Some(strut),
+        match self.platform.reserve(&w.window, strip) {
+            Ok(()) => w.strip = Some(strip),
             Err(e) => log::warn!("cannot reserve the bar's strip: {e}"),
         }
     }
@@ -1215,8 +1214,8 @@ impl App {
                 }
             }
         }
-        if let Some(m) = &mut self.mpris {
-            m.update(self.model.mpris_snapshot());
+        if let Some(m) = &mut self.media {
+            m.update(self.model.media_snapshot());
         }
         if self.model.pl_dirty != self.seen_pl_dirty {
             self.seen_pl_dirty = self.model.pl_dirty;

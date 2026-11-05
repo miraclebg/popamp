@@ -311,7 +311,7 @@ pub struct Paths {
 }
 
 impl Paths {
-    /// Resolves XDG directories; a `popamp.ini` next to the executable selects
+    /// Resolves the system's directories; a `popamp.ini` next to the executable selects
     /// portable mode, and `override_dir` (from `/INIDIR=`) wins over both.
     pub fn resolve(override_dir: Option<PathBuf>) -> Self {
         if let Some(dir) = override_dir {
@@ -322,7 +322,21 @@ impl Paths {
                 return Self { config_dir: exe_dir.clone(), data_dir: exe_dir };
             }
         }
-        let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+        Self::system()
+    }
+
+    /// Everything in `%APPDATA%\popamp`, as Winamp keeps it.
+    #[cfg(windows)]
+    fn system() -> Self {
+        let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        let dir = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| home.join("AppData").join("Roaming")).join("popamp");
+        Self { config_dir: dir.clone(), data_dir: dir }
+    }
+
+    /// The XDG directories.
+    #[cfg(not(windows))]
+    fn system() -> Self {
+        let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("."));
         let xdg = |var: &str, fallback: &str| {
             std::env::var_os(var).map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| home.join(fallback))
         };

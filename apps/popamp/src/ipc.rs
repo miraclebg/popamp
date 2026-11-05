@@ -1,4 +1,5 @@
-//! Single-instance control socket.
+//! Single-instance control socket: a Unix socket, or a named pipe on
+//! Windows.
 //!
 //! Protocol: the client sends one line per remote command (see
 //! [`encode`]) and a final empty line; the server answers with one line
@@ -6,21 +7,141 @@
 
 use crate::cli::Remote;
 use popamp_core::Command;
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::PathBuf;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+/// Where the instance of `class` listens.
 pub fn socket_path(class: &str) -> PathBuf {
-    let dir = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::temp_dir().join(format!("popamp-{}", unsafe_uid())));
-    let safe: String = class.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect();
-    dir.join("popamp").join(format!("{safe}.sock"))
+    transport::path(&safe(class))
 }
 
-fn unsafe_uid() -> String {
-    std::env::var("USER").unwrap_or_else(|_| "user".into())
+/// `s` with anything but letters, digits, `-` and `_` replaced.
+fn safe(s: &str) -> String {
+    s.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect()
+}
+
+fn user() -> String {
+    std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_else(|_| "user".into())
+}
+
+#[cfg(unix)]
+mod transport {
+    use super::*;
+    use std::os::unix::net::{UnixListener, UnixStream};
+
+    pub fn path(class: &str) -> PathBuf {
+        let dir = std::env::var_os("XDG_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::temp_dir().join(format!("popamp-{}", safe(&user()))));
+        dir.join("popamp").join(format!("{class}.sock"))
+    }
+
+    pub fn connect(path: &Path) -> std::io::Result<UnixStream> {
+        let s = UnixStream::connect(path)?;
+        s.set_read_timeout(Some(Duration::from_secs(5)))?;
+        Ok(s)
+    }
+
+    /// Binds the socket (replacing a stale one); yields each client.
+    pub fn listen(path: &Path) -> std::io::Result<impl Iterator<Item = UnixStream> + Send + 'static> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        if path.exists() {
+            // Only reached when nothing answered on it: stale.
+            let _ = std::fs::remove_file(path);
+        }
+        let listener = UnixListener::bind(path)?;
+        Ok(std::iter::from_fn(move || loop {
+            if let Ok((s, _)) = listener.accept() {
+                let _ = s.set_read_timeout(Some(Duration::from_secs(5)));
+                return Some(s);
+            }
+        }))
+    }
+
+    /// Nothing to wait for: the reply stays readable after a close.
+    pub fn finish(_: &UnixStream) {}
+}
+
+#[cfg(windows)]
+mod transport {
+    use super::*;
+    use std::fs::File;
+    use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::io::{AsRawHandle, FromRawHandle};
+    use windows_sys::Win32::Foundation::{ERROR_PIPE_BUSY, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_DUPLEX};
+    use windows_sys::Win32::System::Pipes::{
+        ConnectNamedPipe, CreateNamedPipeW, WaitNamedPipeW, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE,
+        PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
+    };
+
+    /// Pipe names are shared by all users of the machine, so the name has
+    /// the user's in it.
+    pub fn path(class: &str) -> PathBuf {
+        PathBuf::from(format!(r"\\.\pipe\popamp-{}-{class}", safe(&user())))
+    }
+
+    /// Opens the pipe; while the server is busy with another client,
+    /// waits up to 5 seconds for it.
+    pub fn connect(path: &Path) -> std::io::Result<File> {
+        let open = || std::fs::OpenOptions::new().read(true).write(true).open(path);
+        match open() {
+            Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) => {
+                let name: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+                // SAFETY: `name` is NUL-terminated.
+                if unsafe { WaitNamedPipeW(name.as_ptr(), 5000) } == 0 {
+                    return Err(e);
+                }
+                open()
+            }
+            other => other,
+        }
+    }
+
+    /// One end of the pipe for the next client. The first one fails if
+    /// another instance has the name.
+    fn create(name: &[u16], first: bool) -> std::io::Result<File> {
+        let flags = PIPE_ACCESS_DUPLEX | if first { FILE_FLAG_FIRST_PIPE_INSTANCE } else { 0 };
+        let mode = PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS;
+        // SAFETY: `name` is NUL-terminated; the handle, if valid, is ours.
+        unsafe {
+            let h = CreateNamedPipeW(name.as_ptr(), flags, mode, PIPE_UNLIMITED_INSTANCES, 4096, 4096, 0, std::ptr::null());
+            if h == INVALID_HANDLE_VALUE {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(File::from_raw_handle(h))
+        }
+    }
+
+    /// Takes the pipe's name; yields each client.
+    pub fn listen(path: &Path) -> std::io::Result<impl Iterator<Item = File> + Send + 'static> {
+        let name: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+        let mut next = Some(create(&name, true)?);
+        Ok(std::iter::from_fn(move || loop {
+            let pipe = match next.take().map_or_else(|| create(&name, false), Ok) {
+                Ok(p) => p,
+                Err(e) => {
+                    log::warn!("control pipe: {e}");
+                    return None;
+                }
+            };
+            // SAFETY: a valid pipe handle; no overlapped I/O.
+            let ok = unsafe { ConnectNamedPipe(pipe.as_raw_handle(), std::ptr::null_mut()) } != 0;
+            // A client that came between create and connect is connected too.
+            if ok || std::io::Error::last_os_error().raw_os_error() == Some(ERROR_PIPE_CONNECTED as i32) {
+                return Some(pipe);
+            }
+        }))
+    }
+
+    /// Waits until the client has read the reply: closing the server's end
+    /// first would throw it away.
+    pub fn finish(pipe: &File) {
+        let _ = pipe.sync_all();
+    }
 }
 
 fn escape(s: &str) -> String {
@@ -94,18 +215,17 @@ pub fn decode(line: &str) -> Option<Remote> {
 
 /// Sends commands to a running instance. Returns its reply, or `Err` if
 /// none is running.
-pub fn send(path: &PathBuf, remotes: &[Remote]) -> std::io::Result<String> {
-    let mut s = UnixStream::connect(path)?;
-    s.set_read_timeout(Some(Duration::from_secs(5)))?;
+pub fn send(path: &Path, remotes: &[Remote]) -> std::io::Result<String> {
+    let s = transport::connect(path)?;
     let mut msg = String::new();
     for r in remotes {
         msg.push_str(&encode(r));
         msg.push('\n');
     }
     msg.push('\n');
-    s.write_all(msg.as_bytes())?;
+    (&s).write_all(msg.as_bytes())?;
     let mut reply = String::new();
-    BufReader::new(s).read_line(&mut reply)?;
+    BufReader::new(&s).read_line(&mut reply)?;
     Ok(reply.trim_end().to_string())
 }
 
@@ -115,43 +235,41 @@ pub struct Request {
     pub reply: crossbeam_channel::Sender<String>,
 }
 
-/// Binds the socket (replacing a stale one) and serves on a thread.
+/// Listens on `path` and serves on a thread.
 pub fn serve(path: PathBuf, deliver: impl Fn(Request) + Send + 'static) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    if path.exists() {
-        // Only reached when nothing answered on it: stale.
-        let _ = std::fs::remove_file(&path);
-    }
-    let listener = UnixListener::bind(&path)?;
+    let clients = transport::listen(&path)?;
     std::thread::Builder::new().name("popamp-ipc".into()).spawn(move || {
-        for stream in listener.incoming().flatten() {
-            let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-            let mut reader = BufReader::new(match stream.try_clone() {
-                Ok(s) => s,
-                Err(_) => continue,
-            });
-            let mut remotes = Vec::new();
-            let mut line = String::new();
-            while reader.read_line(&mut line).map(|n| n > 0).unwrap_or(false) {
-                let l = line.trim_end_matches('\n');
-                if l.is_empty() {
-                    break;
-                }
-                if let Some(r) = decode(l) {
-                    remotes.push(r);
-                }
-                line.clear();
-            }
-            let (tx, rx) = crossbeam_channel::bounded(1);
-            deliver(Request { remotes, reply: tx });
-            let reply = rx.recv_timeout(Duration::from_secs(4)).unwrap_or_else(|_| "ok".into());
-            let mut s = stream;
-            let _ = s.write_all(format!("{reply}\n").as_bytes());
+        for client in clients {
+            answer(&client, &deliver);
+            transport::finish(&client);
         }
     })?;
     Ok(())
+}
+
+/// Reads one client's commands, hands them over and writes the reply.
+fn answer<S>(client: &S, deliver: &impl Fn(Request))
+where
+    for<'a> &'a S: Read + Write,
+{
+    let mut reader = BufReader::new(client);
+    let mut remotes = Vec::new();
+    let mut line = String::new();
+    while reader.read_line(&mut line).map(|n| n > 0).unwrap_or(false) {
+        let l = line.trim_end_matches('\n');
+        if l.is_empty() {
+            break;
+        }
+        if let Some(r) = decode(l) {
+            remotes.push(r);
+        }
+        line.clear();
+    }
+    let (tx, rx) = crossbeam_channel::bounded(1);
+    deliver(Request { remotes, reply: tx });
+    let reply = rx.recv_timeout(Duration::from_secs(4)).unwrap_or_else(|_| "ok".into());
+    let mut out = client;
+    let _ = out.write_all(format!("{reply}\n").as_bytes());
 }
 
 #[cfg(test)]
@@ -190,7 +308,7 @@ mod tests {
 
     #[test]
     fn socket_round_trip() {
-        let path = std::env::temp_dir().join(format!("popamp-test-{}.sock", std::process::id()));
+        let path = socket_path(&format!("test-{}", std::process::id()));
         serve(path.clone(), |req| {
             let _ = req.reply.send(format!("got {}", req.remotes.len()));
         })
