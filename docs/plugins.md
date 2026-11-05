@@ -1,6 +1,6 @@
 # Plug-ins: design
 
-Status: **draft for agreement**. Nothing here is built yet.
+Status: **agreed 2026-11-05**. Nothing here is built yet.
 
 Popamp's core plays local files, HTTP streams and playlists, and draws
 skins. Everything else that only some users want, such as YouTube, more
@@ -35,33 +35,35 @@ Winamp DLLs.
 Version 1 has `source` and `dsp` only: YouTube needs the first, and the
 second tests the hot path. A plug-in may be of one kind only.
 
-## Runtime: WebAssembly components
+## Runtime: Extism
 
-A plug-in is a WebAssembly component (`plugin.wasm`) run by **wasmtime**,
-with its interface written in WIT. The core is the host.
+A plug-in is a WebAssembly module (`plugin.wasm`) run by
+[Extism](https://extism.org), which is built on wasmtime. The core is the
+host (the `extism` crate); a plug-in written in Rust uses `extism-pdk`,
+and other languages have their own Extism kits.
 
-wasmtime against extism:
+Extism was chosen over wasmtime's component model because it is quicker
+to bring in: it already has call time limits with cancellation, memory
+limits, per-plug-in configuration, HTTP limited to listed hosts, and a
+simple way to add host functions. What it lacks is a typed interface
+file: calls pass bytes. So:
 
-- wasmtime's component model gives typed calls generated from the WIT
-  file on both sides. A version mismatch fails at load time, with a
-  message, rather than as bad data at run time.
-- extism passes bytes and leaves the encoding to each plug-in (usually
-  JSON). That is simpler to start with, but every DSP block would be
-  serialised, and the interface would live in documentation, not in a
-  checked file.
-- wasmtime has fuel and epoch interruption, which the time limits below
-  need.
+- Calls pass JSON. The types live in one small crate, `popamp-plugin-api`,
+  used by the core and by plug-ins written in Rust, so both sides are
+  checked by the compiler. This document lists the calls; the crate is
+  their definition.
+- Audio blocks for `dsp` plug-ins pass as raw little-endian `f32`
+  samples, not JSON.
 
-**Proposal: wasmtime.** The cost is a larger binary (several MB for
-Cranelift) and a longer build. Plug-ins are compiled to native code once
-and cached in `~/.cache/popamp/plugins`.
+Plug-ins are compiled to native code by wasmtime when loaded; the binary
+grows by several MB for that compiler.
 
 ## Where plug-ins live
 
 ```
 ~/.local/share/popamp/plugins/<id>/
     plugin.toml      manifest
-    plugin.wasm      the component
+    plugin.wasm      the module
 ```
 
 A plug-in can be installed by cloning its repository there, like a skin
@@ -75,13 +77,13 @@ settings and permissions.
 id = "youtube"                 # folder name, [a-z0-9-]
 name = "YouTube"
 version = "1.0.0"
-api = "1.0"                    # the WIT package version it was built for
+api = "1.0"                    # the API version it was built for
 kind = "source"
 description = "Plays YouTube videos and playlists through yt-dlp."
 
 [permissions]
 exec = ["yt-dlp", "ffmpeg"]    # programs it may start (see Security)
-net = false                    # HTTP through the host
+net = []                       # hosts it may reach over HTTP
 
 [[setting]]
 key = "ytdlp"
@@ -115,8 +117,9 @@ version asks for more:
   exit status; standard input is closed. A started program runs with the
   user's rights, so this permission trusts that program, not the
   plug-in: the dialog says so.
-- **`net`**: the plug-in may make HTTP(S) requests through the host,
-  which applies the user's proxy.
+- **`net`**: the plug-in may make HTTP(S) requests through Extism's HTTP
+  host function, limited to the hosts listed in the manifest
+  (`net = ["*.example.com"]`); the core applies the user's proxy.
 
 Rejected alternative: plug-ins as separate processes speaking JSON over
 standard input and output. They wrap programs such as yt-dlp naturally,
@@ -128,33 +131,24 @@ all, and SPEC rules native plug-ins out.
 The plug-in never handles audio. It answers questions, and the core does
 the playing:
 
-```wit
-package popamp:plugin@1.0.0;
+Calls (JSON in and out; Rust types in `popamp-plugin-api`):
 
-interface source {
-    record track { location: string, title: option<string>, length-ms: option<u64> }
-    /// Tags as in the core's TrackMeta: title, artist, album, length...
-    record meta { title: option<string>, artist: option<string>, length-ms: option<u64>, is-live: bool }
+| Call | Input | Output |
+|---|---|---|
+| `api_version` | none | `"1.0"`, the API it was built for |
+| `handles` | a location | `true` if this plug-in takes it; quick: no exec, no net |
+| `expand` | a location of a list (a playlist, a channel) | its tracks: location, title, length |
+| `describe` | a location | its tags: title, artist, length, whether it is live |
+| `open` | a location and a start time | how to play it, below |
 
-    variant how-to-play {
-        /// The core opens this URL like any HTTP stream.
-        http(tuple<string, list<tuple<string, string>>>),     // url, headers
-        /// The core starts this program (one of `exec`) and decodes its
-        /// standard output, raw samples in the given format.
-        pipe(pipe-spec),
-    }
-    record pipe-spec { program: string, args: list<string>, rate: u32, channels: u8, seekable: bool }
+`open` answers one of:
 
-    /// Whether this plug-in takes the link. Must be quick: no exec, no net.
-    handles: func(location: string) -> bool;
-    /// A link to a list (a playlist, a channel) as tracks.
-    expand: func(location: string) -> result<list<track>, string>;
-    /// Title, length and other tags for one track.
-    describe: func(location: string) -> result<meta, string>;
-    /// How to play one track, starting at `start-ms`.
-    open: func(location: string, start-ms: u64) -> result<how-to-play, string>;
-}
-```
+- `http`: a URL and headers; the core opens it like any HTTP stream;
+- `pipe`: a program (one of `exec`), its arguments, and the sample rate,
+  channels and seekability of the raw samples it writes to standard
+  output; the core starts it and plays that output.
+
+An error is a string the core shows in the title display.
 
 For YouTube, `open` runs yt-dlp, reads the stream URL and headers from
 its JSON and returns a `pipe` that starts ffmpeg on that URL: what
@@ -171,7 +165,7 @@ its JSON and returns a `pipe` that starts ffmpeg on that URL: what
   the engine thread, so Stop does not work while a radio station is
   connecting. It is the first step of the work below and is useful
   without any plug-in.
-- `handles` must return within 10 ms (wasmtime epoch interruption);
+- `handles` must return within 10 ms (Extism's call timeout);
   `expand`, `describe` and `open` within 60 s. A plug-in that traps or
   runs out of time fails that call; three failures in a row switch it
   off until the user turns it on again.
@@ -183,10 +177,11 @@ its JSON and returns a `pipe` that starts ffmpeg on that URL: what
 
 ## Versions
 
-The WIT package is `popamp:plugin@MAJOR.MINOR`. Popamp loads plug-ins
-built for its major version and the same or an older minor version;
-minor versions only add. A plug-in built for another major version stays
-off, with a message naming both versions.
+The API version is `MAJOR.MINOR`, returned by the plug-in's `api_version`
+call and written in its manifest. Popamp loads plug-ins built for its
+major version and the same or an older minor version; minor versions
+only add calls or optional fields. A plug-in built for another major
+version stays off, with a message naming both versions.
 
 ## What leaves the core
 
@@ -206,19 +201,21 @@ When the YouTube plug-in works:
    Stop works while connecting.
 2. Core: the source interface inside the player, with the built-in HTTP
    and file sources behind it (SPEC section 6).
-3. Host: wasmtime, manifest, permissions dialog, the "Plug-ins…" window,
+3. Host: Extism, the `popamp-plugin-api` crate, manifest, permissions dialog, the "Plug-ins…" window,
    settings form.
 4. The YouTube plug-in in its own repository, `popamp/plugin-youtube`;
    YouTube code leaves the core.
 5. The `dsp` interface and a small example plug-in.
 6. Later: `decoder` (version 2), `vis`.
 
-## Open questions
+## Decisions
 
-1. wasmtime (proposed) or extism?
-2. `exec` as described, limited to programs named in the manifest and
-   confirmed by the user: acceptable?
-3. Version 1 with `source` and `dsp` only, `decoder` in version 2?
-4. Example plug-ins: SPEC says `examples/plugins/` in this repository.
-   Proposal: each one in a repository of its own, like the skins, and
-   only a minimal test plug-in inside the core for its tests.
+Agreed with the project owner on 2026-11-05:
+
+1. Extism, not wasmtime's component model directly.
+2. `exec` as described: only programs named in the manifest, confirmed by
+   the user.
+3. Version 1 has `source` and `dsp`; `decoder` comes in version 2.
+4. Each plug-in, examples included, lives in a repository of its own,
+   like the skins; the core keeps only a minimal test plug-in for its
+   own tests.
