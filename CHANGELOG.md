@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Tracks open on a thread of their own. Stop, Next and Prev work while a
+  stream or a YouTube video is still connecting, instead of waiting for
+  it (up to 20 seconds for a silent server).
 - A menu that does not fit below the mouse opens above it instead of
   over it, so a second click on the button that opened it closes it.
 - The project is now Popamp, a separate project grown from
