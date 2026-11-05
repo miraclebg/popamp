@@ -25,6 +25,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Plug-ins: WebAssembly modules run by [Extism](https://extism.org), each
+  in its own folder under `~/.local/share/popamp/plugins/` with a
+  `plugin.toml`. A source plug-in takes links on the hosts its manifest
+  names, lists them, describes them and tells the player how to play
+  them; it can start only the programs its manifest names, and reach only
+  the hosts it names. "Plug-ins…" in the Options menu shows what each one
+  may do next to its check box, turns it on and edits its settings; a new
+  version that asks for more stays off until it is allowed again. A
+  plug-in that crashes or runs over 60 seconds three times in a row is
+  switched off. The calls are in the `popamp-plugin-api` crate and in
+  [docs/plugins.md](docs/plugins.md).
 - [Popamp Steel](https://github.com/popamp/skin-steel), a silver and navy vector skin laid out
   like the "modern" players of the 2000s: a dotted blue display with a
   segmented analyzer, round transport buttons, toggles with blue lamps, an

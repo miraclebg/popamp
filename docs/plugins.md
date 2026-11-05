@@ -1,7 +1,7 @@
 # Plug-ins: design
 
-Status: **agreed 2026-11-05**. Steps 1 and 2 of the order of work are
-built; the plug-in host is not.
+Status: **agreed 2026-11-05**. Steps 1 to 3 of the order of work are
+built; no plug-in other than the test one exists yet.
 
 Popamp's core plays local files, HTTP streams and playlists, and draws
 skins. Everything else that only some users want, such as YouTube, more
@@ -82,12 +82,16 @@ api = "1.0"                    # the API version it was built for
 kind = "source"
 description = "Plays YouTube videos and playlists through yt-dlp."
 
+[source]
+hosts = ["youtube.com", "*.youtube.com", "youtu.be"]
+slow = true                    # say "CONNECTING…" while it opens
+
 [permissions]
 exec = ["yt-dlp", "ffmpeg"]    # programs it may start (see Security)
 net = []                       # hosts it may reach over HTTP
 
 [[setting]]
-key = "ytdlp"
+key = "yt-dlp"                 # same key as in exec: where that program is
 label = "yt-dlp program"
 type = "path"
 default = "yt-dlp"
@@ -102,7 +106,16 @@ default = "bestaudio[ext=m4a]/bestaudio"
 The core checks the manifest strictly, like `skin.toml`: an unknown key
 or a missing file keeps the plug-in off, and the error is shown.
 Settings are stored in `popamp.ini` under `[plugin.<id>]`; the core draws
-their form, so plug-ins draw nothing.
+their form, so plug-ins draw nothing. A plug-in reads them as its Extism
+configuration, by key, together with `popamp.proxy`, the user's proxy.
+The permissions the user allowed are stored under `[plugins]`, one line
+per plug-in; the plug-in is on while they match what its manifest asks
+for.
+
+`[source] hosts` says which locations a source takes: http(s) URLs on
+those hosts (`example.com` that host only, `*.example.com` its
+subdomains). The core decides this without calling the plug-in, so no
+plug-in code runs on the UI or engine thread.
 
 ## Security
 
@@ -120,7 +133,8 @@ version asks for more:
   plug-in: the dialog says so.
 - **`net`**: the plug-in may make HTTP(S) requests through Extism's HTTP
   host function, limited to the hosts listed in the manifest
-  (`net = ["*.example.com"]`); the core applies the user's proxy.
+  (`net = ["*.example.com"]`). Extism's HTTP does not go through the
+  user's proxy yet; a plug-in that needs it reads `popamp.proxy`.
 
 Rejected alternative: plug-ins as separate processes speaking JSON over
 standard input and output. They wrap programs such as yt-dlp naturally,
@@ -137,7 +151,6 @@ Calls (JSON in and out; Rust types in `popamp-plugin-api`):
 | Call | Input | Output |
 |---|---|---|
 | `api_version` | none | `"1.0"`, the API it was built for |
-| `handles` | a location | `true` if this plug-in takes it; quick: no exec, no net |
 | `expand` | a location of a list (a playlist, a channel) | its tracks: location, title, length |
 | `describe` | a location | its tags: title, artist, length; or none |
 | `open` | a location | how to play it, below |
@@ -170,10 +183,12 @@ the built-in YouTube source does today (`youtube::pipe`).
   the engine thread, so Stop does not work while a radio station is
   connecting. It is the first step of the work below and is useful
   without any plug-in.
-- `handles` must return within 10 ms (Extism's call timeout);
-  `expand`, `describe` and `open` within 60 s. A plug-in that traps or
-  runs out of time fails that call; three failures in a row switch it
-  off until the user turns it on again.
+- `expand`, `describe` and `open` must return within 60 s, programs
+  started through `exec` included (a program still running then is
+  killed). A plug-in that traps or runs out of time or memory (64 MiB)
+  fails that call; three such failures in a row switch it off until the
+  user presses OK in "Plug-ins…". An error the plug-in returns itself
+  ("video unavailable") is not a failure.
 - A `dsp` plug-in runs on the decoding thread, never in the callback,
   over blocks of 1024 frames in shared memory. The output buffer
   (`buffer_ms`) already sits between it and the sound card. A block over
@@ -209,7 +224,11 @@ When the YouTube plug-in works:
    and `Playback` in `crates/popamp-audio/src/source.rs`, the pipe player
    in `pipe.rs`; YouTube is a built-in source until step 4.
 3. Host: Extism, the `popamp-plugin-api` crate, manifest, permissions dialog, the "Plug-ins…" window,
-   settings form.
+   settings form. Done: `crates/popamp-plugin-api`, `crates/popamp-plugins`
+   (manifest, host, installed plug-ins) and its test plug-in in
+   `crates/popamp-plugins/tests/test-plugin`; the "Plug-ins…" window in
+   the Options menu shows what each plug-in may do next to its check
+   box, so ticking it and pressing OK is the confirmation.
 4. The YouTube plug-in in its own repository, `popamp/plugin-youtube`;
    YouTube code leaves the core.
 5. The `dsp` interface and a small example plug-in.

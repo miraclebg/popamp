@@ -348,7 +348,7 @@ mod tests {
 
     #[test]
     fn a_video_is_one_slow_track_asked_before_http() {
-        let sources = crate::source::Sources::new(vec![Box::new(YoutubeSource)]);
+        let sources = crate::source::Sources::new(vec![std::sync::Arc::new(YoutubeSource)]);
         let video = "https://youtu.be/abc";
         assert_eq!(sources.of(video).id(), "youtube");
         assert!(sources.of(video).slow());

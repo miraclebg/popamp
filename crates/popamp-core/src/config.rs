@@ -351,6 +351,9 @@ impl Paths {
     pub fn skins_dir(&self) -> PathBuf {
         self.data_dir.join("skins")
     }
+    pub fn plugins_dir(&self) -> PathBuf {
+        self.data_dir.join("plugins")
+    }
 }
 
 /// Settings plus the parsed file they came from, so unknown keys survive a save.
@@ -377,10 +380,41 @@ impl Config {
         &self.path
     }
 
+    /// A copy of the plug-ins' settings and grants, for a loading thread.
+    pub fn plugins(&self) -> PluginConfig {
+        PluginConfig(self.ini.clone())
+    }
+
+    pub fn set_plugin_value(&mut self, id: &str, key: &str, value: &str) {
+        self.ini.set(&format!("plugin.{id}"), key, value);
+    }
+
+    pub fn set_plugin_grant(&mut self, id: &str, grant: &str) {
+        self.ini.set("plugins", id, grant);
+    }
+
     /// Writes atomically (temp file + rename).
     pub fn save(&mut self) -> io::Result<()> {
         self.settings.write_ini(&mut self.ini);
         write_atomic(&self.path, self.ini.to_string_pretty().as_bytes())
+    }
+}
+
+/// Plug-in settings (`[plugin.<id>]`) and the permissions the user allowed
+/// each plug-in (`[plugins]`).
+#[derive(Clone, Debug, Default)]
+pub struct PluginConfig(Ini);
+
+impl PluginConfig {
+    /// The user's value for setting `key` of plug-in `id`.
+    pub fn value(&self, id: &str, key: &str) -> Option<&str> {
+        self.0.get(&format!("plugin.{id}"), key)
+    }
+
+    /// The permissions allowed to plug-in `id`, as the plug-in host writes
+    /// them; empty when it is off.
+    pub fn grant(&self, id: &str) -> &str {
+        self.0.get("plugins", id).unwrap_or("")
     }
 }
 
@@ -451,6 +485,21 @@ mod tests {
         assert_eq!(ini.get("Popamp", "future_key"), Some("7"));
         assert_eq!(ini.get("Other", "x"), Some("1"));
         assert_eq!(ini.get("Popamp", "repeat"), Some("1"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn plugin_settings_and_grants_survive_a_save() {
+        let dir = std::env::temp_dir().join(format!("popamp-cfg-pl-{}", std::process::id()));
+        let path = dir.join("popamp.ini");
+        let mut cfg = Config::load(path.clone());
+        assert_eq!((cfg.plugins().grant("youtube"), cfg.plugins().value("youtube", "format")), ("", None));
+        cfg.set_plugin_grant("youtube", "exec=yt-dlp;net=");
+        cfg.set_plugin_value("youtube", "format", "bestaudio");
+        cfg.save().unwrap();
+        let plugins = Config::load(path).plugins();
+        assert_eq!(plugins.grant("youtube"), "exec=yt-dlp;net=");
+        assert_eq!(plugins.value("youtube", "format"), Some("bestaudio"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
