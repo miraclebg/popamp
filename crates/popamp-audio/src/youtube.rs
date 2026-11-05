@@ -5,8 +5,10 @@
 //! URL and it is resolved again (with a short cache) whenever it is played.
 
 use crate::pipe::{Pipe, START};
+use crate::source::{Context, Playback, Source};
 use parking_lot::{Mutex, RwLock};
 use popamp_core::meta::TrackMeta;
+use popamp_core::plformats::Item;
 use std::collections::HashMap;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
@@ -229,6 +231,39 @@ fn ffmpeg_pipe(resolved: Resolved, cfg: &Config) -> Pipe {
     Pipe { program: cfg.ffmpeg.clone(), args, rate: RATE, seekable: !resolved.is_live, meta }
 }
 
+/// YouTube videos, playlists and channels, through yt-dlp and ffmpeg.
+pub struct YoutubeSource;
+
+impl Source for YoutubeSource {
+    fn id(&self) -> &str {
+        "youtube"
+    }
+
+    fn handles(&self, location: &str) -> bool {
+        is_youtube(location)
+    }
+
+    fn expand(&self, location: &str, _cx: &Context) -> Result<Option<Vec<Item>>, String> {
+        if is_single_video(location) {
+            return Ok(None);
+        }
+        let list = list(location)?;
+        Ok(Some(list.into_iter().map(|i| Item { location: i.url, title: i.title, length_ms: i.length_ms }).collect()))
+    }
+
+    fn describe(&self, location: &str) -> Option<Result<TrackMeta, String>> {
+        Some(read_meta(location))
+    }
+
+    fn open(&self, location: &str, _cx: &Context) -> Result<Playback, String> {
+        Ok(Playback::Pipe(Box::new(pipe(location)?)))
+    }
+
+    fn slow(&self) -> bool {
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,5 +344,15 @@ mod tests {
         let live = ffmpeg_pipe(Resolved { is_live: true, ..resolved }, &Config::default());
         assert!(!live.args.iter().any(|a| a == "-ss" || a == "-http_proxy"));
         assert_eq!((live.seekable, live.meta.length_ms), (false, None));
+    }
+
+    #[test]
+    fn a_video_is_one_slow_track_asked_before_http() {
+        let sources = crate::source::Sources::new(vec![Box::new(YoutubeSource)]);
+        let video = "https://youtu.be/abc";
+        assert_eq!(sources.of(video).id(), "youtube");
+        assert!(sources.of(video).slow());
+        assert!(!sources.of("http://radio:8000/stream").slow());
+        assert_eq!(YoutubeSource.expand(video, &Context::default()), Ok(None));
     }
 }

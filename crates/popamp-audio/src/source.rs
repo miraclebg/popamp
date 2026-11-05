@@ -37,7 +37,7 @@ pub trait Source: Send + Sync {
     /// when `location` is one track.
     fn expand(&self, location: &str, cx: &Context) -> Result<Option<Vec<Item>>, String>;
     /// Tags of a track, or `None` when this source has none to give.
-    fn describe(&self, location: &str, cx: &Context) -> Option<Result<TrackMeta, String>>;
+    fn describe(&self, location: &str) -> Option<Result<TrackMeta, String>>;
     fn open(&self, location: &str, cx: &Context) -> Result<Playback, String>;
     /// True when opening takes long enough to say "connecting".
     fn slow(&self) -> bool {
@@ -93,7 +93,7 @@ impl Source for HttpSource {
         Ok(Some(plformats::parse(&text, fmt, None)))
     }
 
-    fn describe(&self, _location: &str, _cx: &Context) -> Option<Result<TrackMeta, String>> {
+    fn describe(&self, _location: &str) -> Option<Result<TrackMeta, String>> {
         None
     }
 
@@ -128,7 +128,7 @@ impl Source for FileSource {
         Ok(None)
     }
 
-    fn describe(&self, location: &str, _cx: &Context) -> Option<Result<TrackMeta, String>> {
+    fn describe(&self, location: &str) -> Option<Result<TrackMeta, String>> {
         Some(crate::decoder::read_meta(Path::new(location)))
     }
 
@@ -173,7 +173,7 @@ mod tests {
         fn expand(&self, _: &str, _: &Context) -> Result<Option<Vec<Item>>, String> {
             Ok(None)
         }
-        fn describe(&self, _: &str, _: &Context) -> Option<Result<TrackMeta, String>> {
+        fn describe(&self, _: &str) -> Option<Result<TrackMeta, String>> {
             None
         }
         fn open(&self, _: &str, _: &Context) -> Result<Playback, String> {

@@ -1,6 +1,7 @@
 # Plug-ins: design
 
-Status: **agreed 2026-11-05**. Nothing here is built yet.
+Status: **agreed 2026-11-05**. Steps 1 and 2 of the order of work are
+built; the plug-in host is not.
 
 Popamp's core plays local files, HTTP streams and playlists, and draws
 skins. Everything else that only some users want, such as YouTube, more
@@ -138,21 +139,25 @@ Calls (JSON in and out; Rust types in `popamp-plugin-api`):
 | `api_version` | none | `"1.0"`, the API it was built for |
 | `handles` | a location | `true` if this plug-in takes it; quick: no exec, no net |
 | `expand` | a location of a list (a playlist, a channel) | its tracks: location, title, length |
-| `describe` | a location | its tags: title, artist, length, whether it is live |
-| `open` | a location and a start time | how to play it, below |
+| `describe` | a location | its tags: title, artist, length; or none |
+| `open` | a location | how to play it, below |
 
 `open` answers one of:
 
 - `http`: a URL and headers; the core opens it like any HTTP stream;
-- `pipe`: a program (one of `exec`), its arguments, and the sample rate,
-  channels and seekability of the raw samples it writes to standard
-  output; the core starts it and plays that output.
+- `pipe`: a program (one of `exec`), its arguments, the tags of the
+  track, the sample rate and whether it can seek. The program writes
+  interleaved stereo 32-bit float samples, little-endian, to standard
+  output; the core starts it and plays that output. `{start}` in an
+  argument is replaced by the position in seconds (`12.345`) each time
+  the core starts the program: when the track opens and on every seek,
+  so seeking calls no plug-in.
 
 An error is a string the core shows in the title display.
 
 For YouTube, `open` runs yt-dlp, reads the stream URL and headers from
 its JSON and returns a `pipe` that starts ffmpeg on that URL: what
-`PipeSource` does today, split so that the core runs ffmpeg.
+the built-in YouTube source does today (`youtube::pipe`).
 
 ## Threads and time limits
 
@@ -190,8 +195,8 @@ When the YouTube plug-in works:
 - `crates/popamp-audio/src/youtube.rs` is deleted;
 - the settings `ytdlp_path`, `ffmpeg_path` and `ytdlp_format` move to
   `[plugin.youtube]`;
-- `model.rs` asks the source plug-ins instead of calling `youtube::*`;
-  "CONNECTING TO YOUTUBE…" becomes "CONNECTING…" for any slow source;
+- `model.rs` stops registering the built-in `YoutubeSource` (it already
+  asks the sources, and says "CONNECTING…" for any slow one);
 - a YouTube link with the plug-in missing or off fails like any
   unplayable entry: "no plug-in plays this link".
 
@@ -200,7 +205,9 @@ When the YouTube plug-in works:
 1. Core: open tracks off the engine thread, for files and HTTP streams.
    Stop works while connecting.
 2. Core: the source interface inside the player, with the built-in HTTP
-   and file sources behind it (SPEC section 6).
+   and file sources behind it (SPEC section 6). Done: the `Source` trait
+   and `Playback` in `crates/popamp-audio/src/source.rs`, the pipe player
+   in `pipe.rs`; YouTube is a built-in source until step 4.
 3. Host: Extism, the `popamp-plugin-api` crate, manifest, permissions dialog, the "Plug-ins…" window,
    settings form.
 4. The YouTube plug-in in its own repository, `popamp/plugin-youtube`;

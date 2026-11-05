@@ -777,12 +777,7 @@ impl Worker {
 
 /// Opens a file or a stream; slow for streams, so never on the worker.
 fn open_location(sources: &Sources, location: &str, start_ms: u64, cx: &Context) -> Result<Opened, String> {
-    let playback = if crate::youtube::is_youtube(location) {
-        Playback::Pipe(Box::new(crate::youtube::pipe(location)?))
-    } else {
-        sources.of(location).open(location, cx)?
-    };
-    match playback {
+    match sources.of(location).open(location, cx)? {
         Playback::Pipe(pipe) => {
             // The program seeks on its own; start where asked.
             let (src, meta) = PipeSource::open(*pipe, start_ms)?;
@@ -924,7 +919,7 @@ mod tests {
         fn expand(&self, _: &str, _: &Context) -> Result<Option<Vec<popamp_core::plformats::Item>>, String> {
             Ok(None)
         }
-        fn describe(&self, _: &str, _: &Context) -> Option<Result<TrackMeta, String>> {
+        fn describe(&self, _: &str) -> Option<Result<TrackMeta, String>> {
             None
         }
         fn open(&self, location: &str, _: &Context) -> Result<Playback, String> {
