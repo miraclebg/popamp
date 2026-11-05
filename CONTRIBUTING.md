@@ -15,7 +15,7 @@ Please include:
 
 ## Development setup
 
-Requirements are in the [README](README.md#requirements): Rust 1.89 or
+Requirements are in the [README](README.md#requirements): Rust 1.96 or
 newer and a C compiler. No `-devel` packages are needed.
 
 ```sh
@@ -44,7 +44,7 @@ cargo test --workspace
 ```
 
 CI runs the same checks, again with `--features popamp/plugins`, plus a
-build with the minimum supported Rust version (1.89).
+build with the minimum supported Rust version (1.96).
 
 ## Repositories
 
