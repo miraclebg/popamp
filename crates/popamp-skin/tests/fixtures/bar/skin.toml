@@ -1,0 +1,27 @@
+# A main window that is a bar at the bottom of the screen.
+
+[meta]
+name = "Bar"
+author = "Popamp tests"
+format_version = 1
+
+[[window]]
+key = "main"
+placement = "bar-bottom"
+
+[window.normal]
+size = [275, 14]
+
+[[window]]
+key = "eq"
+placement = "docked"
+
+[window.normal]
+size = [275, 116]
+
+[[window]]
+key = "playlist"
+placement = "docked"
+
+[window.normal]
+size = [275, 116]
