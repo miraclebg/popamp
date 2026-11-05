@@ -770,7 +770,7 @@ impl Worker {
 fn open_location(location: &str, start_ms: u64, proxy: &str) -> Result<Opened, String> {
     if crate::youtube::is_youtube(location) {
         // ffmpeg seeks on its own; start where asked.
-        let (src, meta) = crate::youtube::PipeSource::open(location, start_ms)?;
+        let (src, meta) = crate::pipe::PipeSource::open(crate::youtube::pipe(location)?, start_ms)?;
         Ok((Box::new(src), meta, None, None, start_ms))
     } else if is_url(location) {
         let (src, ext, headers, title) = stream::open(location, proxy)?;

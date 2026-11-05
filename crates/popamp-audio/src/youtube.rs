@@ -4,12 +4,11 @@
 //! Stream URLs expire after a few hours, so playlists keep the YouTube page
 //! URL and it is resolved again (with a short cache) whenever it is played.
 
-use crate::decoder::{AudioSource, Status, StreamInfo};
+use crate::pipe::{Pipe, START};
 use parking_lot::{Mutex, RwLock};
 use popamp_core::meta::TrackMeta;
 use std::collections::HashMap;
-use std::io::Read;
-use std::process::{Child, ChildStdout, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -194,142 +193,40 @@ fn parse_listing(v: &serde_json::Value) -> Vec<ListItem> {
         .collect()
 }
 
-/// Decodes a resolved stream through an `ffmpeg` child process.
-pub struct PipeSource {
-    resolved: Resolved,
-    child: Option<Child>,
-    stdout: Option<ChildStdout>,
-    info: StreamInfo,
-    bytes: Vec<u8>,
-    /// Bytes carried over between reads (partial samples).
-    carry: Vec<u8>,
-    produced: bool,
+/// How to play a video: `ffmpeg` decodes its audio stream to stereo `f32`.
+pub fn pipe(url: &str) -> Result<Pipe, String> {
+    Ok(ffmpeg_pipe(resolve(url)?, &config().read()))
 }
 
-impl PipeSource {
-    pub fn open(url: &str, start_ms: u64) -> Result<(PipeSource, TrackMeta), String> {
-        let resolved = resolve(url)?;
-        let meta = resolved.meta.clone();
-        let info = StreamInfo {
-            sample_rate: RATE,
-            channels: meta.channels.unwrap_or(2),
-            length_ms: if resolved.is_live { None } else { meta.length_ms },
-            bitrate_kbps: meta.bitrate_kbps,
-            codec: meta.codec.clone().unwrap_or_else(|| "YOUTUBE".into()),
-            seekable: !resolved.is_live,
-        };
-        let mut src = PipeSource { resolved, child: None, stdout: None, info, bytes: vec![0; 16384], carry: Vec::new(), produced: false };
-        src.spawn(start_ms)?;
-        Ok((src, meta))
-    }
-
-    fn spawn(&mut self, start_ms: u64) -> Result<(), String> {
-        self.kill();
-        let cfg = config().read().clone();
-        let mut cmd = Command::new(&cfg.ffmpeg);
-        cmd.args(["-nostdin", "-hide_banner", "-loglevel", "error"]);
-        cmd.args(["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]);
-        let mut extra = String::new();
-        for (k, v) in &self.resolved.headers {
-            if k.eq_ignore_ascii_case("user-agent") {
-                cmd.args(["-user_agent", v]);
-            } else {
-                extra.push_str(&format!("{k}: {v}\r\n"));
-            }
-        }
-        if !extra.is_empty() {
-            cmd.args(["-headers", &extra]);
-        }
-        if !cfg.proxy.trim().is_empty() {
-            cmd.args(["-http_proxy", &format!("http://{}", cfg.proxy.trim())]);
-        }
-        if start_ms > 0 {
-            cmd.args(["-ss", &format!("{}.{:03}", start_ms / 1000, start_ms % 1000)]);
-        }
-        cmd.args(["-i", &self.resolved.stream_url, "-vn", "-f", "f32le", "-ac", "2", "-ar", &RATE.to_string(), "pipe:1"]);
-        cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-        let mut child = cmd.spawn().map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                format!("{} not found: install ffmpeg to play YouTube links", cfg.ffmpeg)
-            } else {
-                format!("cannot run {}: {e}", cfg.ffmpeg)
-            }
-        })?;
-        self.stdout = child.stdout.take();
-        self.child = Some(child);
-        self.carry.clear();
-        self.produced = false;
-        Ok(())
-    }
-
-    fn kill(&mut self) {
-        self.stdout = None;
-        if let Some(mut c) = self.child.take() {
-            let _ = c.kill();
-            let _ = c.wait();
+fn ffmpeg_pipe(resolved: Resolved, cfg: &Config) -> Pipe {
+    let mut args: Vec<String> = ["-nostdin", "-hide_banner", "-loglevel", "error"].map(String::from).into();
+    args.extend(["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"].map(String::from));
+    let mut extra = String::new();
+    for (k, v) in &resolved.headers {
+        if k.eq_ignore_ascii_case("user-agent") {
+            args.extend(["-user_agent".into(), v.clone()]);
+        } else {
+            extra.push_str(&format!("{k}: {v}\r\n"));
         }
     }
-
-    /// The child's error output once it has exited.
-    fn failure(&mut self) -> Option<String> {
-        let mut child = self.child.take()?;
-        let status = child.wait().ok()?;
-        if status.success() {
-            return None;
-        }
-        let mut err = String::new();
-        if let Some(mut e) = child.stderr.take() {
-            let _ = e.read_to_string(&mut err);
-        }
-        let line = err.lines().last().unwrap_or("").trim().to_string();
-        Some(if line.is_empty() { format!("ffmpeg exited with {status}") } else { format!("ffmpeg: {line}") })
+    if !extra.is_empty() {
+        args.extend(["-headers".into(), extra]);
     }
-}
-
-impl AudioSource for PipeSource {
-    fn info(&self) -> &StreamInfo {
-        &self.info
+    if !cfg.proxy.trim().is_empty() {
+        args.extend(["-http_proxy".into(), format!("http://{}", cfg.proxy.trim())]);
     }
-
-    fn next(&mut self, out: &mut Vec<f32>) -> Result<Status, String> {
-        let Some(stdout) = self.stdout.as_mut() else { return Ok(Status::Eof) };
-        let n = match stdout.read(&mut self.bytes) {
-            Ok(n) => n,
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => return Ok(Status::Data),
-            Err(e) => return Err(format!("ffmpeg pipe: {e}")),
-        };
-        if n == 0 {
-            self.stdout = None;
-            if let Some(err) = self.failure() {
-                if !self.produced {
-                    return Err(err);
-                }
-                log::warn!("{err}");
-            }
-            return Ok(Status::Eof);
-        }
-        self.produced = true;
-        self.carry.extend_from_slice(&self.bytes[..n]);
-        let whole = self.carry.len() / 8 * 8;
-        out.extend(self.carry[..whole].as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])));
-        self.carry.drain(..whole);
-        Ok(Status::Data)
+    if !resolved.is_live {
+        args.extend(["-ss".into(), START.into()]);
     }
-
-    fn seek(&mut self, ms: u64) -> Result<u64, String> {
-        if !self.info.seekable {
-            return Err("live stream".into());
-        }
-        let ms = self.info.length_ms.map(|l| ms.min(l.saturating_sub(250))).unwrap_or(ms);
-        self.spawn(ms)?;
-        Ok(ms)
+    args.extend(["-i".into(), resolved.stream_url]);
+    args.extend(["-vn", "-f", "f32le", "-ac", "2", "-ar"].map(String::from));
+    args.extend([RATE.to_string(), "pipe:1".into()]);
+    let mut meta = resolved.meta;
+    meta.codec.get_or_insert_with(|| "YOUTUBE".into());
+    if resolved.is_live {
+        meta.length_ms = None;
     }
-}
-
-impl Drop for PipeSource {
-    fn drop(&mut self) {
-        self.kill();
-    }
+    Pipe { program: cfg.ffmpeg.clone(), args, rate: RATE, seekable: !resolved.is_live, meta }
 }
 
 #[cfg(test)]
@@ -387,5 +284,30 @@ mod tests {
         assert_eq!(m.length_ms, Some(19_000));
         assert_eq!(m.codec.as_deref(), Some("MP4A"));
         assert_eq!(m.bitrate_kbps, Some(130));
+    }
+
+    #[test]
+    fn plays_a_video_through_ffmpeg_from_the_start_asked() {
+        let resolved = Resolved {
+            stream_url: "https://media/a".into(),
+            headers: vec![("User-Agent".into(), "UA".into()), ("Referer".into(), "r".into())],
+            meta: TrackMeta { length_ms: Some(5000), ..Default::default() },
+            is_live: false,
+        };
+        let cfg = Config { proxy: "h:1".into(), ..Config::default() };
+        let p = ffmpeg_pipe(resolved.clone(), &cfg);
+        let at = |a: &str| p.args.iter().position(|x| x == a).unwrap();
+        assert_eq!(p.program, "ffmpeg");
+        assert_eq!(p.args[at("-ss") + 1], START);
+        assert!(at("-ss") < at("-i"));
+        assert_eq!(p.args[at("-i") + 1], "https://media/a");
+        assert_eq!(p.args[at("-user_agent") + 1], "UA");
+        assert_eq!(p.args[at("-headers") + 1], "Referer: r\r\n");
+        assert_eq!(p.args[at("-http_proxy") + 1], "http://h:1");
+        assert_eq!((p.seekable, p.meta.length_ms, p.meta.codec.as_deref()), (true, Some(5000), Some("YOUTUBE")));
+
+        let live = ffmpeg_pipe(Resolved { is_live: true, ..resolved }, &Config::default());
+        assert!(!live.args.iter().any(|a| a == "-ss" || a == "-http_proxy"));
+        assert_eq!((live.seekable, live.meta.length_ms), (false, None));
     }
 }
