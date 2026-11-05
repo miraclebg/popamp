@@ -131,16 +131,26 @@ sudo pacman -S --needed base-devel alsa-lib libx11 libxcb libxcursor libxi \
 
 Releases on the [Releases page](https://github.com/popamp/popamp/releases)
 come with packages for x86_64 and ARM64 (built on Ubuntu 22.04, so they
-need glibc 2.35 or newer):
+need glibc 2.35 or newer), in two builds:
+
+- **popamp:** the player.
+- **popamp-plus:** the player with [plug-ins](docs/plugins.md), such as
+  YouTube. It is larger, since it carries a WebAssembly runtime.
+
+Both install `popamp` and share its settings; installing one replaces
+the other.
 
 | System | Package |
 |---|---|
-| Debian / Ubuntu | `sudo apt install ./popamp-<version>-linux-amd64.deb` (ARM64: `-arm64.deb`) |
-| Anything else | `Popamp-<version>-linux-x86_64.AppImage`: `chmod +x` it and run it |
+| Debian / Ubuntu | `sudo apt install ./popamp-<version>-linux-amd64.deb`, or `./popamp-plus-…` (ARM64: `-arm64.deb`) |
+| Anything else | `Popamp-<version>-linux-x86_64.AppImage`, or `Popamp-Plus-…`: `chmod +x` it and run it |
+
+`popamp /VERSION` says which one you have.
 
 The AppImage uses the system's ALSA, X11 and xkbcommon libraries, which
 nearly every desktop has. To build the packages yourself after
-`cargo build --release`:
+`cargo build --release` (or with `--features plugins` for popamp-plus;
+the scripts ask the binary which it is):
 
 ```sh
 packaging/build-deb.sh        # needs dpkg-deb and binutils
@@ -272,8 +282,8 @@ versions move to the plug-in's settings (`[plugin.youtube]` in
 ```sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets    # expected: no warnings
-cargo test --workspace                    # 215 tests
-cargo test --workspace --features popamp/plugins   # 219: adds the Plug-ins window
+cargo test --workspace                    # 217 tests
+cargo test --workspace --features popamp/plugins   # 222: adds plug-ins
 ```
 
 The unit tests cover:

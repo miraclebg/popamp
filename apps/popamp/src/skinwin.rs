@@ -151,7 +151,7 @@ impl SkinWin {
         }
         let title = model.current_title();
         if title.is_empty() {
-            format!("POPAMP {}", env!("CARGO_PKG_VERSION"))
+            crate::edition::title().to_uppercase()
         } else {
             title
         }
