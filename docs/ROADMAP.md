@@ -19,6 +19,11 @@ Linux package repository. Two builds:
 - **popamp:** the player without plug-in support.
 - **popamp-plus:** the same player built with `--features plugins`.
 
+Done: both are built, tested and packaged (deb and AppImage, x86_64 and
+ARM64) by the release workflow; `popamp-plus` provides, conflicts with
+and replaces `popamp`. To do: Windows (Popamp runs on Linux only so
+far), and the package repository.
+
 Until then version numbers stay as they are, including the plug-in API
 (1.0), and change in place; they start to move with this release.
 

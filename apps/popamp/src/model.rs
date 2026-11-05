@@ -1300,11 +1300,11 @@ impl Model {
             C::ToggleVis => self.exec(C::CycleVisMode),
             C::About => {
                 let text = format!(
-                    "Popamp {}\n\nA Winamp-style audio player for Linux, written in Rust.\nDecoding by Symphonia. Classic (.wsz) and vector (.psz) skins.\n\nConfig: {}",
-                    env!("CARGO_PKG_VERSION"),
+                    "{}\n\nA Winamp-style audio player for Linux, written in Rust.\nDecoding by Symphonia. Classic (.wsz) and vector (.psz) skins.\n\nConfig: {}",
+                    crate::edition::title(),
                     self.config.path().display()
                 );
-                self.ui.push(UiReq::Dialog(DialogKind::Info, Request::Info { title: "About Popamp".into(), text }));
+                self.ui.push(UiReq::Dialog(DialogKind::Info, Request::Info { title: format!("About {}", crate::edition::NAME), text }));
             }
         }
     }

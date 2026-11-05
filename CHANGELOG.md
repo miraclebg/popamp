@@ -31,6 +31,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Two builds: `popamp`, the player, and `popamp-plus`, built with
+  plug-ins. Releases have a deb and an AppImage of each; `popamp-plus`
+  replaces `popamp` and the other way round. `/VERSION`, About and the
+  title display say which one runs.
 - Plug-ins: WebAssembly modules run by [Extism](https://extism.org), each
   in its own folder under `~/.local/share/popamp/plugins/` with a
   `plugin.toml`. A source plug-in takes links on the hosts its manifest

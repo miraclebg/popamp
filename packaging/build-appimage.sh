@@ -1,5 +1,7 @@
 #!/bin/sh
-# Builds a Popamp .AppImage from an already-compiled release binary.
+# Builds a Popamp .AppImage from an already-compiled release binary;
+# Popamp-Plus-… for a binary built with --features plugins (its /VERSION
+# says which).
 # Usage: packaging/build-appimage.sh [target/release/popamp] [output-dir]
 # Needs: appimagetool (https://github.com/AppImage/appimagetool) and strip.
 # Set APPIMAGE_RUNTIME to a runtime file to stop appimagetool downloading one.
@@ -24,6 +26,17 @@ command -v appimagetool >/dev/null 2>&1 || {
 }
 
 version=$(grep -m1 '^version' "$root/Cargo.toml" | sed 's/.*"\(.*\)".*/\1/')
+# "popamp 0.1.0" or "popamp-plus 0.1.0".
+set -- $("$bin" /VERSION)
+if [ "${2:-}" != "$version" ]; then
+    echo "error: $bin is version ${2:-?}, Cargo.toml says $version" >&2
+    exit 1
+fi
+case "$1" in
+    popamp) name=Popamp ;;
+    popamp-plus) name=Popamp-Plus ;;
+    *) echo "error: $bin says it is $1, not popamp or popamp-plus" >&2; exit 1 ;;
+esac
 case "$(uname -m)" in
     x86_64) arch=x86_64 ;;
     aarch64|arm64) arch=aarch64 ;;
@@ -56,7 +69,7 @@ EOF
 chmod +x "$appdir/AppRun"
 
 mkdir -p "$outdir"
-out="$outdir/Popamp-${version}-linux-${arch}.AppImage"
+out="$outdir/${name}-${version}-linux-${arch}.AppImage"
 set --
 [ -n "${APPIMAGE_RUNTIME:-}" ] && set -- --runtime-file "$APPIMAGE_RUNTIME"
 VERSION="$version" ARCH="$arch" appimagetool "$@" "$appdir" "$out"

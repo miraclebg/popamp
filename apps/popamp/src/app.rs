@@ -630,7 +630,7 @@ impl App {
             self.tip = None;
             return;
         }
-        let text = self.skins[k.index()].tooltip(&self.model, x, y).unwrap_or_else(|| format!("Popamp {}", env!("CARGO_PKG_VERSION")));
+        let text = self.skins[k.index()].tooltip(&self.model, x, y).unwrap_or_else(crate::edition::title);
         if self.tip.as_ref().is_none_or(|t| t.text != text) {
             self.tip = Some(Tooltip { text, since: Instant::now(), shown: None });
         }
