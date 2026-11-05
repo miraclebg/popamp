@@ -6,7 +6,7 @@
 
 use crate::alsa::AlsaPcm;
 use crate::decoder::{AudioSource, Decoder, Status, StreamInfo};
-use crate::dsp::{balance_gains, db_to_gain, volume_gain, EqSettings, Equalizer};
+use crate::dsp::{balance_gains, db_to_gain, volume_gain, Effect, Effects, EqSettings, Equalizer};
 use crate::pipe::PipeSource;
 use crate::source::{Context, Playback, Sources};
 use crate::stream::{self, StreamHeaders, TitleSlot};
@@ -55,6 +55,8 @@ pub enum EngineCmd {
     Volume(u8),
     Balance(i8),
     Eq(EqSettings),
+    /// The effects to run after the equalizer, in order.
+    Effects(Vec<Box<dyn Effect>>),
     ReplayGain(ReplayGainSettings),
     Config {
         buffer_ms: u32,
@@ -289,6 +291,7 @@ struct Worker {
     volume: u8,
     balance: i8,
     eq: Equalizer,
+    effects: Effects,
     rg: ReplayGainSettings,
     buffer_ms: u32,
     fade_ms: u32,
@@ -335,6 +338,7 @@ impl Worker {
             volume: 200,
             balance: 0,
             eq: Equalizer::new(44_100),
+            effects: Effects::new(44_100),
             rg: ReplayGainSettings::default(),
             buffer_ms: 150,
             fade_ms: 1000,
@@ -449,6 +453,7 @@ impl Worker {
             EngineCmd::Volume(v) => self.volume = v,
             EngineCmd::Balance(b) => self.balance = b,
             EngineCmd::Eq(s) => self.eq.set(s),
+            EngineCmd::Effects(list) => self.effects.set(list),
             EngineCmd::ReplayGain(rg) => {
                 self.rg = rg;
                 // Takes effect from the next track.
@@ -536,6 +541,7 @@ impl Worker {
         self.pcm = Some(AlsaPcm::open(&self.device, rate, 2, self.buffer_ms)?);
         self.written = 0;
         self.eq.set_rate(rate);
+        self.effects.set_rate(rate);
         Ok(())
     }
 
@@ -568,6 +574,7 @@ impl Worker {
                 self.track_start = self.written;
                 self.seek_base_ms = base;
                 self.eq.reset();
+                self.effects.reset();
                 let gain = self.track_gain(&meta);
                 let info = dec.info().clone();
                 self.shared.channels.store(info.channels as u32, Ordering::Relaxed);
@@ -653,6 +660,7 @@ impl Worker {
         self.track_start = self.written;
         self.seek_base_ms = reached;
         self.eq.reset();
+        self.effects.reset();
         // Publish now so a quick second relative seek starts from here.
         self.shared.position_ms.store(reached, Ordering::Relaxed);
     }
@@ -721,6 +729,7 @@ impl Worker {
             buf.iter_mut().for_each(|s| *s *= gain);
         }
         self.eq.process(&mut buf);
+        self.effects.process(&mut buf);
         // Vis sees the signal before volume, like the original.
         self.shared.vis.lock().push_stereo(&buf, self.written);
         let vol = volume_gain(self.volume);
@@ -921,6 +930,33 @@ mod tests {
         let seen = events_until_finished(&events);
         let _ = (std::fs::remove_file(a), std::fs::remove_file(b));
         assert_eq!(seen, ["started 1", "changed 2", "finished 2"]);
+    }
+
+    /// Writes down what the engine asks of it.
+    struct Recorder(Arc<parking_lot::Mutex<Vec<String>>>);
+
+    impl crate::dsp::Effect for Recorder {
+        fn reset(&mut self, rate: u32) {
+            self.0.lock().push(format!("reset {rate}"));
+        }
+        fn process(&mut self, block: &mut [f32]) {
+            self.0.lock().push(format!("process {}", block.len() % 2));
+        }
+    }
+
+    #[test]
+    fn an_effect_is_reset_at_the_track_rate_and_gets_its_blocks() {
+        let (engine, events, _server) = engine_and_silent_server();
+        let seen = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        engine.send(EngineCmd::Effects(vec![Box::new(Recorder(seen.clone()))]));
+        let wav = silent_wav("fx", 300);
+        engine.send(EngineCmd::Open { id: 1, location: wav.to_string_lossy().into(), start_ms: 0 });
+        events_until_finished(&events);
+        let _ = std::fs::remove_file(wav);
+        let seen = seen.lock().clone();
+        assert_eq!(seen.first().map(String::as_str), Some("reset 44100"), "{seen:?}");
+        let resets_then_blocks = seen.iter().skip_while(|s| *s == "reset 44100").all(|s| s == "process 0");
+        assert!(resets_then_blocks && seen.last().is_some_and(|s| s == "process 0"), "{seen:?}");
     }
 
     /// Takes `pipe:` locations and plays them through a shell script.

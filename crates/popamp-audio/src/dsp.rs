@@ -152,6 +152,55 @@ impl Equalizer {
 
 /// Peak limiter with instant attack and ~80 ms release. Keeps boosted EQ
 /// settings from clipping.
+/// Something that changes the decoded sound after the equalizer, such as
+/// a dsp plug-in. It runs on the engine thread, between decoding and the
+/// output buffer, so it must be quick; it handles its own failures and
+/// leaves a block unchanged when it cannot change it.
+pub trait Effect: Send {
+    /// Clears what it keeps from earlier blocks; blocks come at `rate` now.
+    fn reset(&mut self, rate: u32);
+    /// Changes interleaved stereo samples in place.
+    fn process(&mut self, block: &mut [f32]);
+}
+
+impl std::fmt::Debug for dyn Effect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Effect")
+    }
+}
+
+/// The effects in the order they run, and the rate they were reset to.
+pub struct Effects {
+    list: Vec<Box<dyn Effect>>,
+    rate: u32,
+}
+
+impl Effects {
+    pub fn new(rate: u32) -> Effects {
+        Effects { list: Vec::new(), rate }
+    }
+
+    /// Replaces the effects; the new ones start at the current rate.
+    pub fn set(&mut self, list: Vec<Box<dyn Effect>>) {
+        self.list = list;
+        self.reset();
+    }
+
+    pub fn set_rate(&mut self, rate: u32) {
+        self.rate = rate;
+        self.reset();
+    }
+
+    pub fn reset(&mut self) {
+        let rate = self.rate;
+        self.list.iter_mut().for_each(|e| e.reset(rate));
+    }
+
+    pub fn process(&mut self, block: &mut [f32]) {
+        self.list.iter_mut().for_each(|e| e.process(block));
+    }
+}
+
 pub struct Limiter {
     gain: f32,
     release: f32,
