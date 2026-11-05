@@ -36,9 +36,22 @@ impl Model {
         if n != self.plugins.loads {
             return;
         }
+        for p in list.iter().filter_map(|i| if let State::On(p) = &i.state { Some(p) } else { None }) {
+            let (events, id) = (self.events.clone(), p.manifest().id.clone());
+            p.when_stopped(Box::new(move |why| {
+                events.send(AppEvent::PluginStopped(id.clone(), why.to_string()));
+            }));
+        }
         self.sources.set_plugins(installed::sources(&list));
         self.engine.send(EngineCmd::Effects(effects));
         self.plugins.list = list;
+    }
+
+    /// Says in the title display that a plug-in stopped, and why; the
+    /// Plug-ins window says it too.
+    pub fn on_plugin_stopped(&mut self, id: &str, why: &str) {
+        let name = self.plugins.list.iter().filter_map(Installed::manifest).find(|m| m.id == id).map_or(id, |m| m.name.as_str());
+        self.flash(format!("PLUG-IN {} STOPPED: {why}", name.to_uppercase()));
     }
 }
 
@@ -148,7 +161,7 @@ fn problem(p: &Installed) -> Option<String> {
     match &p.state {
         State::Broken(e) => Some(format!("Broken: {e}")),
         State::Failed(_, e) => Some(format!("Did not load: {e}")),
-        State::On(plugin) if plugin.is_off() => Some("Stopped after failing; OK starts it again.".into()),
+        State::On(plugin) => plugin.stopped_because().map(|why| format!("Stopped after failing: {why}. OK starts it again.")),
         _ => None,
     }
 }
@@ -231,6 +244,31 @@ mod tests {
         assert!(shown.iter().any(|l| l.starts_with("Did not load: cannot compile")), "{shown:?}");
         let empty = labels(&Panel::open(PanelKind::Plugins, &Model::for_tests()));
         assert!(empty[0].starts_with("No plug-ins in "), "{empty:?}");
+    }
+
+    #[test]
+    fn a_plugin_that_stops_while_playing_says_why() {
+        let mut m = Model::for_tests();
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/popamp-plugins/tests/fixtures");
+        let dir = m.paths.plugins_dir().join("test-dsp");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::copy(fixtures.join("test-dsp/plugin.toml"), dir.join("plugin.toml")).unwrap();
+        std::fs::copy(fixtures.join("test/plugin.wasm"), dir.join("plugin.wasm")).unwrap();
+        m.config.set_plugin_grant("test-dsp", "exec=;net=");
+        m.config.set_plugin_value("test-dsp", "mode", "short");
+        let list = installed::load_all(&m.paths.plugins_dir(), &m.config.plugins(), &m.source_context());
+        let mut fx = installed::effects(&list);
+        m.on_plugins(m.plugins.loads, list, Vec::new());
+        fx[0].reset(8_000);
+        for _ in 0..popamp_plugins::host::FAILURES_TO_STOP {
+            fx[0].process(&mut vec![0.0; 8192]);
+        }
+        let shown = labels(&Panel::open(PanelKind::Plugins, &m));
+        let why = "Stopped after failing: a block of 32768 bytes came back as 4. OK starts it again.";
+        assert!(shown.contains(&why.to_string()), "{shown:?}");
+        m.on_plugin_stopped("test-dsp", "a block came back short");
+        let flashed = m.transient.as_ref().map(|t| t.0.as_str());
+        assert_eq!(flashed, Some("PLUG-IN TEST DSP STOPPED: a block came back short"));
     }
 
     #[test]

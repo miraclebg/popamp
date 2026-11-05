@@ -18,8 +18,11 @@ use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
+
+/// Told why, when a plug-in stops after failing.
+pub type StopNotice = Box<dyn Fn(&str) + Send + Sync>;
 
 /// The longest a call may run, the programs it starts included.
 pub const CALL_TIME: Duration = Duration::from_secs(60);
@@ -40,6 +43,9 @@ pub struct Plugin {
     programs: Arc<Programs>,
     failures: AtomicU32,
     off: AtomicBool,
+    /// The failure that stopped it.
+    why: Mutex<Option<String>>,
+    notice: OnceLock<StopNotice>,
 }
 
 /// The programs a plug-in may start: each name of `exec`, and where it is
@@ -102,7 +108,16 @@ impl Plugin {
         let compiled = Arc::new(compiled);
         let for_pool = compiled.clone();
         let pool = PoolBuilder::new().with_max_instances(INSTANCES).build(move || extism::Plugin::new_from_compiled(&for_pool));
-        let plugin = Plugin { manifest, compiled, pool, programs, failures: AtomicU32::new(0), off: AtomicBool::new(false) };
+        let plugin = Plugin {
+            manifest,
+            compiled,
+            pool,
+            programs,
+            failures: AtomicU32::new(0),
+            off: AtomicBool::new(false),
+            why: Mutex::new(None),
+            notice: OnceLock::new(),
+        };
         let api: Version = plugin.call(calls::API_VERSION, &())?;
         if !VERSION.loads(api) {
             return Err(format!("built for plug-in API {api}, this Popamp has {VERSION}"));
@@ -122,6 +137,30 @@ impl Plugin {
     pub fn turn_on(&self) {
         self.failures.store(0, Ordering::Relaxed);
         self.off.store(false, Ordering::Relaxed);
+        *self.why.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    /// The failure that stopped it, while it is off.
+    pub fn stopped_because(&self) -> Option<String> {
+        self.why.lock().unwrap_or_else(|e| e.into_inner()).clone().filter(|_| self.is_off())
+    }
+
+    /// Calls `notice` with the reason when the plug-in stops; once per stop.
+    pub fn when_stopped(&self, notice: StopNotice) {
+        let _ = self.notice.set(notice);
+    }
+
+    /// Counts a failure; the last of [`FAILURES_TO_STOP`] in a row stops it.
+    fn count_failure(&self, why: &str) {
+        let n = self.failures.fetch_add(1, Ordering::Relaxed) + 1;
+        log::warn!("plug-in {}: {why}", self.manifest.id);
+        if n >= FAILURES_TO_STOP && !self.off.swap(true, Ordering::Relaxed) {
+            log::warn!("plug-in {} switched off after {n} failures", self.manifest.id);
+            *self.why.lock().unwrap_or_else(|e| e.into_inner()) = Some(why.to_string());
+            if let Some(notice) = self.notice.get() {
+                notice(why);
+            }
+        }
     }
 
     fn spec(&self) -> Option<&SourceSpec> {
@@ -135,17 +174,6 @@ impl Plugin {
     pub fn effect(self: &Arc<Self>) -> Result<Dsp, String> {
         let instance = extism::Plugin::new_from_compiled(&self.compiled).map_err(|e| format!("{e:#}"))?;
         Ok(Dsp { plugin: self.clone(), instance, rate: 44_100 })
-    }
-
-    /// Counts a failed dsp call: every failure counts, since a block
-    /// that fails is played unchanged.
-    fn dsp_failed(&self, why: &str) {
-        let n = self.failures.fetch_add(1, Ordering::Relaxed) + 1;
-        log::warn!("plug-in {}: {why}", self.manifest.id);
-        if n >= FAILURES_TO_STOP {
-            self.off.store(true, Ordering::Relaxed);
-            log::warn!("plug-in {} switched off after {n} failures", self.manifest.id);
-        }
     }
 
     /// Calls `name` with `input` as JSON and reads its JSON answer.
@@ -169,17 +197,13 @@ impl Plugin {
 
     /// Counts a crash or a timeout; an error the plug-in returned is no failure.
     fn failed(&self, e: &extism::Error) -> String {
-        let text = format!("{e:#}");
-        if is_crash(&text) {
-            let n = self.failures.fetch_add(1, Ordering::Relaxed) + 1;
-            if n >= FAILURES_TO_STOP {
-                self.off.store(true, Ordering::Relaxed);
-                log::warn!("plug-in {} switched off after {n} failures", self.manifest.id);
-            }
+        let why = e.root_cause().to_string();
+        if is_crash(&format!("{e:#}")) {
+            self.count_failure(&why);
         } else {
             self.failures.store(0, Ordering::Relaxed);
         }
-        e.root_cause().to_string()
+        why
     }
 }
 
@@ -330,7 +354,7 @@ impl Effect for Dsp {
         }
         let format = serde_json::to_string(&Format { rate: self.rate }).unwrap_or_default();
         if let Err(e) = self.instance.call::<&str, ()>(calls::RESET, &format) {
-            self.plugin.dsp_failed(&e.root_cause().to_string());
+            self.plugin.count_failure(&e.root_cause().to_string());
         }
     }
 
@@ -343,7 +367,7 @@ impl Effect for Dsp {
                 block.copy_from_slice(&out);
                 self.plugin.failures.store(0, Ordering::Relaxed);
             }
-            Err(e) => self.plugin.dsp_failed(&e),
+            Err(e) => self.plugin.count_failure(&e),
         }
     }
 }
@@ -543,6 +567,23 @@ default = "/opt/ffmpeg"
         let mut b = block(4096);
         e.process(&mut b);
         assert_eq!(b[0], 0.5, "on again");
+    }
+
+    #[test]
+    fn a_plugin_that_stops_says_why_once() {
+        let p = test_dsp("short");
+        let told = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let to = told.clone();
+        p.when_stopped(Box::new(move |why: &str| to.lock().unwrap().push(why.to_string())));
+        assert_eq!(p.stopped_because(), None);
+        let mut e = p.effect().unwrap();
+        e.reset(8_000);
+        for _ in 0..FAILURES_TO_STOP + 2 {
+            e.process(&mut block(4096));
+        }
+        let why = "a block of 32768 bytes came back as 4";
+        assert_eq!(p.stopped_because().as_deref(), Some(why));
+        assert_eq!(*told.lock().unwrap(), [why]);
     }
 
     #[test]

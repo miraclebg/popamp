@@ -49,6 +49,9 @@ pub enum AppEvent {
     /// engine; the number is that of the request.
     #[cfg(feature = "plugins")]
     Plugins(u64, Vec<popamp_plugins::installed::Installed>, Vec<Box<dyn popamp_audio::dsp::Effect>>),
+    /// A plug-in stopped after failing: its id, and the last failure.
+    #[cfg(feature = "plugins")]
+    PluginStopped(String, String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
