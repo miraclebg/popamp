@@ -267,7 +267,8 @@ versions move to the plug-in's settings (`[plugin.youtube]` in
 ```sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets    # expected: no warnings
-cargo test --workspace                    # 57 unit tests
+cargo test --workspace                    # 209 tests
+cargo test --workspace --features popamp/plugins   # 213: adds the Plug-ins window
 ```
 
 The unit tests cover:
