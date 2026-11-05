@@ -8,14 +8,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- YouTube left the core for a plug-in,
+  [plugin-youtube](https://github.com/popamp/plugin-youtube), which needs
+  a build with plug-ins. The settings `ytdlp_path`, `ffmpeg_path` and
+  `ytdlp_format` move to `[plugin.youtube]` when the new version starts
+  (only those changed from their defaults). A YouTube link without the
+  plug-in fails with "no plug-in plays this link", as does any web page
+  opened as a stream.
 - Tracks open on a thread of their own. Stop, Next and Prev work while a
-  stream or a YouTube video is still connecting, instead of waiting for
-  it (up to 20 seconds for a silent server).
+  stream is still connecting, instead of waiting for it (up to 20
+  seconds for a silent server).
 - Each location is played, listed and described by a source: files,
-  HTTP streams and YouTube are the three there are, and plug-ins will add
-  more. A source names the program to run when a track plays through one
-  (YouTube's ffmpeg), and the player runs it. A slow source shows
-  "CONNECTING…" while it opens, in place of "CONNECTING TO YOUTUBE…".
+  HTTP streams, and plug-ins. A source names the program to run when a
+  track plays through one, and the player runs it. A slow source shows
+  "CONNECTING…" while it opens.
 - A menu that does not fit below the mouse opens above it instead of
   over it, so a second click on the button that opened it closes it.
 - The project is now Popamp, a separate project grown from

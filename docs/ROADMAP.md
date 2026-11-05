@@ -12,9 +12,9 @@ open an issue first for larger items.
   Xvfb and compare against committed PNGs.
 - **Non-blocking open:** open tracks off the engine thread, so Stop works
   while a stream is connecting.
-- **Plug-ins:** WebAssembly plug-ins, starting with sources; see
-  [plugins.md](plugins.md). YouTube moves out of the core into the first
-  one.
+- **Plug-ins:** the `dsp` interface and an example plug-in; see
+  [plugins.md](plugins.md). Source plug-ins work, and YouTube is one
+  ([plugin-youtube](https://github.com/popamp/plugin-youtube)).
 
 ## First release
 

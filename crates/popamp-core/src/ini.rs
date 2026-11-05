@@ -86,6 +86,17 @@ impl Ini {
         }
     }
 
+    /// Removes `key` from every section named `section`, returning its value.
+    pub fn remove(&mut self, section: &str, key: &str) -> Option<String> {
+        let mut removed = None;
+        for sec in self.sections.iter_mut().filter(|s| s.name.eq_ignore_ascii_case(section)) {
+            if let Some(i) = sec.entries.iter().position(|(k, _)| k.eq_ignore_ascii_case(key)) {
+                removed = removed.or(Some(sec.entries.remove(i).1));
+            }
+        }
+        removed
+    }
+
     pub fn to_string_pretty(&self) -> String {
         let mut out = String::new();
         for sec in &self.sections {

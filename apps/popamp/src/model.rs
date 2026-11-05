@@ -6,7 +6,6 @@ use crate::menu::{MenuAction, MenuItem};
 use crate::panels::PanelKind;
 use crate::vis::Vis;
 use popamp_audio::source::{Context, Sources};
-use popamp_audio::youtube::YoutubeSource;
 use popamp_audio::{Engine, EngineCmd, EngineEvent, EqSettings, PlayState, ReplayGainSettings, StreamInfo};
 use popamp_core::atf::Format;
 use popamp_core::config::{BarEdge, Config, Paths, Settings};
@@ -128,11 +127,6 @@ fn wants_meta(e: &Entry) -> bool {
     !e.is_url() || e.file_title.is_none()
 }
 
-/// The sources the player asks, in order; the built-in ones come last.
-fn app_sources() -> Arc<Sources> {
-    Arc::new(Sources::new(vec![Arc::new(YoutubeSource)]))
-}
-
 fn spawn_meta_workers(events: Events, sources: Arc<Sources>) -> crossbeam_channel::Sender<(u64, String)> {
     let (tx, rx) = crossbeam_channel::unbounded::<(u64, String)>();
     for i in 0..2 {
@@ -167,7 +161,7 @@ fn expand(sources: &Sources, locations: Vec<String>, cx: &Context) -> Vec<Item> 
 impl Model {
     pub fn new(paths: Paths, config: Config, proxy: EventLoopProxy<AppEvent>) -> Model {
         let engine_proxy = proxy.clone();
-        let sources = app_sources();
+        let sources = Arc::new(Sources::default());
         let engine = Engine::spawn("default".into(), sources.clone(), move |ev| {
             let _ = engine_proxy.send_event(AppEvent::Engine(ev));
         });
@@ -177,7 +171,7 @@ impl Model {
     /// A model with no audio device and no event loop, for drawing the
     /// windows offline (`--render`).
     pub fn headless(paths: Paths, config: Config) -> Model {
-        Self::with_engine(paths, config, Engine::headless(), app_sources(), Events(None))
+        Self::with_engine(paths, config, Engine::headless(), Arc::default(), Events(None))
     }
 
     /// A headless model with default settings and its own empty settings
@@ -273,12 +267,6 @@ impl Model {
         self.engine.send(EngineCmd::Volume(s.volume as u8));
         self.engine.send(EngineCmd::Balance(s.balance as i8));
         self.engine.send(EngineCmd::Config { buffer_ms: s.buffer_ms, fade_ms: s.fade_ms, proxy: s.proxy.clone() });
-        popamp_audio::youtube::configure(popamp_audio::youtube::Config {
-            ytdlp: s.ytdlp_path.clone(),
-            ffmpeg: s.ffmpeg_path.clone(),
-            format: s.ytdlp_format.clone(),
-            proxy: s.proxy.clone(),
-        });
         self.engine.send(EngineCmd::ReplayGain(ReplayGainSettings {
             enabled: s.replaygain,
             album: s.replaygain_mode == 1,
@@ -779,7 +767,7 @@ impl Model {
             DialogKind::OpenFolder { .. } => Request::Folder { title: "Open folder".into(), start },
             DialogKind::OpenUrl { .. } => Request::Entry {
                 title: "Open URL".into(),
-                text: "Enter a URL to open (stream, playlist, or YouTube video/playlist):".into(),
+                text: "Enter a URL to open (a stream or a playlist):".into(),
                 initial: String::new(),
             },
             DialogKind::LoadPlaylist => Request::Files {
