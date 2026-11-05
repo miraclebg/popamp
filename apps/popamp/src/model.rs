@@ -161,7 +161,9 @@ fn expand(sources: &Sources, locations: Vec<String>, cx: &Context) -> Vec<Item> 
 impl Model {
     pub fn new(paths: Paths, config: Config, proxy: EventLoopProxy<AppEvent>) -> Model {
         let engine_proxy = proxy.clone();
-        let sources = Arc::new(Sources::default());
+        // With plug-ins, tracks given at startup wait for them to load;
+        // headless models have no event loop to load them through.
+        let sources = Arc::new(if cfg!(feature = "plugins") { Sources::waiting() } else { Sources::default() });
         let engine = Engine::spawn("default".into(), sources.clone(), move |ev| {
             let _ = engine_proxy.send_event(AppEvent::Engine(ev));
         });
@@ -435,7 +437,7 @@ impl Model {
         self.playlist.cursor = idx;
         self.status.stream_title = None;
         self.status.stream_name = None;
-        if self.sources.of(&loc).slow() {
+        if self.sources.of_now(&loc).slow() {
             self.flash("CONNECTING…");
         }
         self.engine.send(EngineCmd::Open { id, location: loc, start_ms: 0 });
