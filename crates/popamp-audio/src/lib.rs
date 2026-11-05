@@ -4,6 +4,8 @@ pub mod alsa;
 pub mod decoder;
 pub mod dsp;
 pub mod engine;
+pub mod pipe;
+pub mod source;
 pub mod stream;
 pub mod youtube;
 

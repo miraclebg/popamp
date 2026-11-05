@@ -11,6 +11,11 @@ All notable changes to this project are documented here. The format follows
 - Tracks open on a thread of their own. Stop, Next and Prev work while a
   stream or a YouTube video is still connecting, instead of waiting for
   it (up to 20 seconds for a silent server).
+- Each location is played, listed and described by a source: files,
+  HTTP streams and YouTube are the three there are, and plug-ins will add
+  more. A source names the program to run when a track plays through one
+  (YouTube's ffmpeg), and the player runs it. A slow source shows
+  "CONNECTING…" while it opens, in place of "CONNECTING TO YOUTUBE…".
 - A menu that does not fit below the mouse opens above it instead of
   over it, so a second click on the button that opened it closes it.
 - The project is now Popamp, a separate project grown from
