@@ -4,6 +4,8 @@
 use crate::model::{AppEvent, Model};
 use crate::panels::{button, Act};
 use crate::widgets::{Event, Form, Rect, Widget, BUTTON};
+use popamp_audio::dsp::Effect;
+use popamp_audio::EngineCmd;
 use popamp_plugins::installed::{self, Installed, State};
 
 /// The plug-ins in the plug-ins folder and what became of each.
@@ -22,16 +24,20 @@ impl Model {
         let n = self.plugins.loads;
         let (root, config, cx, events) = (self.paths.plugins_dir(), self.config.plugins(), self.source_context(), self.events.clone());
         let _ = std::thread::Builder::new().name("popamp-plugins".into()).spawn(move || {
-            events.send(AppEvent::Plugins(n, installed::load_all(&root, &config, &cx)));
+            let list = installed::load_all(&root, &config, &cx);
+            let effects = installed::effects(&list);
+            events.send(AppEvent::Plugins(n, list, effects));
         });
     }
 
-    /// Puts the plug-ins that are on in front of the built-in sources.
-    pub fn on_plugins(&mut self, n: u64, list: Vec<Installed>) {
+    /// Puts the source plug-ins that are on in front of the built-in
+    /// sources, and gives the engine the dsp ones.
+    pub fn on_plugins(&mut self, n: u64, list: Vec<Installed>, effects: Vec<Box<dyn Effect>>) {
         if n != self.plugins.loads {
             return;
         }
         self.sources.set_plugins(installed::sources(&list));
+        self.engine.send(EngineCmd::Effects(effects));
         self.plugins.list = list;
     }
 }
@@ -238,16 +244,16 @@ mod tests {
         }
         let load = |m: &Model| installed::load_all(&m.paths.plugins_dir(), &m.config.plugins(), &m.source_context());
         let list = load(&m);
-        m.on_plugins(m.plugins.loads, list);
+        m.on_plugins(m.plugins.loads, list, Vec::new());
         assert_eq!(m.sources.of("https://test.invalid/list").id(), "http", "not allowed yet");
         m.config.set_plugin_grant("test", "exec=sh;net=");
         let list = load(&m);
-        m.on_plugins(m.plugins.loads, list);
+        m.on_plugins(m.plugins.loads, list, Vec::new());
         assert_eq!(m.sources.of("https://test.invalid/list").id(), "test");
         m.add_now(vec!["https://test.invalid/list".into()], AddMode::Append);
         let got: Vec<_> = m.playlist.entries().iter().map(|e| (e.location.clone(), e.file_title.clone())).collect();
         assert_eq!(got[1], ("https://test.invalid/list/2".to_string(), Some("Track 2".to_string())));
-        m.on_plugins(m.plugins.loads - 1, Vec::new());
+        m.on_plugins(m.plugins.loads - 1, Vec::new(), Vec::new());
         assert_eq!(m.plugins.list.len(), 1, "an older answer is dropped");
     }
 }

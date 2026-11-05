@@ -1,15 +1,17 @@
 //! Runs one plug-in: its module compiled once, a small pool of instances
 //! so two worker threads can call it at once, and the host functions it
 //! may use: `popamp_exec`, limited to the programs its manifest names, and
-//! `popamp_now`, the time.
+//! `popamp_now`, the time. A dsp plug-in gets an instance of its own for
+//! the engine instead: see [`Dsp`].
 
 use crate::manifest::{Kind, Manifest, SourceSpec, MODULE};
-use extism::{CurrentPlugin, Function, Pool, PoolBuilder, UserData, Val, PTR};
+use extism::{CompiledPlugin, CurrentPlugin, Function, Pool, PoolBuilder, UserData, Val, PTR};
+use popamp_audio::dsp::Effect;
 use popamp_audio::pipe::Pipe;
 use popamp_audio::source::{Context, Playback, Source};
 use popamp_core::meta::TrackMeta;
 use popamp_core::plformats::Item;
-use popamp_plugin_api::{calls, config, host, ExecOutput, ExecRequest, Play, Tags, Track, Version, VERSION};
+use popamp_plugin_api::{bytes_of, calls, config, host, samples_of, ExecOutput, ExecRequest, Format, Play, Tags, Track, Version, VERSION};
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use std::io::Read;
@@ -21,6 +23,9 @@ use std::time::{Duration, Instant};
 
 /// The longest a call may run, the programs it starts included.
 pub const CALL_TIME: Duration = Duration::from_secs(60);
+/// The longest a dsp call may run; it holds up the sound, so this is the
+/// limit for a plug-in that hangs, not the budget of a block.
+pub const DSP_CALL_TIME: Duration = Duration::from_millis(250);
 /// Failed calls in a row (traps, timeouts) that switch a plug-in off.
 pub const FAILURES_TO_STOP: u32 = 3;
 /// Instances per plug-in: calls beyond this many wait for one to be free.
@@ -30,6 +35,7 @@ const MEMORY_PAGES: u32 = 1024;
 
 pub struct Plugin {
     manifest: Manifest,
+    compiled: Arc<CompiledPlugin>,
     pool: Pool,
     programs: Arc<Programs>,
     failures: AtomicU32,
@@ -77,6 +83,7 @@ impl Plugin {
 
     fn load_with(dir: &Path, values: &HashMap<String, String>, cx: &Context, call_time: Duration) -> Result<Plugin, String> {
         let manifest = Manifest::load(dir)?;
+        let call_time = if manifest.kind == Kind::Dsp { call_time.min(DSP_CALL_TIME) } else { call_time };
         let wasm = std::fs::read(dir.join(MODULE)).map_err(|e| format!("{MODULE}: {e}"))?;
         let settings = settings_of(&manifest, values);
         let programs = Arc::new(Programs::new(&manifest, &settings));
@@ -93,8 +100,9 @@ impl Plugin {
             .compile()
             .map_err(|e| format!("cannot compile {MODULE}: {e}"))?;
         let compiled = Arc::new(compiled);
-        let pool = PoolBuilder::new().with_max_instances(INSTANCES).build(move || extism::Plugin::new_from_compiled(&compiled));
-        let plugin = Plugin { manifest, pool, programs, failures: AtomicU32::new(0), off: AtomicBool::new(false) };
+        let for_pool = compiled.clone();
+        let pool = PoolBuilder::new().with_max_instances(INSTANCES).build(move || extism::Plugin::new_from_compiled(&for_pool));
+        let plugin = Plugin { manifest, compiled, pool, programs, failures: AtomicU32::new(0), off: AtomicBool::new(false) };
         let api: Version = plugin.call(calls::API_VERSION, &())?;
         if !VERSION.loads(api) {
             return Err(format!("built for plug-in API {api}, this Popamp has {VERSION}"));
@@ -116,9 +124,28 @@ impl Plugin {
         self.off.store(false, Ordering::Relaxed);
     }
 
-    fn spec(&self) -> &SourceSpec {
-        let Kind::Source(spec) = &self.manifest.kind;
-        spec
+    fn spec(&self) -> Option<&SourceSpec> {
+        match &self.manifest.kind {
+            Kind::Source(spec) => Some(spec),
+            Kind::Dsp => None,
+        }
+    }
+
+    /// An instance of a dsp plug-in for the engine, which alone calls it.
+    pub fn effect(self: &Arc<Self>) -> Result<Dsp, String> {
+        let instance = extism::Plugin::new_from_compiled(&self.compiled).map_err(|e| format!("{e:#}"))?;
+        Ok(Dsp { plugin: self.clone(), instance, rate: 44_100 })
+    }
+
+    /// Counts a failed dsp call: every failure counts, since a block
+    /// that fails is played unchanged.
+    fn dsp_failed(&self, why: &str) {
+        let n = self.failures.fetch_add(1, Ordering::Relaxed) + 1;
+        log::warn!("plug-in {}: {why}", self.manifest.id);
+        if n >= FAILURES_TO_STOP {
+            self.off.store(true, Ordering::Relaxed);
+            log::warn!("plug-in {} switched off after {n} failures", self.manifest.id);
+        }
     }
 
     /// Calls `name` with `input` as JSON and reads its JSON answer.
@@ -246,7 +273,7 @@ impl Source for Plugin {
     }
 
     fn handles(&self, location: &str) -> bool {
-        !self.is_off() && self.spec().takes(location)
+        !self.is_off() && self.spec().is_some_and(|s| s.takes(location))
     }
 
     fn expand(&self, location: &str, _cx: &Context) -> Result<Option<Vec<Item>>, String> {
@@ -266,7 +293,58 @@ impl Source for Plugin {
     }
 
     fn slow(&self) -> bool {
-        self.spec().slow
+        self.spec().is_some_and(|s| s.slow)
+    }
+}
+
+/// A dsp plug-in as the engine runs it. A block that fails, comes back
+/// with another length or takes longer than half its playing time plays
+/// unchanged, and counts as a failure of the plug-in.
+pub struct Dsp {
+    plugin: Arc<Plugin>,
+    instance: extism::Plugin,
+    rate: u32,
+}
+
+impl Dsp {
+    fn call(&mut self, block: &[f32]) -> Result<Vec<f32>, String> {
+        let bytes = bytes_of(block);
+        let started = Instant::now();
+        let out: Vec<u8> = self.instance.call(calls::PROCESS, bytes.as_slice()).map_err(|e| e.root_cause().to_string())?;
+        let budget = Duration::from_secs_f64(block.len() as f64 / 2.0 / self.rate as f64 / 2.0);
+        if started.elapsed() > budget {
+            return Err(format!("a block took {:?}, more than its {budget:?}", started.elapsed()));
+        }
+        if out.len() != bytes.len() {
+            return Err(format!("a block of {} bytes came back as {}", bytes.len(), out.len()));
+        }
+        Ok(samples_of(&out))
+    }
+}
+
+impl Effect for Dsp {
+    fn reset(&mut self, rate: u32) {
+        self.rate = rate.max(1);
+        if self.plugin.is_off() {
+            return;
+        }
+        let format = serde_json::to_string(&Format { rate: self.rate }).unwrap_or_default();
+        if let Err(e) = self.instance.call::<&str, ()>(calls::RESET, &format) {
+            self.plugin.dsp_failed(&e.root_cause().to_string());
+        }
+    }
+
+    fn process(&mut self, block: &mut [f32]) {
+        if self.plugin.is_off() || block.is_empty() {
+            return;
+        }
+        match self.call(block) {
+            Ok(out) => {
+                block.copy_from_slice(&out);
+                self.plugin.failures.store(0, Ordering::Relaxed);
+            }
+            Err(e) => self.plugin.dsp_failed(&e),
+        }
     }
 }
 
@@ -405,6 +483,66 @@ default = "/opt/ffmpeg"
         let told: u64 = url.strip_prefix("http://now/").unwrap().parse().unwrap();
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
         assert!(now.abs_diff(told) < 5_000, "told {told}, now {now}");
+    }
+
+    /// The dsp side of the test plug-in: `fixtures/test-dsp` with the
+    /// module of `fixtures/test`, put together in a folder of its own.
+    fn test_dsp(mode: &str) -> Arc<Plugin> {
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let dir = std::env::temp_dir().join(format!("popamp-dsp-{}-{mode}", std::process::id())).join("test-dsp");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::copy(fixtures.join("test-dsp/plugin.toml"), dir.join("plugin.toml")).unwrap();
+        std::fs::copy(fixtures.join("test/plugin.wasm"), dir.join("plugin.wasm")).unwrap();
+        let values = HashMap::from([("mode".to_string(), mode.to_string())]);
+        Arc::new(Plugin::load(&dir, &values, &Context::default()).unwrap())
+    }
+
+    /// A block of `frames` stereo frames, left 1.0 and right -1.0.
+    fn block(frames: usize) -> Vec<f32> {
+        [1.0, -1.0].repeat(frames)
+    }
+
+    #[test]
+    fn a_dsp_plugin_changes_each_block_and_knows_the_rate() {
+        let mut gain = test_dsp("gain").effect().unwrap();
+        gain.reset(8_000);
+        let mut b = block(4096);
+        gain.process(&mut b);
+        assert_eq!(b, [0.5, -0.5].repeat(4096));
+        let mut rate = test_dsp("rate").effect().unwrap();
+        rate.reset(8_000);
+        let mut b = block(4096);
+        rate.process(&mut b);
+        assert!(b.iter().all(|s| *s == 8_000.0), "{:?}", &b[..4]);
+    }
+
+    #[test]
+    fn a_failed_or_late_dsp_block_plays_unchanged_and_three_in_a_row_switch_it_off() {
+        for mode in ["short", "trap", "loop"] {
+            let p = test_dsp(mode);
+            let mut e = p.effect().unwrap();
+            e.reset(8_000);
+            for _ in 0..FAILURES_TO_STOP {
+                let started = Instant::now();
+                let mut b = block(4096);
+                e.process(&mut b);
+                assert_eq!(b, block(4096), "{mode}");
+                assert!(started.elapsed() < Duration::from_secs(1), "{mode}: {:?}", started.elapsed());
+            }
+            assert!(p.is_off(), "{mode}");
+        }
+        // 1 frame at 1 MHz has half a microsecond: no call is that quick.
+        let p = test_dsp("gain");
+        let mut e = p.effect().unwrap();
+        e.reset(1_000_000);
+        let mut b = block(1);
+        e.process(&mut b);
+        assert_eq!(b, block(1));
+        p.turn_on();
+        e.reset(8_000);
+        let mut b = block(4096);
+        e.process(&mut b);
+        assert_eq!(b[0], 0.5, "on again");
     }
 
     #[test]

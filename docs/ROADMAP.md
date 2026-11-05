@@ -10,9 +10,6 @@ open an issue first for larger items.
   distributions.
 - **Golden-image tests in CI:** render windows with `POPAMP_SNAPSHOT` under
   Xvfb and compare against committed PNGs.
-- **Plug-ins:** the `dsp` interface and an example plug-in; see
-  [plugins.md](plugins.md). Source plug-ins work, and YouTube is one
-  ([plugin-youtube](https://github.com/popamp/plugin-youtube)).
 
 ## First release
 

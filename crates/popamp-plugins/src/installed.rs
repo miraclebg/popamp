@@ -4,7 +4,8 @@
 //! version that asks for more waits to be allowed again.
 
 use crate::host::Plugin;
-use crate::manifest::{Manifest, Permissions};
+use crate::manifest::{Kind, Manifest, Permissions};
+use popamp_audio::dsp::Effect;
 use popamp_audio::source::{Context, Source};
 use popamp_core::config::PluginConfig;
 use std::collections::HashMap;
@@ -99,12 +100,29 @@ pub fn values(m: &Manifest, config: &PluginConfig) -> HashMap<String, String> {
     m.settings.iter().filter_map(|s| config.value(&m.id, &s.key).map(|v| (s.key.clone(), v.to_string()))).collect()
 }
 
+/// The plug-ins that are on, dsp ones or the others,, in folder order.
+fn on(list: &[Installed], dsp: bool) -> impl Iterator<Item = &Arc<Plugin>> {
+    list.iter().filter_map(move |i| match &i.state {
+        State::On(p) if (p.manifest().kind == Kind::Dsp) == dsp => Some(p),
+        _ => None,
+    })
+}
+
 /// The sources of the plug-ins that are on, in folder order.
 pub fn sources(list: &[Installed]) -> Vec<Arc<dyn Source>> {
-    list.iter()
-        .filter_map(|i| match &i.state {
-            State::On(p) => Some(p.clone() as Arc<dyn Source>),
-            _ => None,
+    on(list, false).map(|p| p.clone() as Arc<dyn Source>).collect()
+}
+
+/// An instance of each dsp plug-in that is on, in folder order, for the
+/// engine; one that cannot be made is left out.
+pub fn effects(list: &[Installed]) -> Vec<Box<dyn Effect>> {
+    on(list, true)
+        .filter_map(|p| match p.effect() {
+            Ok(e) => Some(Box::new(e) as Box<dyn Effect>),
+            Err(e) => {
+                log::warn!("plug-in {}: {e}", p.manifest().id);
+                None
+            }
         })
         .collect()
 }
@@ -146,6 +164,30 @@ mod tests {
         let list = load_all(&root, &config("exec=sh;net="), &Context::default());
         assert!(matches!(&list[0].state, State::Failed(_, e) if e.starts_with("cannot compile")), "allowed, so it was loaded");
         assert!(sources(&list).is_empty());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn sources_go_before_the_built_in_ones_and_dsp_plugins_to_the_engine() {
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let root = std::env::temp_dir().join(format!("popamp-installed-kinds-{}", std::process::id()));
+        for id in ["test", "test-dsp"] {
+            std::fs::create_dir_all(root.join(id)).unwrap();
+            std::fs::copy(fixtures.join(id).join("plugin.toml"), root.join(id).join("plugin.toml")).unwrap();
+            std::fs::copy(fixtures.join("test/plugin.wasm"), root.join(id).join("plugin.wasm")).unwrap();
+        }
+        let mut c = popamp_core::config::Config::load(root.join("popamp.ini"));
+        c.set_plugin_grant("test", "exec=sh;net=");
+        c.set_plugin_grant("test-dsp", "exec=;net=");
+        let list = load_all(&root, &c.plugins(), &Context::default());
+        let ids: Vec<String> = sources(&list).iter().map(|s| s.id().to_string()).collect();
+        assert_eq!(ids, ["test"]);
+        let mut fx = effects(&list);
+        assert_eq!(fx.len(), 1);
+        let mut b = vec![1.0; 8192];
+        fx[0].reset(8_000);
+        fx[0].process(&mut b);
+        assert_eq!(b[0], 0.5);
         std::fs::remove_dir_all(&root).unwrap();
     }
 

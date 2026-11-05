@@ -1,0 +1,18 @@
+id = "test-dsp"
+name = "Test DSP"
+version = "0.1.0"
+api = "1.0"
+kind = "dsp"
+description = "Answers the host's tests with the module of ../test; see tests/test-plugin."
+
+[[setting]]
+key = "mode"
+label = "Mode"
+type = "text"
+default = "gain"
+
+[[setting]]
+key = "gain"
+label = "Gain"
+type = "text"
+default = "0.5"

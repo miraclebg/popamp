@@ -45,9 +45,10 @@ pub enum AppEvent {
     Dialog(DialogResult),
     Remote(crate::ipc::Request),
     Museum(crate::museum::Fetched),
-    /// The plug-ins, loaded anew; the number is that of the request.
+    /// The plug-ins, loaded anew, and an instance of each dsp one for the
+    /// engine; the number is that of the request.
     #[cfg(feature = "plugins")]
-    Plugins(u64, Vec<popamp_plugins::installed::Installed>),
+    Plugins(u64, Vec<popamp_plugins::installed::Installed>, Vec<Box<dyn popamp_audio::dsp::Effect>>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

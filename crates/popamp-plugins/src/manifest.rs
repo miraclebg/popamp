@@ -24,6 +24,9 @@ pub struct Manifest {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Kind {
     Source(SourceSpec),
+    /// Changes the decoded sound; it may not run programs or reach the
+    /// network, since it runs on every block.
+    Dsp,
 }
 
 /// Which locations a source takes, so the player can tell without
@@ -125,6 +128,9 @@ impl Manifest {
         check_id(&f.id)?;
         let api = check_api(&f.api)?;
         let kind = kind_of(&f.kind, f.source)?;
+        if kind == Kind::Dsp && f.permissions != Permissions::default() {
+            return Err("a dsp plug-in may not run programs or reach the network".into());
+        }
         check_exec(&f.permissions)?;
         check_settings(&f.settings)?;
         Ok(Manifest {
@@ -159,7 +165,9 @@ fn kind_of(kind: &str, source: Option<SourceSpec>) -> Result<Kind, String> {
     match (kind, source) {
         ("source", Some(spec)) => Ok(Kind::Source(check_hosts(spec)?)),
         ("source", None) => Err("a source needs a [source] table with its hosts".into()),
-        (other, _) => Err(format!("unknown kind {other:?}; this Popamp knows \"source\"")),
+        ("dsp", None) => Ok(Kind::Dsp),
+        ("dsp", Some(_)) => Err("a dsp plug-in has no [source] table".into()),
+        (other, _) => Err(format!("unknown kind {other:?}; this Popamp knows \"source\" and \"dsp\"")),
     }
 }
 
@@ -226,7 +234,7 @@ default = "yt-dlp"
     fn reads_a_source_manifest() {
         let m = Manifest::parse(YOUTUBE).unwrap();
         assert_eq!((m.id.as_str(), m.api.to_string(), m.version.as_str()), ("youtube", "1.0".into(), "1.0.0"));
-        let Kind::Source(spec) = &m.kind;
+        let Kind::Source(spec) = &m.kind else { panic!("{:?}", m.kind) };
         assert!(spec.slow);
         assert_eq!(m.permissions.exec, ["yt-dlp", "ffmpeg"]);
         assert!(m.permissions.net.is_empty());
@@ -236,7 +244,7 @@ default = "yt-dlp"
     #[test]
     fn a_source_takes_urls_on_its_hosts_only() {
         let m = Manifest::parse(YOUTUBE).unwrap();
-        let Kind::Source(spec) = &m.kind;
+        let Kind::Source(spec) = &m.kind else { panic!("{:?}", m.kind) };
         for yes in
             ["https://youtube.com/watch?v=a", "http://www.youtube.com/x", "https://user@music.youtube.com:443/", "https://YOUTU.BE/a"]
         {
@@ -260,7 +268,7 @@ default = "yt-dlp"
             (("api = \"1.0\"", "api = \"2.0\""), too_new.as_str()),
             (("api = \"1.0\"", "api = \"1\""), "bad API version \"1\", expected MAJOR.MINOR"),
             (("id = \"youtube\"", "id = \"You Tube\""), "id \"You Tube\" must be [a-z0-9-]"),
-            (("kind = \"source\"", "kind = \"vis\""), "unknown kind \"vis\"; this Popamp knows \"source\""),
+            (("kind = \"source\"", "kind = \"vis\""), "unknown kind \"vis\"; this Popamp knows \"source\" and \"dsp\""),
             (("[source]", "[other]"), "unknown field"),
             (("exec = [\"yt-dlp\"", "exec = [\"/usr/bin/yt-dlp\""), "exec \"/usr/bin/yt-dlp\" must be a program name, not a path"),
             (("\"*.youtube.com\"", "\"*.YouTube.com\""), "host \"*.YouTube.com\" must be a lowercase name, or *. and a name"),
@@ -274,6 +282,16 @@ default = "yt-dlp"
         assert_eq!(Manifest::parse(&twice).unwrap_err(), "setting \"yt-dlp\" is given twice");
         let no_source = YOUTUBE.split("[source]").next().unwrap().to_string() + "[permissions]\n";
         assert_eq!(Manifest::parse(&no_source).unwrap_err(), "a source needs a [source] table with its hosts");
+    }
+
+    #[test]
+    fn a_dsp_plugin_changes_sound_and_may_do_nothing_else() {
+        let dsp = "id = \"crossfeed\"\nname = \"Crossfeed\"\nversion = \"1\"\napi = \"1.0\"\nkind = \"dsp\"\n";
+        assert_eq!(Manifest::parse(dsp).unwrap().kind, Kind::Dsp);
+        let with = |extra: &str| Manifest::parse(&format!("{dsp}{extra}")).unwrap_err();
+        assert_eq!(with("[source]\nhosts = [\"a.b\"]\n"), "a dsp plug-in has no [source] table");
+        assert_eq!(with("[permissions]\nexec = [\"sh\"]\n"), "a dsp plug-in may not run programs or reach the network");
+        assert_eq!(with("[permissions]\nnet = [\"a.b\"]\n"), "a dsp plug-in may not run programs or reach the network");
     }
 
     #[test]

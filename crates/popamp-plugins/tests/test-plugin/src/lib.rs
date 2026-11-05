@@ -1,8 +1,10 @@
-//! A source plug-in for the host's tests. The path of a location under
-//! `https://test.invalid/` says what to do.
+//! A plug-in for the host's tests: a source with `fixtures/test`, where
+//! the path of a location under `https://test.invalid/` says what to do,
+//! and a dsp with `fixtures/test-dsp`, where its `mode` setting does.
 
 use extism_pdk::*;
-use popamp_plugin_api::{config as keys, ExecOutput, ExecRequest, Play, Tags, Track, VERSION};
+use popamp_plugin_api::{bytes_of, config as keys, samples_of, ExecOutput, ExecRequest, Format, Play, Tags, Track, VERSION};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 #[host_fn]
 extern "ExtismHost" {
@@ -78,4 +80,33 @@ pub fn open(Json(location): Json<String>) -> FnResult<Json<Play>> {
         other => return Err(WithReturnCode::new(Error::msg(format!("no track at {other}")), 1)),
     };
     Ok(Json(play))
+}
+
+/// The rate of the last `reset`.
+static RATE: AtomicU32 = AtomicU32::new(0);
+
+#[plugin_fn]
+pub fn reset(Json(format): Json<Format>) -> FnResult<()> {
+    RATE.store(format.rate, Ordering::Relaxed);
+    Ok(())
+}
+
+#[plugin_fn]
+pub fn process(block: Vec<u8>) -> FnResult<Vec<u8>> {
+    let mut samples = samples_of(&block);
+    match config::get("mode")?.unwrap_or_default().as_str() {
+        "gain" => {
+            let gain: f32 = config::get("gain")?.unwrap_or_default().parse()?;
+            samples.iter_mut().for_each(|s| *s *= gain);
+        }
+        // Every sample is the rate it was told.
+        "rate" => samples.fill(RATE.load(Ordering::Relaxed) as f32),
+        "short" => samples.truncate(1),
+        "trap" => panic!("a bug in the plug-in"),
+        "loop" => loop {
+            std::hint::black_box(());
+        },
+        other => return Err(WithReturnCode::new(Error::msg(format!("no mode {other:?}")), 1)),
+    }
+    Ok(bytes_of(&samples))
 }
