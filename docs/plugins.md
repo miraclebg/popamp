@@ -224,7 +224,8 @@ its own, called only by the engine, so it may keep state in statics.
   started through `exec` included (a program still running then is
   killed). A plug-in that traps or runs out of time or memory (64 MiB)
   fails that call; three such failures in a row switch it off until the
-  user presses OK in "Plug-ins…". An error the plug-in returns itself
+  user presses OK in "Plug-ins…". The title display says so with the
+  last failure, and "Plug-ins…" shows it next to the plug-in. An error the plug-in returns itself
   ("video unavailable") is not a failure.
 - A `dsp` plug-in runs on the engine thread, which decodes and fills
   the output buffer (`buffer_ms`), never in a sound card callback. A
