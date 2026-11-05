@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Building needs Rust 1.96 or newer (was 1.89): the plug-in host,
+  wasmtime through Extism, needs it.
 - YouTube left the core for a plug-in,
   [plugin-youtube](https://github.com/popamp/plugin-youtube), which needs
   a build with plug-ins. The settings `ytdlp_path`, `ffmpeg_path` and

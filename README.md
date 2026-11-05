@@ -79,7 +79,7 @@ Sayooj K Karun and keeps its history; see [THIRD_PARTY.md](THIRD_PARTY.md).
 
 | Need | Version | Why |
 |---|---|---|
-| Rust toolchain (`rustc`, `cargo`) | 1.89 or newer | compiler (install with [rustup](https://rustup.rs)) |
+| Rust toolchain (`rustc`, `cargo`) | 1.96 or newer | compiler (install with [rustup](https://rustup.rs)) |
 | C compiler (`gcc` or `clang`) | any | the `ring` crate (TLS for HTTPS streams) compiles C code |
 | Internet access | — | `cargo` downloads crates on the first build |
 
@@ -265,7 +265,7 @@ versions move to the plug-in's settings (`[plugin.youtube]` in
 | Kernel | 7.0.12-201.fc44 |
 | Session | KDE Plasma on Wayland, Popamp running through Xwayland 24.1.12 |
 | Audio | PipeWire 1.6.7 via alsa-lib 1.2.16.1 (`default` device) |
-| Rust | rustc / cargo 1.96.0 (minimum supported version 1.89 checked with `cargo +1.89 check --locked`) |
+| Rust | rustc / cargo 1.96.0 (minimum supported version 1.96 checked with `cargo +1.96 check --locked`) |
 | Dialogs | zenity 4.2.2 |
 
 **Not tested:**
