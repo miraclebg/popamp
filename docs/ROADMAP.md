@@ -10,8 +10,11 @@ open an issue first for larger items.
   distributions.
 - **Golden-image tests in CI:** render windows with `POPAMP_SNAPSHOT` under
   Xvfb and compare against committed PNGs.
-- **Non-blocking YouTube startup:** resolve with `yt-dlp` off the audio
-  thread so Stop works while connecting.
+- **Non-blocking open:** open tracks off the engine thread, so Stop works
+  while a stream is connecting.
+- **Plug-ins:** WebAssembly plug-ins, starting with sources; see
+  [plugins.md](plugins.md). YouTube moves out of the core into the first
+  one.
 
 ## Planned
 
@@ -33,4 +36,4 @@ open an issue first for larger items.
 - MilkDrop-compatible visualizer window through libprojectM.
 - Local media library (folder scanning, search, library playlists).
 - Modern skins (Wasabi XML layout and the MAKI script VM).
-- A dynamic plug-in ABI for third-party decoders and effects.
+- Decoder and visualizer plug-ins.
