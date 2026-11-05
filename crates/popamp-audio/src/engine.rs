@@ -929,7 +929,7 @@ mod tests {
 
     #[test]
     fn plays_what_an_added_source_says_to_play() {
-        let (engine, events) = engine_with(Sources::new(vec![Box::new(ShellSource)]));
+        let (engine, events) = engine_with(Sources::new(vec![Arc::new(ShellSource)]));
         // 0.2 s of stereo f32 silence at 48 kHz.
         engine.send(EngineCmd::Open { id: 1, location: "pipe:head -c 76800 /dev/zero".into(), start_ms: 0 });
         assert_eq!(events_until_finished(&events), ["started 1", "finished 1"]);

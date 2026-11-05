@@ -1,0 +1,22 @@
+# The plug-in the host's tests load. Not part of the workspace: it builds
+# for WebAssembly. Rebuild with ../build-test-plugin.sh.
+[package]
+name = "popamp-test-plugin"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+extism-pdk = "1.4"
+popamp-plugin-api = { path = "../../../popamp-plugin-api" }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+
+[workspace]

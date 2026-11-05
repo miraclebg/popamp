@@ -7,11 +7,13 @@
 //! on a worker thread, never on the engine or UI thread.
 
 use crate::pipe::Pipe;
+use parking_lot::RwLock;
 use popamp_core::meta::TrackMeta;
 use popamp_core::playlist::is_url;
 use popamp_core::plformats::{self, is_playlist, Item};
 use popamp_core::{is_audio_file, text};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// What a call needs from the player's settings.
 #[derive(Debug, Clone, Default)]
@@ -45,22 +47,31 @@ pub trait Source: Send + Sync {
     }
 }
 
-/// The sources in the order they are asked; the built-in ones come last.
+/// The sources in the order they are asked: plug-ins, then the ones the
+/// player was built with, then HTTP and files. Shared by every thread that
+/// asks; plug-ins can be swapped while it runs.
 pub struct Sources {
-    list: Vec<Box<dyn Source>>,
+    plugins: RwLock<Vec<Arc<dyn Source>>>,
+    built_in: Vec<Arc<dyn Source>>,
 }
 
 impl Sources {
-    pub fn new(first: Vec<Box<dyn Source>>) -> Sources {
-        let mut list = first;
-        list.push(Box::new(HttpSource));
-        list.push(Box::new(FileSource));
-        Sources { list }
+    pub fn new(first: Vec<Arc<dyn Source>>) -> Sources {
+        let mut built_in = first;
+        built_in.push(Arc::new(HttpSource));
+        built_in.push(Arc::new(FileSource));
+        Sources { plugins: RwLock::new(Vec::new()), built_in }
+    }
+
+    /// Replaces the plug-ins asked before the built-in sources.
+    pub fn set_plugins(&self, plugins: Vec<Arc<dyn Source>>) {
+        *self.plugins.write() = plugins;
     }
 
     /// The source that takes `location`; anything not a URL is a file.
-    pub fn of(&self, location: &str) -> &dyn Source {
-        self.list.iter().find(|s| s.handles(location)).map(|s| s.as_ref()).unwrap_or(&FileSource)
+    pub fn of(&self, location: &str) -> Arc<dyn Source> {
+        let plugin = self.plugins.read().iter().find(|s| s.handles(location)).cloned();
+        plugin.or_else(|| self.built_in.iter().find(|s| s.handles(location)).cloned()).unwrap_or_else(|| Arc::new(FileSource))
     }
 }
 
@@ -183,7 +194,9 @@ mod tests {
 
     #[test]
     fn each_location_goes_to_its_source_and_added_ones_are_asked_first() {
-        let sources = Sources::new(vec![Box::new(Test)]);
+        let sources = Sources::default();
+        assert_eq!(sources.of("test:1").id(), "file");
+        sources.set_plugins(vec![Arc::new(Test)]);
         for (loc, id) in [
             ("test:1", "test"),
             ("http://radio:8000/stream", "http"),
@@ -193,7 +206,8 @@ mod tests {
         ] {
             assert_eq!(sources.of(loc).id(), id, "{loc}");
         }
-        assert_eq!(Sources::default().of("test:1").id(), "file");
+        sources.set_plugins(Vec::new());
+        assert_eq!(sources.of("test:1").id(), "file");
     }
 
     #[test]

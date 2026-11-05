@@ -16,6 +16,7 @@ categories = ["multimedia::audio"]
 popamp-core.workspace = true
 popamp-audio.workspace = true
 popamp-skin.workspace = true
+popamp-plugins.workspace = true
 winit.workspace = true
 softbuffer.workspace = true
 fontdue.workspace = true

@@ -107,6 +107,7 @@ commands! {
     EqSaveDefault = 50025,
     PlGenerateHtml = 50026,
     SkinMuseum = 50027,
+    Plugins = 50028,
 }
 
 #[cfg(test)]
