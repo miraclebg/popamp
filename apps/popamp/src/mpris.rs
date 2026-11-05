@@ -87,7 +87,7 @@ impl Root {
     }
     #[zbus(property)]
     fn identity(&self) -> String {
-        "Popamp".into()
+        crate::edition::NAME.into()
     }
     #[zbus(property)]
     fn desktop_entry(&self) -> String {

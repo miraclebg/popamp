@@ -2,6 +2,7 @@ name: Release
 
 # A tag v<version> builds the Linux packages and publishes them as a GitHub
 # release; a manual run only builds them (download from the run's page).
+# Two of each: popamp, the player, and popamp-plus, built with plug-ins.
 on:
   push:
     tags: ["v*"]
@@ -36,8 +37,8 @@ jobs:
             echo "tag $GITHUB_REF_NAME does not match Cargo.toml version $version" >&2
             exit 1
           fi
-      - run: cargo build --release --locked -p popamp
       - run: cargo test --release --locked --workspace
+      - run: cargo test --release --locked --workspace --features popamp/plugins
       - name: Install appimagetool
         # Pinned releases with checksums: this job can write to the repository.
         run: |
@@ -60,8 +61,14 @@ jobs:
           ./appimagetool.AppImage --appimage-extract >/dev/null
           echo "$RUNNER_TEMP/squashfs-root/usr/bin" >> "$GITHUB_PATH"
           echo "APPIMAGE_RUNTIME=$RUNNER_TEMP/appimage-runtime" >> "$GITHUB_ENV"
-      - name: Package
+      - name: Package popamp
         run: |
+          cargo build --release --locked -p popamp
+          sh packaging/build-deb.sh target/release/popamp dist
+          sh packaging/build-appimage.sh target/release/popamp dist
+      - name: Package popamp-plus
+        run: |
+          cargo build --release --locked -p popamp --features plugins
           sh packaging/build-deb.sh target/release/popamp dist
           sh packaging/build-appimage.sh target/release/popamp dist
           ls -lh dist

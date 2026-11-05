@@ -1,5 +1,7 @@
 #!/bin/sh
-# Builds a .deb package from an already-compiled release binary.
+# Builds a .deb package from an already-compiled release binary: popamp,
+# or popamp-plus for a binary built with --features plugins (the binary
+# says which in its /VERSION). Each replaces the other.
 # Usage: packaging/build-deb.sh [target/release/popamp] [output-dir]
 # Needs: dpkg-deb, objdump and strip (binutils). Version is read from Cargo.toml.
 # Adapted from Ferramp's build-deb.sh (see THIRD_PARTY.md).
@@ -17,6 +19,28 @@ if [ ! -x "$bin" ]; then
 fi
 
 version=$(grep -m1 '^version' "$root/Cargo.toml" | sed 's/.*"\(.*\)".*/\1/')
+# "popamp 0.1.0" or "popamp-plus 0.1.0".
+set -- $("$bin" /VERSION)
+package=$1
+if [ "${2:-}" != "$version" ]; then
+    echo "error: $bin is version ${2:-?}, Cargo.toml says $version" >&2
+    exit 1
+fi
+case "$package" in
+    popamp) other=""; extra=""; summary="Winamp-style skinnable audio player" ;;
+    popamp-plus)
+        summary="Winamp-style skinnable audio player, with plug-ins"
+        other="Provides: popamp
+Conflicts: popamp
+Replaces: popamp
+"
+        extra=" .
+ This is Popamp Plus, built with plug-ins: WebAssembly modules, installed
+ separately and allowed one by one, that add sources such as YouTube and
+ sound effects such as crossfeed."
+        ;;
+    *) echo "error: $bin says it is $package, not popamp or popamp-plus" >&2; exit 1 ;;
+esac
 case "$(uname -m)" in
     x86_64) debarch=amd64 ;;
     aarch64|arm64) debarch=arm64 ;;
@@ -27,8 +51,8 @@ glibc=$(objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -u
 
 stagedir=$(mktemp -d)
 trap 'rm -rf "$stagedir"' EXIT INT TERM
-pkg="$stagedir/popamp"
-doc="$pkg/usr/share/doc/popamp"
+pkg="$stagedir/$package"
+doc="$pkg/usr/share/doc/$package"
 
 install -Dm755 -s "$bin" "$pkg/usr/bin/popamp"
 install -Dm644 "$here/popamp.desktop" "$pkg/usr/share/applications/popamp.desktop"
@@ -57,7 +81,7 @@ EOF
 # see them: ALSA for sound, X11 and xkbcommon for windows and keys.
 mkdir -p "$pkg/DEBIAN"
 cat > "$pkg/DEBIAN/control" <<EOF
-Package: popamp
+Package: $package
 Version: $version
 Section: sound
 Priority: optional
@@ -67,14 +91,15 @@ Installed-Size: $(du -sk "$pkg/usr" | cut -f1)
 Homepage: https://github.com/popamp/popamp
 Depends: libc6 (>= $glibc), libasound2t64 | libasound2, libx11-6, libx11-xcb1, libxcursor1, libxi6, libxkbcommon0, libxkbcommon-x11-0, fontconfig
 Recommends: zenity | kdialog, fonts-dejavu-core
-Description: Winamp-style skinnable audio player
+${other}Description: $summary
  Popamp is an audio player in the style of the classic Winamp 2: main
  window, equalizer and playlist editor that dock together, with support
  for classic .wsz skins. It plays MP3, Ogg Vorbis, FLAC, WAV, AIFF,
  AAC/M4A and internet radio streams.
 EOF
+[ -z "$extra" ] || printf '%s\n' "$extra" >> "$pkg/DEBIAN/control"
 
 mkdir -p "$outdir"
-deb="$outdir/popamp-${version}-linux-${debarch}.deb"
+deb="$outdir/${package}-${version}-linux-${debarch}.deb"
 dpkg-deb -Zgzip --root-owner-group --build "$pkg" "$deb" >/dev/null
 echo "Built $deb"

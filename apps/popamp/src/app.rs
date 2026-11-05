@@ -630,7 +630,7 @@ impl App {
             self.tip = None;
             return;
         }
-        let text = self.skins[k.index()].tooltip(&self.model, x, y).unwrap_or_else(|| format!("Popamp {}", env!("CARGO_PKG_VERSION")));
+        let text = self.skins[k.index()].tooltip(&self.model, x, y).unwrap_or_else(crate::edition::title);
         if self.tip.as_ref().is_none_or(|t| t.text != text) {
             self.tip = Some(Tooltip { text, since: Instant::now(), shown: None });
         }
@@ -1392,6 +1392,8 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::Dialog(r) => self.model.on_dialog(r),
             #[cfg(feature = "plugins")]
             AppEvent::Plugins(n, list, effects) => self.model.on_plugins(n, list, effects),
+            #[cfg(feature = "plugins")]
+            AppEvent::PluginStopped(id, why) => self.model.on_plugin_stopped(&id, &why),
             AppEvent::Museum(f) => {
                 if let Some(i) = self.panels.iter().position(|p| p.panel.kind() == PanelKind::SkinMuseum) {
                     self.panels[i].panel.fetched(f, &mut self.model);

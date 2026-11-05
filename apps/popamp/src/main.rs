@@ -6,6 +6,7 @@ mod bind;
 mod canvas;
 mod cli;
 mod dialogs;
+mod edition;
 mod font;
 mod headless;
 mod ipc;
@@ -43,7 +44,7 @@ fn main() {
         return;
     }
     if opts.version {
-        println!("popamp {}", env!("CARGO_PKG_VERSION"));
+        println!("{}", edition::version_line());
         return;
     }
     if let Some(dir) = &opts.render {
