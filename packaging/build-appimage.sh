@@ -26,7 +26,7 @@ command -v appimagetool >/dev/null 2>&1 || {
 }
 
 version=$(grep -m1 '^version' "$root/Cargo.toml" | sed 's/.*"\(.*\)".*/\1/')
-# "popamp 0.1.0" or "popamp-plus 0.1.0".
+# "popamp 0.5.0" or "popamp-plus 0.5.0".
 set -- $("$bin" /VERSION)
 if [ "${2:-}" != "$version" ]; then
     echo "error: $bin is version ${2:-?}, Cargo.toml says $version" >&2

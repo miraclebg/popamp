@@ -19,7 +19,7 @@ if [ ! -x "$bin" ]; then
 fi
 
 version=$(grep -m1 '^version' "$root/Cargo.toml" | sed 's/.*"\(.*\)".*/\1/')
-# "popamp 0.1.0" or "popamp-plus 0.1.0".
+# "popamp 0.5.0" or "popamp-plus 0.5.0".
 set -- $("$bin" /VERSION)
 package=$1
 if [ "${2:-}" != "$version" ]; then
@@ -54,14 +54,8 @@ trap 'rm -rf "$stagedir"' EXIT INT TERM
 pkg="$stagedir/$package"
 doc="$pkg/usr/share/doc/$package"
 
-install -Dm755 -s "$bin" "$pkg/usr/bin/popamp"
-install -Dm644 "$here/popamp.desktop" "$pkg/usr/share/applications/popamp.desktop"
-install -Dm644 "$here/popamp.metainfo.xml" "$pkg/usr/share/metainfo/popamp.metainfo.xml"
-install -Dm644 "$here/popamp-skin.xml" "$pkg/usr/share/mime/packages/popamp-skin.xml"
-install -Dm644 "$root/assets/logo/popamp.svg" "$pkg/usr/share/icons/hicolor/scalable/apps/popamp.svg"
-for n in 16 24 32 48 64 128 256; do
-    install -Dm644 "$root/assets/logo/png/popamp-$n.png" "$pkg/usr/share/icons/hicolor/${n}x${n}/apps/popamp.png"
-done
+sh "$here/install-files.sh" "$bin" "$pkg/usr"
+strip "$pkg/usr/bin/popamp"
 for f in README.md LICENSE-MIT LICENSE-APACHE THIRD_PARTY.md; do
     install -Dm644 "$root/$f" "$doc/$f"
 done
