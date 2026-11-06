@@ -6,12 +6,6 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added
-
-- An apt repository on GitHub Pages for Debian and Ubuntu, filled with
-  each release's debs by the release workflow and signed
-  (`packaging/apt/`), so Popamp updates with `apt upgrade`.
-
 ## [0.5.0] - 2026-11-06
 
 The first release of Popamp. It starts at 0.5.0 rather than 0.1.0, which
@@ -122,6 +116,9 @@ was Linamp's, since much has changed since then.
   44 (x86_64 and ARM64), built and published in a repository by the
   openSUSE Build Service (`packaging/obs/`), so they update with the
   system.
+- An apt repository on GitHub Pages for Debian and Ubuntu, filled with
+  each release's debs by the release workflow and signed
+  (`packaging/apt/`), so Popamp updates with `apt upgrade`.
 - `/RENDER=<dir>` (with optional `/SKIN=<file>` and files) draws every
   window in a set of fixed states to PNG files without a display or sound
   card, for skin previews and before/after comparisons. The set of states
