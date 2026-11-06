@@ -33,6 +33,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Windows (x86_64). Releases have a zip of each build with `popamp.exe`;
+  settings are in `%APPDATA%\popamp`. Sound goes to the default device
+  through WASAPI, fonts come from the system's font list, and files,
+  folders and questions use Windows' own dialogs. Started from cmd or
+  PowerShell, `/STATUS`, `/VERSION` and errors print in that console;
+  started otherwise, no console window opens. Remote commands reach a
+  running instance through a named pipe. A bar skin's strip is taken out
+  of the work area, as the taskbar's is. The media keys and the player
+  card by the volume flyout show the track and its cover, play, pause,
+  stop, skip, seek, and switch shuffle and repeat.
+- Media controls show the track's cover: the picture in its tags (the
+  front cover first), else an image beside it named `cover`, `folder`,
+  `front`, `album` or `albumart` (`.jpg`, `.jpeg`, `.png`). On Linux it is
+  MPRIS's `mpris:artUrl`, for desktop widgets and `playerctl`.
 - Two builds: `popamp`, the player, and `popamp-plus`, built with
   plug-ins. Releases have a deb and an AppImage of each; `popamp-plus`
   replaces `popamp` and the other way round. `/VERSION`, About and the

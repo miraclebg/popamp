@@ -1,12 +1,15 @@
-//! Win32: window styles through winit, shapes and work areas through the
-//! system calls.
+//! Win32: window styles through winit, shapes, the bar's strip and work
+//! areas through the system calls.
 
 use super::{shape_rects, Mask, WindowRole};
 use crate::bar::{Screen, Strip};
+use popamp_core::config::BarEdge;
+use std::cell::Cell;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT};
 use windows_sys::Win32::Graphics::Gdi::{
     CombineRgn, CreateRectRgn, DeleteObject, EnumDisplayMonitors, GetMonitorInfoW, SetWindowRgn, HDC, HMONITOR, MONITORINFO, RGN_OR,
 };
+use windows_sys::Win32::UI::Shell::{SHAppBarMessage, ABE_BOTTOM, ABE_TOP, ABM_NEW, ABM_REMOVE, ABM_SETPOS, APPBARDATA};
 use winit::platform::windows::WindowAttributesExtWindows;
 use winit::window::{Window, WindowAttributes, WindowLevel};
 
@@ -45,12 +48,16 @@ pub fn use_parent_console() {
     }
 }
 
-/// Nothing to connect to: the calls go straight to the system.
-pub struct Platform;
+/// Nothing to connect to: the calls go straight to the system. Holds the
+/// window registered as an application desktop toolbar, if any.
+pub struct Platform {
+    /// The bar window the shell keeps a strip for; null for none.
+    bar: Cell<HWND>,
+}
 
 impl Platform {
     pub fn connect() -> Platform {
-        Platform
+        Platform { bar: Cell::new(std::ptr::null_mut()) }
     }
 
     /// Shows only the pixels `mask` covers of a window `size` screen pixels
@@ -83,10 +90,43 @@ impl Platform {
         Ok(())
     }
 
-    /// Keeping other windows out of a bar's strip is not done on Windows
-    /// yet: the bar sits inside the work area, and others may cover it.
-    pub fn reserve(&self, _window: &Window, _strip: Strip) -> Result<(), String> {
+    /// Reserves `strip` for the bar `window`, as an application desktop
+    /// toolbar like the taskbar: the shell takes it out of the work area.
+    pub fn reserve(&self, window: &Window, strip: Strip) -> Result<(), String> {
+        let Some(hwnd) = hwnd(window) else { return Ok(()) };
+        if self.bar.get() != hwnd {
+            self.unregister();
+            // SAFETY: a filled APPBARDATA for a live window.
+            if unsafe { SHAppBarMessage(ABM_NEW, &mut appbar(hwnd)) } == 0 {
+                return Err("the shell refused a new application bar".into());
+            }
+            self.bar.set(hwnd);
+        }
+        let Screen { x, y, w, h } = strip.area();
+        let mut data = appbar(hwnd);
+        data.uEdge = match strip.edge {
+            BarEdge::Top => ABE_TOP,
+            BarEdge::Bottom => ABE_BOTTOM,
+        };
+        data.rc = RECT { left: x, top: y, right: x + w, bottom: y + h };
+        // SAFETY: as above; the call only reads `data`.
+        unsafe { SHAppBarMessage(ABM_SETPOS, &mut data) };
         Ok(())
+    }
+
+    /// Gives back the strip of `window`, a bar about to go.
+    pub fn release(&self, window: &Window) {
+        if hwnd(window).is_some_and(|h| h == self.bar.get()) {
+            self.unregister();
+        }
+    }
+
+    fn unregister(&self) {
+        let hwnd = self.bar.replace(std::ptr::null_mut());
+        if !hwnd.is_null() {
+            // SAFETY: a filled APPBARDATA; the shell drops the window's strip.
+            unsafe { SHAppBarMessage(ABM_REMOVE, &mut appbar(hwnd)) };
+        }
     }
 
     /// Each monitor's work area: the monitor less the taskbar and other
@@ -109,6 +149,18 @@ impl Platform {
         unsafe { EnumDisplayMonitors(std::ptr::null_mut(), std::ptr::null(), Some(each), &mut out as *mut _ as LPARAM) };
         out
     }
+}
+
+impl Drop for Platform {
+    fn drop(&mut self) {
+        self.unregister();
+    }
+}
+
+/// The toolbar data of `hwnd` with nothing else set.
+fn appbar(hwnd: HWND) -> APPBARDATA {
+    // SAFETY: APPBARDATA is plain data, valid all zero.
+    APPBARDATA { cbSize: size_of::<APPBARDATA>() as u32, hWnd: hwnd, ..unsafe { std::mem::zeroed() } }
 }
 
 fn hwnd(w: &Window) -> Option<HWND> {

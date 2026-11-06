@@ -6,33 +6,46 @@ open an issue first for larger items.
 ## Next
 
 - **Hands-on testing:** verify mouse interaction, docking, menus, dialogs,
-  drag & drop and double size across desktops (GNOME, KDE, Xfce, i3) and
-  distributions.
+  drag & drop and double size across desktops (GNOME, KDE, Xfce, i3),
+  distributions, and Windows 10 and 11.
 - **Golden-image tests in CI:** render windows with `POPAMP_SNAPSHOT` under
   Xvfb and compare against committed PNGs.
 
 ## First release
 
-The first release ships packages (deb for Linux, exe for Windows) and a
-Linux package repository. Two builds:
+The first release ships packages (deb and AppImage for Linux, a zip for
+Windows) and a Linux package repository. Two builds:
 
 - **popamp:** the player without plug-in support.
 - **popamp-plus:** the same player built with `--features plugins`.
 
-Done: both are built, tested and packaged (deb and AppImage, x86_64 and
-ARM64) by the release workflow; `popamp-plus` provides, conflicts with
-and replaces `popamp`. To do: Windows (Popamp runs on Linux only so
-far), and the package repository.
+Done: both are built, tested and packaged by the release workflow: deb
+and AppImage for x86_64 and ARM64, where `popamp-plus` provides,
+conflicts with and replaces `popamp`, and a zip for Windows x86_64.
+Popamp runs on Windows with sound, fonts, dialogs, remote control, the
+bar's strip and the media controls.
+
+To do:
+
+- Check on a real Windows machine what Wine cannot show: the bar's strip
+  shrinking the work area, the media keys, and the timeline, shuffle,
+  repeat and cover in the media overlay.
+- Merge the `windows` branch.
+- Decide whether a zip is enough for Windows or it needs an installer;
+  an installer would also register file types.
+- The package repository.
 
 Until then version numbers stay as they are, including the plug-in API
 (1.0), and change in place; they start to move with this release.
 
 ## Planned
 
-- **Preferences window:** output device and file-type registration (the
-  window itself, with buffer size, playlist font and title format, exists).
-- **Tags and art:** tag editor and album art (read/write through a tagging
-  crate).
+- **Preferences window:** output device, picked by name on ALSA and
+  WASAPI alike (both play on the default device now), and file-type
+  registration, on Linux and Windows (the window itself, with buffer
+  size, playlist font and title format, exists).
+- **Tags and art:** tag editor, and album art in the windows (the media
+  controls already show it).
 - **More formats:** Opus (libopus), MIDI (SoundFont synth), tracker modules
   (libopenmpt), CUE sheets.
 - **Playback extras:** crossfade, a ReplayGain scanner, bookmarks and

@@ -1,0 +1,51 @@
+<!doctype html>
+<!-- The README's top picture: 1280×720, drawn at ×2 by make-hero.sh into
+     hero.png. The screenshots are 550 pixels wide at ×2, so at 275 here
+     each of their pixels is one of the picture's. Colours follow the logo:
+     pink ring, yellow bolt, plum pit. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@font-face { font-family: 'Bricolage Grotesque'; font-weight: 500 700; src: url(fonts/bricolage-grotesque-latin.woff2) format('woff2'); }
+html, body { margin: 0; overflow: hidden; background: #170b2b; }
+.page {
+  width: 1280px; height: 720px; position: relative; overflow: hidden;
+  zoom: 2;
+  background:
+    radial-gradient(460px 260px at 640px 120px, #ff3d6e38, transparent 70%),
+    radial-gradient(900px 420px at 640px 560px, #6a3fd02e, transparent 70%),
+    linear-gradient(170deg, #2a1548 0%, #170b2b 100%);
+  color: #fffaf0;
+  font-family: Inter, sans-serif;
+}
+/* A faint analyzer along the bottom. */
+.bars { position: absolute; left: 0; right: 0; bottom: 0; height: 150px; display: flex; align-items: flex-end; gap: 6px; padding: 0 6px; opacity: .14; }
+.bars i { flex: 1; background: linear-gradient(#ffd23f, #ff3d6e); border-radius: 3px 3px 0 0; }
+.brand { position: absolute; top: 46px; left: 0; right: 0; display: flex; justify-content: center; align-items: center; gap: 26px; }
+.brand img { width: 104px; height: 104px; filter: drop-shadow(0 0 24px #ff3d6e99); }
+h1 { font-family: 'Bricolage Grotesque'; font-weight: 600; font-size: 96px; letter-spacing: -0.045em; line-height: 1; margin: 0 0 6px; }
+p { position: absolute; top: 166px; left: 0; right: 0; text-align: center; font-size: 24px; margin: 0; color: #e9def8; }
+p b { color: #ffd23f; font-weight: 600; }
+.shot { position: absolute; width: 275px; filter: drop-shadow(0 22px 30px #000b); }
+.shot.default { left: 168px; top: 252px; transform: rotate(-3deg); }
+.shot.steel   { left: 502px; top: 230px; z-index: 2; }
+.shot.modern  { left: 836px; top: 252px; transform: rotate(3deg); }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="bars" id="bars"></div>
+  <div class="brand"><img src="../logo/popamp.svg" alt=""><h1>Popamp</h1></div>
+  <p>The classic skinnable music player, <b>sharp at any size</b>. For Linux and Windows.</p>
+  <img class="shot default" src="../screenshots/default.png" alt="">
+  <img class="shot steel" src="../screenshots/steel.png" alt="">
+  <img class="shot modern" src="../screenshots/modern.png" alt="">
+</div>
+<script>
+// Fixed heights, so every render is the same picture.
+const h = [22,35,48,61,70,76,72,64,58,66,79,88,92,85,73,62,55,60,68,74,70,59,47,40,44,52,57,51,42,33,27,31,38,42,36,28,22,18,21,26,24,19,15,12,14,17,13,10];
+document.getElementById('bars').innerHTML = h.map(v => `<i style="height:${v}%"></i>`).join('');
+</script>
+</body>
+</html>

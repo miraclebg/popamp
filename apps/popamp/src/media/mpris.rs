@@ -6,15 +6,16 @@
 
 use super::Snapshot;
 use crate::cli::Remote;
-use crate::ipc::Request;
 use crate::model::AppEvent;
 use parking_lot::Mutex;
 use popamp_audio::Shared;
 use popamp_core::Command;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use winit::event_loop::EventLoopProxy;
 use zbus::interface;
+use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 
 const PATH: &str = "/org/mpris/MediaPlayer2";
@@ -23,13 +24,14 @@ const PATH: &str = "/org/mpris/MediaPlayer2";
 struct Ctx {
     proxy: EventLoopProxy<AppEvent>,
     snap: Arc<Mutex<Snapshot>>,
+    /// The cover file of the track in `snap`.
+    art: Arc<Mutex<Option<PathBuf>>>,
     shared: Arc<Shared>,
 }
 
 impl Ctx {
     fn send(&self, remotes: Vec<Remote>) {
-        let (tx, _rx) = crossbeam_channel::bounded(1);
-        let _ = self.proxy.send_event(AppEvent::Remote(Request { remotes, reply: tx }));
+        super::send(&self.proxy, remotes);
     }
 }
 
@@ -105,8 +107,8 @@ impl Player {
         self.ctx.send(vec![Remote::Cmd(Command::Previous)]);
     }
     fn pause(&self) {
-        if self.ctx.snap.lock().status == "Playing" {
-            self.ctx.send(vec![Remote::Cmd(Command::Pause)]);
+        if let Some(c) = super::pause(self.ctx.snap.lock().status) {
+            self.ctx.send(vec![Remote::Cmd(c)]);
         }
     }
     fn play_pause(&self) {
@@ -185,34 +187,21 @@ impl Player {
     #[zbus(property)]
     fn metadata(&self) -> HashMap<String, OwnedValue> {
         let snap = self.ctx.snap.lock();
-        let mut m = HashMap::new();
         let Some(t) = &snap.track else {
-            if let Some(v) = ObjectPath::try_from("/org/mpris/MediaPlayer2/TrackList/NoTrack").ok().and_then(owned) {
-                m.insert("mpris:trackid".into(), v);
-            }
-            return m;
+            return entries([("mpris:trackid", ObjectPath::try_from("/org/mpris/MediaPlayer2/TrackList/NoTrack").ok().and_then(owned))]);
         };
         let path = track_path(t.id);
-        if let Some(v) = ObjectPath::try_from(path.as_str()).ok().and_then(owned) {
-            m.insert("mpris:trackid".into(), v);
-        }
-        if let Some(v) = owned(t.title.as_str()) {
-            m.insert("xesam:title".into(), v);
-        }
-        if let Some(v) = t.artist.as_ref().and_then(|a| owned(vec![a.as_str()])) {
-            m.insert("xesam:artist".into(), v);
-        }
-        if let Some(v) = t.album.as_deref().and_then(owned) {
-            m.insert("xesam:album".into(), v);
-        }
-        if let Some(v) = t.length_ms.and_then(|l| owned(l as i64 * 1000)) {
-            m.insert("mpris:length".into(), v);
-        }
         let url = if popamp_core::playlist::is_url(&t.url) { t.url.clone() } else { popamp_core::text::path_to_file_url(&t.url) };
-        if let Some(v) = owned(url.as_str()) {
-            m.insert("xesam:url".into(), v);
-        }
-        m
+        let art = self.ctx.art.lock().as_ref().map(|p| popamp_core::text::path_to_file_url(&p.to_string_lossy()));
+        entries([
+            ("mpris:trackid", ObjectPath::try_from(path.as_str()).ok().and_then(owned)),
+            ("xesam:title", owned(t.title.as_str())),
+            ("xesam:artist", t.artist.as_ref().and_then(|a| owned(vec![a.as_str()]))),
+            ("xesam:album", t.album.as_deref().and_then(owned)),
+            ("mpris:length", t.length_ms.and_then(|l| owned(l as i64 * 1000))),
+            ("xesam:url", owned(url.as_str())),
+            ("mpris:artUrl", art.as_deref().and_then(owned)),
+        ])
     }
     #[zbus(property)]
     fn can_go_next(&self) -> bool {
@@ -240,6 +229,11 @@ impl Player {
     }
 }
 
+/// The metadata map of the `pairs` that have a value.
+fn entries<const N: usize>(pairs: [(&str, Option<OwnedValue>); N]) -> HashMap<String, OwnedValue> {
+    pairs.into_iter().filter_map(|(k, v)| Some((k.to_string(), v?))).collect()
+}
+
 fn track_path(id: u64) -> String {
     format!("/org/popamp/track/{id}")
 }
@@ -253,7 +247,8 @@ pub fn spawn(proxy: EventLoopProxy<AppEvent>, shared: Arc<Shared>, instance: &st
         format!("org.mpris.MediaPlayer2.popamp.instance{}", std::process::id())
     };
     let snap = Arc::new(Mutex::new(Snapshot::default()));
-    let ctx = Ctx { proxy, snap: snap.clone(), shared };
+    let art = Arc::new(Mutex::new(None));
+    let ctx = Ctx { proxy, snap: snap.clone(), art: art.clone(), shared };
     let conn = zbus::blocking::connection::Builder::session()
         .and_then(|b| b.name(name.as_str()))
         .and_then(|b| b.serve_at(PATH, Root { ctx: ctx.clone() }))
@@ -266,45 +261,59 @@ pub fn spawn(proxy: EventLoopProxy<AppEvent>, shared: Arc<Shared>, instance: &st
             return None;
         }
     };
-    std::thread::Builder::new()
-        .name("popamp-mpris".into())
-        .spawn(move || {
-            let iface = match conn.object_server().interface::<_, Player>(PATH) {
-                Ok(i) => i,
-                Err(e) => {
-                    log::warn!("MPRIS: {e}");
-                    return;
-                }
-            };
-            for new in rx {
-                let old = std::mem::replace(&mut *snap.lock(), new.clone());
-                let emitter = iface.signal_emitter();
-                let player = iface.get();
-                let res = zbus::block_on(async {
-                    if old.status != new.status {
-                        player.playback_status_changed(emitter).await?;
-                    }
-                    if old.track != new.track {
-                        player.metadata_changed(emitter).await?;
-                        player.can_seek_changed(emitter).await?;
-                    }
-                    if old.repeat != new.repeat {
-                        player.loop_status_changed(emitter).await?;
-                    }
-                    if old.shuffle != new.shuffle {
-                        player.shuffle_changed(emitter).await?;
-                    }
-                    if old.volume != new.volume {
-                        player.volume_changed(emitter).await?;
-                    }
-                    zbus::Result::Ok(())
-                });
-                if let Err(e) = res {
-                    log::debug!("MPRIS signal: {e}");
-                }
-            }
-            drop(conn);
-        })
-        .ok()?;
+    std::thread::Builder::new().name("popamp-mpris".into()).spawn(move || run(&conn, &rx, &snap, &art)).ok()?;
     Some(tx)
+}
+
+/// Takes each snapshot from `rx` into `snap`, and the cover of a new track
+/// into `art`, and tells the bus what changed, until the UI thread is gone.
+fn run(
+    conn: &zbus::blocking::Connection,
+    rx: &crossbeam_channel::Receiver<Snapshot>,
+    snap: &Mutex<Snapshot>,
+    art: &Mutex<Option<PathBuf>>,
+) {
+    let iface = match conn.object_server().interface::<_, Player>(PATH) {
+        Ok(i) => i,
+        Err(e) => {
+            log::warn!("MPRIS: {e}");
+            return;
+        }
+    };
+    let mut covers = super::Covers::default();
+    for new in rx {
+        if snap.lock().track != new.track {
+            *art.lock() = new.track.as_ref().and_then(|t| covers.of(t));
+        }
+        let old = std::mem::replace(&mut *snap.lock(), new.clone());
+        if let Err(e) = zbus::block_on(announce(&iface.get(), iface.signal_emitter(), &old, &new)) {
+            log::debug!("MPRIS signal: {e}");
+        }
+    }
+}
+
+/// Signals the properties that differ between `old` and `new`.
+async fn announce(player: &Player, emitter: &SignalEmitter<'_>, old: &Snapshot, new: &Snapshot) -> zbus::Result<()> {
+    if old.status != new.status {
+        player.playback_status_changed(emitter).await?;
+    }
+    if old.track != new.track {
+        player.metadata_changed(emitter).await?;
+        player.can_seek_changed(emitter).await?;
+    }
+    announce_modes(player, emitter, old, new).await
+}
+
+/// Signals repeat, shuffle and volume where they differ.
+async fn announce_modes(player: &Player, emitter: &SignalEmitter<'_>, old: &Snapshot, new: &Snapshot) -> zbus::Result<()> {
+    if old.repeat != new.repeat {
+        player.loop_status_changed(emitter).await?;
+    }
+    if old.shuffle != new.shuffle {
+        player.shuffle_changed(emitter).await?;
+    }
+    if old.volume != new.volume {
+        player.volume_changed(emitter).await?;
+    }
+    Ok(())
 }

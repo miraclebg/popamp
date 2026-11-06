@@ -15,7 +15,7 @@ Please include:
 
 ## Development setup
 
-Requirements are in the [README](README.md#requirements): Rust 1.96 or
+Requirements are in [docs/building.md](docs/building.md#requirements): Rust 1.96 or
 newer and a C compiler. No `-devel` packages are needed.
 
 ```sh
@@ -34,6 +34,23 @@ cargo run -p popamp-skin --example dump_sheets -- skin.wsz out/  # skin sheets a
 POPAMP_SNAPSHOT=out/ cargo run -p popamp -- /NEW /INIDIR=/tmp/x  # windows as PNG, then exit
 cargo run -p popamp -- /RENDER=out/ /SKIN=skin.wsz                 # same, headless, fixed states
 ```
+
+`/RENDER` needs no X server or sound card. It writes one PNG per window and
+state (stopped, playing with spectrum or oscilloscope, toggles, equalizer
+values and a preset, windowshade, small and wide playlist) using the
+settings in `out/popamp.ini` if that file exists.
+
+## Code layout
+
+| Crate | Contents |
+|---|---|
+| `crates/popamp-core` | settings, playlist model and formats, title formatting, EQF, command ids |
+| `crates/popamp-audio` | decoding, EQ, limiter, ALSA and WASAPI output, engine thread, sources, streams, covers |
+| `crates/popamp-skin` | skin loading, sprite geometry, default skin generator |
+| `apps/popamp` | windows, menus, input, dialogs, IPC, media controls (MPRIS, SMTC) |
+
+What was tested and how is in [docs/testing.md](docs/testing.md); its
+"Not yet tested by hand" list is a good place to start.
 
 ## Before opening a pull request
 

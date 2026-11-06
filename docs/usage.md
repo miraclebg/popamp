@@ -1,0 +1,53 @@
+# Usage
+
+## Keys and mouse
+
+| Action | How |
+|---|---|
+| Open files | `L`, the eject button, or drag files onto a window |
+| Open a URL / stream / YouTube link | `Ctrl+L`, or `popamp <url>` |
+| Transport | `Z X C V B` (prev, play, pause, stop, next) |
+| Seek / volume | arrow keys, or drag the bars; mouse wheel changes volume |
+| Main menu | click the top-left button, right-click, or `Alt+F` |
+| Skins | `Alt+S`, or put `.wsz`/`.psz` files in the skins folder (below) |
+| Equalizer keys | `1`–`0` / `Q`–`P` raise/lower bands, `N` on/off, `S` presets |
+| Double size / shade | `Ctrl+D` / `Ctrl+W` (or double-click the title bar) |
+
+## Remote control
+
+The same program sends commands to the running instance (`popamp.exe` on
+Windows):
+
+```sh
+popamp /ADD song.flac      # enqueue
+popamp /PLAYPAUSE
+popamp /VOL=40 /SHUFFLE=1
+popamp /STATUS             # JSON status
+popamp /NEW                # start a second, independent instance
+popamp /HELP               # all options
+```
+
+## Folders
+
+| | Linux | Windows |
+|---|---|---|
+| Settings, playlist, bookmarks | `~/.config/popamp/` | `%APPDATA%\popamp\` |
+| Skins, plug-ins | `~/.local/share/popamp/skins/`, `plugins/` | `%APPDATA%\popamp\skins\`, `plugins\` |
+
+Settings are in `popamp.ini`, whose key names follow `winamp.ini`; the
+playlist is saved to `popamp.m3u8`. A `popamp.ini` next to the program
+keeps everything in the program's folder (portable mode), and
+`/INIDIR=<dir>` uses another folder for one run.
+
+## YouTube
+
+YouTube is a plug-in, [plugin-youtube](https://github.com/popamp/plugin-youtube),
+so it needs a build with plug-ins (`--features plugins`) and the plug-in
+installed; its README says how. It plays videos, playlists and channels
+through `yt-dlp` and `ffmpeg`. Without it a YouTube link fails with "no
+plug-in plays this link".
+
+The settings `ytdlp_path`, `ffmpeg_path` and `ytdlp_format` of earlier
+versions move to the plug-in's settings (`[plugin.youtube]` in
+`popamp.ini`) the first time the new version starts.
+
