@@ -1,0 +1,162 @@
+# Building and installing
+
+## Requirements
+
+The tables below are for Linux; Windows is [further down](#windows).
+
+### Build
+
+| Need | Version | Why |
+|---|---|---|
+| Rust toolchain (`rustc`, `cargo`) | 1.96 or newer | compiler (install with [rustup](https://rustup.rs)) |
+| C compiler (`gcc` or `clang`) | any | the `ring` crate (TLS for HTTPS streams) compiles C code |
+| Internet access | — | `cargo` downloads crates on the first build |
+
+No `-devel`/`-dev` packages and no `pkg-config` are needed. The system
+libraries below are loaded at runtime, not linked at build time.
+
+### Runtime
+
+| Library / tool | Required? | Used for |
+|---|---|---|
+| X11 server or XWayland | **required** | windows (Popamp always uses the X11 backend, including on Wayland desktops) |
+| `libasound.so.2` (ALSA) | **required** | audio output; on PipeWire/PulseAudio it goes through their ALSA `default` device |
+| `libX11`, `libX11-xcb`, `libxcb`, `libXcursor`, `libXi`, `libxkbcommon`, `libxkbcommon-x11` | **required** | windowing and keyboard (loaded with `dlopen`) |
+| `fontconfig` (`fc-match`) and any TrueType font | recommended | playlist and menu text (blank without them) |
+| `zenity` or `kdialog` | recommended | open-file, open-URL, save and preset dialogs |
+| D-Bus session bus | optional | MPRIS (media keys, desktop widgets) |
+
+### Packages per distribution
+
+Fedora was used for testing. The Debian/Ubuntu and Arch names are the usual
+package names but **have not been tested**.
+
+**Fedora**
+
+```sh
+sudo dnf install gcc alsa-lib libX11 libX11-xcb libxcb libXcursor libXi \
+    libxkbcommon libxkbcommon-x11 fontconfig zenity
+```
+
+**Debian / Ubuntu** (untested)
+
+```sh
+sudo apt install build-essential libasound2t64 libx11-6 libx11-xcb1 libxcb1 \
+    libxcursor1 libxi6 libxkbcommon0 libxkbcommon-x11-0 fontconfig zenity
+```
+
+On Debian 12 and Ubuntu before 24.04 the ALSA package is `libasound2`.
+
+**Arch Linux** (untested)
+
+```sh
+sudo pacman -S --needed base-devel alsa-lib libx11 libxcb libxcursor libxi \
+    libxkbcommon libxkbcommon-x11 fontconfig zenity
+```
+
+### Windows
+
+Windows 10 or 11, x86_64. The release zip needs nothing else: sound goes
+through WASAPI, fonts and dialogs are the system's. Building needs Rust
+1.96 or newer with its default MSVC toolchain (rustup offers to install
+the Visual Studio Build Tools it needs). So far Popamp runs on Windows in
+CI and under Proton; reports from real machines are welcome.
+
+## Installation
+
+### Packages
+
+Releases on the [Releases page](https://github.com/popamp/popamp/releases)
+come with Linux packages for x86_64 and ARM64 (built on Ubuntu 22.04, so
+they need glibc 2.35 or newer) and a Windows zip, in two builds:
+
+- **popamp:** the player.
+- **popamp-plus:** the player with [plug-ins](plugins.md), such as
+  YouTube. It is larger, since it carries a WebAssembly runtime.
+
+Both install `popamp` and share its settings; installing one replaces
+the other.
+
+| System | Package |
+|---|---|
+| Debian / Ubuntu | `sudo apt install ./popamp-<version>-linux-amd64.deb`, or `./popamp-plus-…` (ARM64: `-arm64.deb`) |
+| Anything else | `Popamp-<version>-linux-x86_64.AppImage`, or `Popamp-Plus-…`: `chmod +x` it and run it |
+| Windows | `Popamp-<version>-windows-x86_64.zip`, or `Popamp-Plus-…`: unpack it anywhere and run `popamp.exe` |
+
+On Windows settings and skins live in `%APPDATA%\popamp`. An empty
+`popamp.ini` next to `popamp.exe` keeps them in that folder instead, for
+a portable copy on a USB stick.
+
+`popamp /VERSION` says which one you have.
+
+The AppImage uses the system's ALSA, X11 and xkbcommon libraries, which
+nearly every desktop has. To build the packages yourself after
+`cargo build --release` (or with `--features plugins` for popamp-plus;
+the scripts ask the binary which it is):
+
+```sh
+packaging/build-deb.sh        # needs dpkg-deb and binutils
+packaging/build-appimage.sh   # needs appimagetool
+```
+
+Both write to `dist/`. Or build from source:
+
+### 1. Get Rust (if you don't have it)
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+
+### 2. Build and run from the source tree
+
+```sh
+git clone https://github.com/popamp/popamp.git && cd popamp
+cargo build --release
+./target/release/popamp ~/Music
+```
+
+The first build downloads and compiles all crates (a few minutes). The
+binary is `target/release/popamp`.
+
+This builds the player and its skins. For plug-ins (see
+[plugins.md](plugins.md)), build with the `plugins` feature;
+it adds a WebAssembly runtime, so the build takes longer and the binary
+is larger:
+
+```sh
+cargo build --release --features plugins
+```
+
+### 3. Install for the current user (optional)
+
+```sh
+packaging/install.sh
+```
+
+This builds a release binary and installs:
+
+| File | Destination |
+|---|---|
+| `popamp` binary | `~/.local/bin/popamp` |
+| Desktop entry | `~/.local/share/applications/popamp.desktop` |
+| `.wsz`/`.psz` MIME types | `~/.local/share/mime/packages/popamp-skin.xml` |
+| Icons (SVG + 16–256 px PNG) | `~/.local/share/icons/hicolor/*/apps/popamp.*` |
+| Skins folder | `~/.local/share/popamp/skins/` (created empty) |
+
+Make sure `~/.local/bin` is on your `PATH`. For a system-wide install, run
+`sudo PREFIX=/usr/local packaging/install.sh`.
+
+### Uninstall
+
+```sh
+rm -f ~/.local/bin/popamp ~/.local/share/applications/popamp.desktop \
+      ~/.local/share/mime/packages/popamp-skin.xml \
+      ~/.local/share/metainfo/popamp.metainfo.xml
+rm -f ~/.local/share/icons/hicolor/*/apps/popamp.png \
+      ~/.local/share/icons/hicolor/scalable/apps/popamp.svg
+update-mime-database ~/.local/share/mime
+# Settings and skins, if you want them gone too:
+rm -rf ~/.config/popamp ~/.local/share/popamp
+```
+
