@@ -12,6 +12,7 @@ jobs:
   check:
     name: fmt, clippy, test
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -28,6 +29,7 @@ jobs:
   windows:
     name: Windows - clippy, test
     runs-on: windows-2025
+    timeout-minutes: 60
     steps:
       # Fixtures are compared byte for byte; keep their line endings.
       - run: git config --global core.autocrlf false
@@ -44,6 +46,7 @@ jobs:
   msrv:
     name: minimum Rust version (1.96)
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.96

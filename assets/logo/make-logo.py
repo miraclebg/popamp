@@ -1,11 +1,13 @@
 """Draws the Popamp logo: a brushed-metal knob in a red neon ring with a lightning bolt cut into it.
 
 Writes popamp.svg and popamp-small.svg (a plain yellow knob for 32 px and below)
-next to this script, then renders png/popamp-N.png with inkscape.
+next to this script, then renders png/popamp-N.png with inkscape and packs
+them into popamp.ico for Windows (the program, its shortcuts and installer).
 
 Usage: python3 assets/logo/make-logo.py
 """
 import math
+import struct
 import subprocess
 from pathlib import Path
 
@@ -99,6 +101,20 @@ def main() -> None:
         for n in sizes:
             subprocess.run(["inkscape", str(here / name), "-w", str(n), "-h", str(n), "-o", str(here / "png" / f"popamp-{n}.png")],
                            check=True, capture_output=True)
+    sizes = sorted(SMALL_SIZES + BIG_SIZES)
+    write_ico(here / "popamp.ico", [(n, (here / "png" / f"popamp-{n}.png").read_bytes()) for n in sizes])
+
+
+def write_ico(path: Path, images: list[tuple[int, bytes]]) -> None:
+    """An .ico of PNG images, each (size, data): a header, one directory entry each, then the data."""
+    head = struct.pack("<HHH", 0, 1, len(images))
+    offset = len(head) + 16 * len(images)
+    entries, data = b"", b""
+    for n, png in images:
+        side = n % 256  # 0 stands for 256
+        entries += struct.pack("<BBBBHHII", side, side, 0, 0, 1, 32, len(png), offset + len(data))
+        data += png
+    path.write_bytes(head + entries + data)
 
 
 if __name__ == "__main__":

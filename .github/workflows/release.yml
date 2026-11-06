@@ -1,7 +1,8 @@
 name: Release
 
-# A tag v<version> builds the Linux packages and the Windows zips and
-# publishes them as a GitHub release; a manual run only builds them
+# A tag v<version> builds the Linux packages and the Windows installers
+# and portable zips, and publishes them as a GitHub release; a manual run
+# only builds them
 # (download from the run's page). Two of each: popamp, the player, and
 # popamp-plus, built with plug-ins.
 on:
@@ -27,6 +28,7 @@ jobs:
           - runner: ubuntu-22.04-arm
             arch: aarch64
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -82,6 +84,7 @@ jobs:
 
   windows:
     runs-on: windows-2025
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
@@ -94,21 +97,24 @@ jobs:
       - name: Package popamp
         run: |
           cargo build --release --locked -p popamp
-          sh packaging/build-zip.sh target/release/popamp.exe dist
+          sh packaging/build-windows.sh target/release/popamp.exe dist
       - name: Package popamp-plus
         run: |
           cargo build --release --locked -p popamp --features plugins
-          sh packaging/build-zip.sh target/release/popamp.exe dist
+          sh packaging/build-windows.sh target/release/popamp.exe dist
           ls -lh dist
       - uses: actions/upload-artifact@v7
         with:
           name: windows-x86_64
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/*.exe
 
   release:
     if: github.ref_type == 'tag'
     needs: [linux, windows]
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/download-artifact@v8
         with:

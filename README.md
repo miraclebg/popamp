@@ -76,7 +76,7 @@ with [plug-ins](docs/plugins.md) such as YouTube.
 |---|---|
 | Debian, Ubuntu | `popamp-<version>-linux-amd64.deb` (ARM64: `-arm64.deb`): `sudo apt install ./popamp-…deb` |
 | Any other Linux | `Popamp-<version>-linux-x86_64.AppImage`: `chmod +x` it and run it |
-| Windows 10 or 11 | `Popamp-<version>-windows-x86_64.zip`: unpack it anywhere and run `popamp.exe` |
+| Windows 10 or 11 | `Popamp-<version>-windows-x86_64-setup.exe`, or the portable `…-portable.zip`: unpack it anywhere and run `popamp.exe` |
 
 Or build it yourself with Rust 1.96 or newer:
 

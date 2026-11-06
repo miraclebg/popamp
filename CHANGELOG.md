@@ -33,8 +33,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- Windows (x86_64). Releases have a zip of each build with `popamp.exe`;
-  settings are in `%APPDATA%\popamp`. Sound goes to the default device
+- Windows (x86_64). Releases have an installer and a portable zip of
+  each build. The installer adds a Start menu entry, opens skins with
+  Popamp and lists it in "Open with" for audio files and playlists;
+  settings are in `%APPDATA%\popamp`, or, in the portable zip, beside
+  `popamp.exe`. The program has the Popamp icon. Sound goes to the default device
   through WASAPI, fonts come from the system's font list, and files,
   folders and questions use Windows' own dialogs. Started from cmd or
   PowerShell, `/STATUS`, `/VERSION` and errors print in that console;
@@ -103,6 +106,8 @@ All notable changes to this project are documented here. The format follows
 - `.deb` and AppImage packages for x86_64 and ARM64, built by a release
   workflow on version tags (`packaging/build-deb.sh`,
   `packaging/build-appimage.sh`), and AppStream metadata.
+- rpm packages for openSUSE and Fedora, built and published in a
+  repository by the openSUSE Build Service (`packaging/obs/`).
 - `/RENDER=<dir>` (with optional `/SKIN=<file>` and files) draws every
   window in a set of fixed states to PNG files without a display or sound
   card, for skin previews and before/after comparisons. The set of states

@@ -13,16 +13,17 @@ open an issue first for larger items.
 
 ## First release
 
-The first release ships packages (deb and AppImage for Linux, a zip for
-Windows) and a Linux package repository. Two builds:
+The first release, 0.5.0, ships packages (deb and AppImage for Linux,
+an installer and a portable zip for Windows) and a Linux package
+repository. Two builds:
 
 - **popamp:** the player without plug-in support.
 - **popamp-plus:** the same player built with `--features plugins`.
 
 Done: both are built, tested and packaged by the release workflow: deb
 and AppImage for x86_64 and ARM64, where `popamp-plus` provides,
-conflicts with and replaces `popamp`, and a zip for Windows x86_64.
-Popamp runs on Windows with sound, fonts, dialogs, remote control, the
+conflicts with and replaces `popamp`, and an installer and a portable
+zip for Windows x86_64. Popamp runs on Windows with sound, fonts, dialogs, remote control, the
 bar's strip and the media controls.
 
 To do:
@@ -30,10 +31,10 @@ To do:
 - Check on a real Windows machine what Wine cannot show: the bar's strip
   shrinking the work area, the media keys, and the timeline, shuffle,
   repeat and cover in the media overlay.
-- Merge the `windows` branch.
-- Decide whether a zip is enough for Windows or it needs an installer;
-  an installer would also register file types.
-- The package repository.
+- Try the Windows installer: install for one user and for all, file
+  types, upgrade, uninstall.
+- The package repository: rpms for openSUSE and Fedora built by the
+  openSUSE Build Service (`packaging/obs/`); the first build there.
 
 Until then version numbers stay as they are, including the plug-in API
 (1.0), and change in place; they start to move with this release.

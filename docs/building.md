@@ -81,11 +81,17 @@ the other.
 |---|---|
 | Debian / Ubuntu | `sudo apt install ./popamp-<version>-linux-amd64.deb`, or `./popamp-plus-…` (ARM64: `-arm64.deb`) |
 | Anything else | `Popamp-<version>-linux-x86_64.AppImage`, or `Popamp-Plus-…`: `chmod +x` it and run it |
-| Windows | `Popamp-<version>-windows-x86_64.zip`, or `Popamp-Plus-…`: unpack it anywhere and run `popamp.exe` |
+| Windows | `Popamp-<version>-windows-x86_64-setup.exe`, or `Popamp-Plus-…`: run it |
+| Windows, portable | `Popamp-<version>-windows-x86_64-portable.zip`, or `Popamp-Plus-…`: unpack it anywhere and run `popamp.exe` |
 
-On Windows settings and skins live in `%APPDATA%\popamp`. An empty
-`popamp.ini` next to `popamp.exe` keeps them in that folder instead, for
-a portable copy on a USB stick.
+The installer asks whether to install for you alone or for all users,
+adds Popamp to the Start menu, opens `.wsz` and `.psz` skins with it and
+puts it in "Open with" for audio files and playlists. Settings and skins
+live in `%APPDATA%\popamp` and stay there when Popamp is uninstalled.
+
+The portable zip has an empty `popamp.ini` next to `popamp.exe`, which
+keeps the settings and skins in that folder instead, for a copy on a USB
+stick; unpack it where you can write.
 
 `popamp /VERSION` says which one you have.
 
