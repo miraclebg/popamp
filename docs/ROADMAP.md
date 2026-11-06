@@ -35,7 +35,8 @@ To do:
   repeat and cover in the media overlay.
 - Try the Windows installer: install for one user and for all, file
   types, upgrade, uninstall.
-- Install the rpms from the repository on openSUSE and Fedora.
+- Install the rpms from the repository on openSUSE and Fedora, and the
+  debs from the apt repository on Debian and Ubuntu.
 
 Until then version numbers stay as they are, including the plug-in API
 (1.0), and change in place; they start to move with this release.

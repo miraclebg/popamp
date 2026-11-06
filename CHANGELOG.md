@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- An apt repository on GitHub Pages for Debian and Ubuntu, filled with
+  each release's debs by the release workflow and signed
+  (`packaging/apt/`), so Popamp updates with `apt upgrade`.
+
 ## [0.5.0] - 2026-11-06
 
 The first release of Popamp. It starts at 0.5.0 rather than 0.1.0, which

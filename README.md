@@ -69,13 +69,13 @@ version, so one player and its skins work on both systems.
 ## Install
 
 Downloads are on the [Releases page](https://github.com/popamp/popamp/releases),
-and openSUSE and Fedora can install it from a repository that keeps it up
-to date. Both come in two builds: **popamp**, the player, and **popamp-plus**, the player
+and Debian, Ubuntu, openSUSE and Fedora can install it from a repository
+that keeps it up to date. Both come in two builds: **popamp**, the player, and **popamp-plus**, the player
 with [plug-ins](docs/plugins.md) such as YouTube.
 
 | System | Download |
 |---|---|
-| Debian, Ubuntu | `popamp-<version>-linux-amd64.deb` (ARM64: `-arm64.deb`): `sudo apt install ./popamp-…deb` |
+| Debian, Ubuntu | add the [apt repository](docs/building.md#debian-and-ubuntu), then `sudo apt install popamp`; or download `popamp-<version>-linux-amd64.deb` (ARM64: `-arm64.deb`) and `sudo apt install ./popamp-…deb` |
 | openSUSE, Fedora | add the [repository](docs/building.md#opensuse-and-fedora), then `sudo zypper install popamp` or `sudo dnf install popamp` |
 | Any other Linux | `Popamp-<version>-linux-x86_64.AppImage`: `chmod +x` it and run it |
 | Windows 10 or 11 | `Popamp-<version>-windows-x86_64-setup.exe`, or the portable `…-portable.zip`: unpack it anywhere and run `popamp.exe` |

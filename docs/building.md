@@ -69,6 +69,7 @@ CI and under Proton; reports from real machines are welcome.
 Releases on the [Releases page](https://github.com/popamp/popamp/releases)
 come with Linux packages for x86_64 and ARM64 (built on Ubuntu 22.04, so
 they need glibc 2.35 or newer) and a Windows installer and portable zip;
+Debian and Ubuntu can take the debs from an [apt repository](#debian-and-ubuntu),
 openSUSE and Fedora get rpms from a [repository](#opensuse-and-fedora).
 All come in two builds:
 
@@ -96,6 +97,22 @@ keeps the settings and skins in that folder instead, for a copy on a USB
 stick; unpack it where you can write.
 
 `popamp /VERSION` says which one you have.
+
+#### Debian and Ubuntu
+
+Each release puts its debs, for amd64 and arm64, in an apt repository on
+GitHub Pages. Add it once, and Popamp updates with `apt upgrade`:
+
+```sh
+sudo mkdir -p /etc/apt/keyrings
+sudo curl -fsSLo /etc/apt/keyrings/popamp.gpg https://popamp.github.io/popamp/apt/popamp.gpg
+sudo curl -fsSLo /etc/apt/sources.list.d/popamp.sources https://popamp.github.io/popamp/apt/popamp.sources
+sudo apt update
+sudo apt install popamp           # or popamp-plus
+```
+
+It works on Debian 12 and Ubuntu 22.04 or newer. The repository keeps
+only the latest release.
 
 #### openSUSE and Fedora
 
