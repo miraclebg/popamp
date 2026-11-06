@@ -1,9 +1,10 @@
-//! MPRIS2 D-Bus service: media keys, desktop widgets, playerctl.
+//! MPRIS2 D-Bus service, the media controls on Unix.
 //!
 //! A dedicated thread owns the connection. Method calls are forwarded to the
 //! UI thread as remote commands; the UI thread sends [`Snapshot`]s and the
 //! thread emits `PropertiesChanged` for whatever differs.
 
+use super::Snapshot;
 use crate::cli::Remote;
 use crate::ipc::Request;
 use crate::model::AppEvent;
@@ -17,31 +18,6 @@ use zbus::interface;
 use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 
 const PATH: &str = "/org/mpris/MediaPlayer2";
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Track {
-    pub id: u64,
-    pub title: String,
-    pub artist: Option<String>,
-    pub album: Option<String>,
-    pub url: String,
-    pub length_ms: Option<u64>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Snapshot {
-    pub status: &'static str,
-    pub repeat: bool,
-    pub shuffle: bool,
-    pub volume: f64,
-    pub track: Option<Track>,
-}
-
-impl Default for Snapshot {
-    fn default() -> Self {
-        Self { status: "Stopped", repeat: false, shuffle: false, volume: 1.0, track: None }
-    }
-}
 
 #[derive(Clone)]
 struct Ctx {
@@ -268,23 +244,8 @@ fn track_path(id: u64) -> String {
     format!("/org/popamp/track/{id}")
 }
 
-pub struct Mpris {
-    tx: crossbeam_channel::Sender<Snapshot>,
-    last: Option<Snapshot>,
-}
-
-impl Mpris {
-    /// Publishes the snapshot if it changed.
-    pub fn update(&mut self, snap: Snapshot) {
-        if self.last.as_ref() != Some(&snap) {
-            self.last = Some(snap.clone());
-            let _ = self.tx.send(snap);
-        }
-    }
-}
-
 /// Starts the service; `None` if there is no session bus.
-pub fn spawn(proxy: EventLoopProxy<AppEvent>, shared: Arc<Shared>, instance: &str) -> Option<Mpris> {
+pub fn spawn(proxy: EventLoopProxy<AppEvent>, shared: Arc<Shared>, instance: &str) -> Option<crossbeam_channel::Sender<Snapshot>> {
     let (tx, rx) = crossbeam_channel::unbounded::<Snapshot>();
     let name = if instance == "default" {
         "org.mpris.MediaPlayer2.popamp".to_string()
@@ -345,5 +306,5 @@ pub fn spawn(proxy: EventLoopProxy<AppEvent>, shared: Arc<Shared>, instance: &st
             drop(conn);
         })
         .ok()?;
-    Some(Mpris { tx, last: None })
+    Some(tx)
 }

@@ -753,7 +753,7 @@ impl Model {
 
     fn start_dir(&self) -> Option<PathBuf> {
         self.last_dir.clone().or_else(|| {
-            std::env::var_os("HOME").map(PathBuf::from).map(|h| {
+            std::env::home_dir().map(|h| {
                 let music = h.join("Music");
                 if music.is_dir() {
                     music
@@ -1653,7 +1653,7 @@ impl Model {
         reply
     }
 
-    pub fn mpris_snapshot(&self) -> crate::mpris::Snapshot {
+    pub fn media_snapshot(&self) -> crate::media::Snapshot {
         let s = self.settings();
         let status = match self.state() {
             PlayState::Playing => "Playing",
@@ -1667,7 +1667,7 @@ impl Model {
                 (Some(t), true) => t.clone(),
                 _ => meta.and_then(|m| m.title.clone()).unwrap_or_else(|| e.display.clone()),
             };
-            crate::mpris::Track {
+            crate::media::Track {
                 id: e.id,
                 title,
                 artist: meta.and_then(|m| m.artist.clone()),
@@ -1676,7 +1676,7 @@ impl Model {
                 length_ms: e.length_ms,
             }
         });
-        crate::mpris::Snapshot { status, repeat: s.repeat, shuffle: s.shuffle, volume: s.volume as f64 / 255.0, track }
+        crate::media::Snapshot { status, repeat: s.repeat, shuffle: s.shuffle, volume: s.volume as f64 / 255.0, track }
     }
 
     pub fn status_json(&self) -> String {
@@ -1752,12 +1752,12 @@ mod tests {
     fn adding_expands_each_location_through_its_source() {
         let dir = std::env::temp_dir().join(format!("popamp-add-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("album")).unwrap();
-        for f in ["album/2.mp3", "album/1.mp3"] {
-            std::fs::write(dir.join(f), b"").unwrap();
+        for f in ["2.mp3", "1.mp3"] {
+            std::fs::write(dir.join("album").join(f), b"").unwrap();
         }
         std::fs::write(dir.join("list.m3u"), "x.ogg\n").unwrap();
         let mut m = Model::for_tests();
-        let at = |f: &str| dir.join(f).to_string_lossy().into_owned();
+        let at = |f: &str| f.split('/').fold(dir.clone(), |p, part| p.join(part)).to_string_lossy().into_owned();
         m.add_now(vec![at("album"), at("list.m3u"), "http://radio:8000/stream".into()], AddMode::Append);
         let got: Vec<_> = m.playlist.entries().iter().map(|e| e.location.clone()).collect();
         std::fs::remove_dir_all(&dir).unwrap();

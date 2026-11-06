@@ -1,54 +1,8 @@
-//! Native dialogs through `zenity` (or `kdialog`), run off the UI thread.
-//! Results come back to the event loop as [`DialogResult`]s.
+//! Dialogs through `zenity`, or `kdialog` where only that is installed.
 
+use super::Request;
 use std::path::PathBuf;
 use std::process::Command;
-
-#[derive(Debug, Clone)]
-pub enum DialogKind {
-    /// Open files; `play` replaces the playlist, otherwise appends.
-    OpenFiles {
-        play: bool,
-    },
-    OpenFolder {
-        play: bool,
-    },
-    OpenUrl {
-        play: bool,
-    },
-    LoadPlaylist,
-    SavePlaylist,
-    SaveHtml,
-    JumpToTime,
-    EditEntry {
-        id: u64,
-    },
-    EqLoadPreset {
-        auto: bool,
-    },
-    EqSavePreset {
-        auto: bool,
-    },
-    EqDeletePreset {
-        auto: bool,
-    },
-    RemoveBookmark,
-    EqImport,
-    EqExport,
-    Skin,
-    InstallSkin,
-    Info,
-    ConfirmPhysicalRemove {
-        paths: Vec<String>,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub struct DialogResult {
-    pub kind: DialogKind,
-    /// Selected paths/strings; empty when cancelled.
-    pub values: Vec<String>,
-}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Backend {
@@ -81,18 +35,7 @@ fn run(cmd: &mut Command) -> Option<String> {
     Some(s)
 }
 
-/// The request for a dialog; built on the UI thread, executed elsewhere.
-#[derive(Debug, Clone)]
-pub enum Request {
-    Files { title: String, multiple: bool, filter: Vec<String>, start: Option<PathBuf> },
-    Folder { title: String, start: Option<PathBuf> },
-    Save { title: String, name: String, start: Option<PathBuf> },
-    Entry { title: String, text: String, initial: String },
-    List { title: String, column: String, rows: Vec<String> },
-    Info { title: String, text: String },
-    Question { title: String, text: String },
-}
-
+/// Runs `req`; the chosen values, or none when cancelled.
 pub fn execute(req: &Request) -> Vec<String> {
     let b = backend();
     let lines = |s: Option<String>| -> Vec<String> {
@@ -195,32 +138,5 @@ pub fn execute(req: &Request) -> Vec<String> {
                 vec![]
             }
         }
-    }
-}
-
-/// Parses `m:ss`, `h:mm:ss` or plain seconds.
-pub fn parse_time(s: &str) -> Option<u64> {
-    let parts: Vec<&str> = s.trim().split(':').collect();
-    if parts.is_empty() || parts.len() > 3 {
-        return None;
-    }
-    let mut secs = 0u64;
-    for p in &parts {
-        secs = secs.checked_mul(60)?.checked_add(p.trim().parse::<u64>().ok()?)?;
-    }
-    Some(secs * 1000)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn times() {
-        assert_eq!(parse_time("1:30"), Some(90_000));
-        assert_eq!(parse_time("45"), Some(45_000));
-        assert_eq!(parse_time("1:00:01"), Some(3_601_000));
-        assert_eq!(parse_time("x"), None);
-        assert_eq!(parse_time("1:2:3:4"), None);
     }
 }

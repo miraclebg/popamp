@@ -1,4 +1,8 @@
-//! Popamp: a Winamp-style skinnable audio player for Linux.
+//! Popamp: a Winamp-style skinnable audio player for Linux and Windows.
+
+// A window program on Windows, so none opens a console of its own; output
+// for the command line goes to the console it was started from.
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod app;
 mod bar;
@@ -10,9 +14,9 @@ mod edition;
 mod font;
 mod headless;
 mod ipc;
+mod media;
 mod menu;
 mod model;
-mod mpris;
 mod museum;
 mod panels;
 mod platform;
@@ -31,6 +35,8 @@ use popamp_core::config::{Config, Paths};
 use winit::event_loop::EventLoop;
 
 fn main() {
+    #[cfg(windows)]
+    platform::use_parent_console();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let opts = match cli::parse(std::env::args().skip(1)) {
         Ok(o) => o,
@@ -78,15 +84,17 @@ fn main() {
                 }
                 return;
             }
-            Err(_) if opts.kill || forwarded.iter().all(|r| matches!(r, Remote::Quit | Remote::Status)) => {
-                eprintln!("popamp: no running instance");
-                std::process::exit(1);
+            Err(e) => {
+                log::debug!("no instance at {}: {e}", socket.display());
+                if opts.kill || forwarded.iter().all(|r| matches!(r, Remote::Quit | Remote::Status)) {
+                    eprintln!("popamp: no running instance");
+                    std::process::exit(1);
+                }
             }
-            Err(_) => {}
         }
     }
 
-    if let Err(e) = popamp_audio::alsa::available() {
+    if let Err(e) = popamp_audio::output::available() {
         log::error!("{e} — audio output will not work");
     }
     let paths = Paths::resolve(opts.ini_dir.clone());
@@ -124,8 +132,8 @@ fn main() {
         println!("{reply}");
     }
 
-    let mpris = mpris::spawn(proxy.clone(), model.engine.shared().clone(), &class);
-    let mut app = app::App::new(model, opts.start_minimized, mpris);
+    let media = media::spawn(proxy.clone(), model.engine.shared().clone(), &class);
+    let mut app = app::App::new(model, opts.start_minimized, media);
     if let Err(e) = event_loop.run_app(&mut app) {
         log::error!("event loop: {e}");
     }

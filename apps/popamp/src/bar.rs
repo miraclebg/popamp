@@ -67,14 +67,13 @@ pub fn places(edge: BarEdge, screen: Screen, sizes: [(i32, i32); 3], pl_open: bo
     [(screen.x, bar_y), (eq_x, against(eq_h)), (pl_x, against(pl_h))]
 }
 
-/// `_NET_WM_STRUT_PARTIAL` for a bar `bar_h` pixels high: the strip it
-/// takes from the root window, `root_h` pixels high, at `edge` of `screen`.
-pub fn strut(edge: BarEdge, screen: Screen, root_h: i32, bar_h: i32) -> [u32; 12] {
-    let (start, end) = (screen.x as u32, (screen.x + screen.w - 1) as u32);
-    match edge {
-        BarEdge::Top => [0, 0, (screen.y + bar_h) as u32, 0, 0, 0, 0, 0, start, end, 0, 0],
-        BarEdge::Bottom => [0, 0, 0, (root_h - screen.y - screen.h + bar_h) as u32, 0, 0, 0, 0, 0, 0, start, end],
-    }
+/// The strip a bar takes at `edge` of `screen`, `height` pixels high,
+/// which other windows are kept out of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Strip {
+    pub edge: BarEdge,
+    pub screen: Screen,
+    pub height: i32,
 }
 
 #[cfg(test)]
@@ -103,15 +102,6 @@ mod tests {
     fn the_equalizer_takes_the_corner_while_the_playlist_is_closed() {
         let [_, eq, _] = places(BarEdge::Bottom, RIGHT_MONITOR, SIZES, false);
         assert_eq!(eq.0, 3200 - 275);
-    }
-
-    #[test]
-    fn struts_count_from_the_root_window_edges() {
-        // The right monitor is shorter than the 1080-pixel root window.
-        let bottom = strut(BarEdge::Bottom, RIGHT_MONITOR, 1080, 28);
-        assert_eq!(bottom, [0, 0, 0, 56 + 28, 0, 0, 0, 0, 0, 0, 1920, 3199]);
-        let top = strut(BarEdge::Top, RIGHT_MONITOR, 1080, 28);
-        assert_eq!(top, [0, 0, 28, 0, 0, 0, 0, 0, 1920, 3199, 0, 0]);
     }
 
     const MONITOR: Screen = Screen { x: 0, y: 0, w: 1920, h: 1080 };

@@ -169,12 +169,15 @@ pub(crate) mod tests {
         }
     }
 
+    #[cfg(unix)]
     fn drain(src: &mut PipeSource) -> Result<Vec<f32>, String> {
         let mut out = Vec::new();
         while let Status::Data = src.next(&mut out)? {}
         Ok(out)
     }
 
+    // The program is a shell script.
+    #[cfg(unix)]
     #[test]
     fn plays_the_samples_a_program_writes() {
         let (mut src, _) = PipeSource::open(sh("head -c 8000 /dev/zero"), 0).unwrap();
@@ -184,6 +187,8 @@ pub(crate) mod tests {
         assert_eq!(src.info().sample_rate, 48_000);
     }
 
+    // The program is a shell script.
+    #[cfg(unix)]
     #[test]
     fn starts_and_seeks_the_program_at_the_position_asked() {
         let pipe = sh(r#"case "$1" in 1.500|4.250) head -c 8 /dev/zero;; *) echo "at $1" >&2; exit 1;; esac"#);
@@ -195,6 +200,8 @@ pub(crate) mod tests {
         assert_eq!(drain(&mut src).unwrap_err(), "sh: at 2.000");
     }
 
+    // The program is a shell script.
+    #[cfg(unix)]
     #[test]
     fn a_live_pipe_does_not_seek() {
         let (mut src, _) = PipeSource::open(Pipe { seekable: false, ..sh("head -c 8 /dev/zero") }, 0).unwrap();

@@ -4,9 +4,9 @@
 //! writes; ALSA's own buffer is the output buffer. Positions are derived from
 //! frames written minus the device delay, so the UI follows what is audible.
 
-use crate::alsa::AlsaPcm;
 use crate::decoder::{AudioSource, Decoder, Status, StreamInfo};
 use crate::dsp::{balance_gains, db_to_gain, volume_gain, Effect, Effects, EqSettings, Equalizer};
+use crate::output::Pcm;
 use crate::pipe::PipeSource;
 use crate::source::{Context, Playback, Sources};
 use crate::stream::{self, StreamHeaders, TitleSlot};
@@ -284,7 +284,7 @@ struct Worker {
     rx: Receiver<EngineCmd>,
     shared: Arc<Shared>,
     emit: Box<dyn Fn(EngineEvent) + Send>,
-    pcm: Option<AlsaPcm>,
+    pcm: Option<Pcm>,
     track: Option<Track>,
     next: Option<(u64, String)>,
     state: PlayState,
@@ -538,7 +538,7 @@ impl Worker {
             old.drain();
             self.written = 0; // new device clock
         }
-        self.pcm = Some(AlsaPcm::open(&self.device, rate, 2, self.buffer_ms)?);
+        self.pcm = Some(Pcm::open(&self.device, rate, 2, self.buffer_ms)?);
         self.written = 0;
         self.eq.set_rate(rate);
         self.effects.set_rate(rate);
@@ -960,8 +960,10 @@ mod tests {
     }
 
     /// Takes `pipe:` locations and plays them through a shell script.
+    #[cfg(unix)]
     struct ShellSource;
 
+    #[cfg(unix)]
     impl crate::source::Source for ShellSource {
         fn id(&self) -> &str {
             "shell"
@@ -980,6 +982,8 @@ mod tests {
         }
     }
 
+    // The program is a shell script.
+    #[cfg(unix)]
     #[test]
     fn plays_what_an_added_source_says_to_play() {
         let sources = Sources::default();

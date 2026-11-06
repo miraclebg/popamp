@@ -449,6 +449,8 @@ default = "/opt/ffmpeg"
         assert_eq!(playback_of(Play::Http { url: "http://a".into() }, &programs), Ok(Playback::Http("http://a".into())));
     }
 
+    // The program is a shell script.
+    #[cfg(unix)]
     #[test]
     fn a_started_program_gives_its_output_and_is_stopped_when_time_is_up() {
         let sh = |script: &str| vec!["-c".to_string(), script.to_string()];
@@ -586,6 +588,8 @@ default = "/opt/ffmpeg"
         assert_eq!(*told.lock().unwrap(), [why]);
     }
 
+    // The program is a shell script.
+    #[cfg(unix)]
     #[test]
     fn a_plugin_runs_only_the_programs_it_lists() {
         let p = test_plugin(&[], CALL_TIME);

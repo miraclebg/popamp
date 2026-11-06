@@ -1,11 +1,20 @@
 //! TrueType text for the playlist, menus and vector skins (fontdue).
 //! Characters the font lacks come from a system font that has them,
-//! found through fontconfig.
+//! found through fontconfig, or the registry on Windows.
 
 use popamp_skin::bitmap::mix;
 use popamp_skin::{Bitmap, Skin, TextStyle};
 use std::collections::HashMap;
 use std::path::PathBuf;
+
+#[cfg(unix)]
+mod fontconfig;
+#[cfg(unix)]
+use fontconfig as system;
+#[cfg(any(windows, test))]
+mod windows;
+#[cfg(windows)]
+use windows as system;
 
 /// The fonts the windows draw with.
 pub struct Fonts {
@@ -36,13 +45,11 @@ pub struct Font {
     cache: HashMap<(char, u32), (fontdue::Metrics, Vec<u8>)>,
 }
 
-/// Finds a font file through `fc-match`: a family name, or a pattern
-/// such as `:charset=4e2d` for a font with that character.
-fn find_font_file(pattern: &str) -> Option<PathBuf> {
-    let out = std::process::Command::new("fc-match").args(["-f", "%{file}", pattern]).output().ok()?;
-    let path = String::from_utf8(out.stdout).ok()?;
-    let path = PathBuf::from(path.trim());
-    path.is_file().then_some(path)
+/// Whether `face` draws `c`: maps it to a glyph with an outline. A font
+/// fontdue cannot read the outlines of (ttf-parser 0.25 drops them all
+/// when `loca` has 65536 entries) maps characters to empty glyphs.
+fn draws(face: &fontdue::Font, c: char) -> bool {
+    face.lookup_glyph_index(c) != 0 && (c.is_whitespace() || face.metrics(c, 16.0).width > 0)
 }
 
 fn parse(data: Vec<u8>, what: &str) -> Option<fontdue::Font> {
@@ -59,7 +66,7 @@ impl Font {
 
     pub fn load(family: &str) -> Font {
         Font::new([family, "sans-serif", "DejaVu Sans"].iter().find_map(|f| {
-            let path = find_font_file(f)?;
+            let path = system::family(f)?;
             parse(std::fs::read(&path).ok()?, &path.display().to_string())
         }))
     }
@@ -78,7 +85,7 @@ impl Font {
         if let Some(&f) = self.face_of.get(&c) {
             return f;
         }
-        let f = self.faces.iter().position(|f| f.lookup_glyph_index(c) != 0).or_else(|| self.system_face(c));
+        let f = self.faces.iter().position(|f| draws(f, c)).or_else(|| self.system_face(c));
         self.face_of.insert(c, f);
         f
     }
@@ -87,17 +94,21 @@ impl Font {
         if c.is_control() || self.faces.is_empty() {
             return None;
         }
-        let path = find_font_file(&format!(":charset={:x}", c as u32))?;
-        let i = match self.files.get(&path) {
-            Some(&i) => i,
-            None => {
-                let face = parse(std::fs::read(&path).ok()?, &path.display().to_string())?;
-                self.faces.push(face);
-                self.files.insert(path, self.faces.len() - 1);
-                self.faces.len() - 1
-            }
-        };
-        (self.faces[i].lookup_glyph_index(c) != 0).then_some(i)
+        let candidates = system::for_char(c);
+        let found = candidates.into_iter().find_map(|path| self.system_file(path).filter(|&i| draws(&self.faces[i], c)));
+        log::debug!("system font for {c:?}: {:?}", found.and_then(|i| self.files.iter().find(|(_, &f)| f == i).map(|(p, _)| p)));
+        found
+    }
+
+    /// The face of a system font file, read the first time.
+    fn system_file(&mut self, path: PathBuf) -> Option<usize> {
+        if let Some(&i) = self.files.get(&path) {
+            return Some(i);
+        }
+        let face = parse(std::fs::read(&path).ok()?, &path.display().to_string())?;
+        self.faces.push(face);
+        self.files.insert(path, self.faces.len() - 1);
+        Some(self.faces.len() - 1)
     }
 
     fn glyph(&mut self, c: char, px: u32) -> Option<&(fontdue::Metrics, Vec<u8>)> {
@@ -166,5 +177,31 @@ impl Font {
         }
         out.push('…');
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CLOCK: &[u8] = include_bytes!("../../../crates/popamp-skin/tests/fixtures/fonts-shade/fonts/clock.ttf");
+
+    #[test]
+    fn a_font_draws_the_characters_it_has_outlines_for() {
+        let face = parse(CLOCK.to_vec(), "clock").unwrap();
+        assert!(draws(&face, '7') && draws(&face, ' '));
+        assert!(!draws(&face, 'A'));
+    }
+
+    #[test]
+    fn a_font_whose_outlines_cannot_be_read_draws_nothing() {
+        // The same font with its `glyf` table hidden: characters still map
+        // to glyphs, as in fonts ttf-parser drops the outlines of.
+        let mut data = CLOCK.to_vec();
+        let at = data.windows(4).position(|w| w == b"glyf").unwrap();
+        data[at..at + 4].copy_from_slice(b"xxxx");
+        let face = parse(data, "broken").unwrap();
+        assert_ne!(face.lookup_glyph_index('7'), 0);
+        assert!(!draws(&face, '7'));
     }
 }
