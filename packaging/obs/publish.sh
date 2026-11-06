@@ -23,7 +23,13 @@ trap 'rm -rf "$work"' EXIT INT TERM
 
 git -C "$root" archive --format=tar --prefix="$name/" "$ref" > "$work/src.tar"
 tar -x -C "$work" -f "$work/src.tar"
-(cd "$work/$name" && cargo vendor --quiet --locked --versioned-dirs vendor > cargo-config.toml)
+# The config cargo vendor prints points cargo at vendor/ (--quiet would
+# drop it, and the build would try to go online).
+(cd "$work/$name" && cargo vendor --locked --versioned-dirs vendor > cargo-config.toml)
+grep -q vendored-sources "$work/$name/cargo-config.toml" || {
+    echo "error: cargo vendor printed no source config" >&2
+    exit 1
+}
 
 rm -f "$checkout"/popamp-*.tar.xz
 xz -T0 -6 < "$work/src.tar" > "$checkout/$name.tar.xz"
