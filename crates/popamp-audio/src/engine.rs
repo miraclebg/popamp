@@ -960,8 +960,10 @@ mod tests {
     }
 
     /// Takes `pipe:` locations and plays them through a shell script.
+    #[cfg(unix)]
     struct ShellSource;
 
+    #[cfg(unix)]
     impl crate::source::Source for ShellSource {
         fn id(&self) -> &str {
             "shell"
@@ -980,6 +982,8 @@ mod tests {
         }
     }
 
+    // The program is a shell script.
+    #[cfg(unix)]
     #[test]
     fn plays_what_an_added_source_says_to_play() {
         let sources = Sources::default();

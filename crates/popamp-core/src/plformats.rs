@@ -58,10 +58,15 @@ fn resolve(base: Option<&Path>, raw: &str) -> String {
     }
     if let Some(rest) = raw.strip_prefix("file://") {
         // file:///abs/path or file://localhost/abs/path
-        let rest = rest.strip_prefix("localhost").unwrap_or(rest);
-        return percent_decode(rest);
+        let rest = percent_decode(rest.strip_prefix("localhost").unwrap_or(rest));
+        // file:///C:/x is C:\x on Windows.
+        let rest = match rest.as_bytes() {
+            [b'/', drive, b':', ..] if cfg!(windows) && drive.is_ascii_alphabetic() => &rest[1..],
+            _ => &rest,
+        };
+        return native(rest);
     }
-    let path = raw.replace('\\', "/");
+    let path = native(raw);
     let p = Path::new(&path);
     if p.is_absolute() {
         return path;
@@ -70,6 +75,12 @@ fn resolve(base: Option<&Path>, raw: &str) -> String {
         Some(dir) => normalize(&dir.join(p)).to_string_lossy().into_owned(),
         None => path,
     }
+}
+
+/// `path` with either slash as this system's separator: playlists made on
+/// Windows use `\`, those made elsewhere `/`.
+fn native(path: &str) -> String {
+    path.replace(['\\', '/'], std::path::MAIN_SEPARATOR_STR)
 }
 
 fn normalize(p: &Path) -> PathBuf {
@@ -316,9 +327,12 @@ mod tests {
         assert!(html.trim_end().ends_with("</html>"));
     }
 
+    /// A file path on this system, with spaces and non-ASCII letters.
+    const FILE: &str = if cfg!(windows) { r"C:\music\a b\01 – ä.mp3" } else { "/music/a b/01 – ä.mp3" };
+
     fn sample() -> Vec<Item> {
         vec![
-            Item { location: "/music/a b/01 – ä.mp3".into(), title: Some("Artist - Ä & <B>".into()), length_ms: Some(125_000) },
+            Item { location: FILE.into(), title: Some("Artist - Ä & <B>".into()), length_ms: Some(125_000) },
             Item { location: "http://radio.example/stream".into(), title: None, length_ms: None },
         ]
     }
@@ -337,6 +351,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn relative_paths_resolve() {
         let base = Path::new("/home/u/lists");
@@ -345,6 +360,18 @@ mod tests {
         assert_eq!(locs, ["/home/u/music/x.mp3", "/home/u/lists/sub/y.flac", "/abs/z z.ogg"]);
         let written = write(&items, PlaylistFormat::M3u8, Some(base));
         assert!(written.contains("\nsub/y.flac\n"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn relative_paths_resolve_on_windows() {
+        let base = Path::new(r"C:\u\lists");
+        let text = "#EXTM3U\n..\\music\\x.mp3\nsub/y.flac\nfile:///C:/abs/z%20z.ogg\nD:/other/a.mp3\n";
+        let items = parse(text, PlaylistFormat::M3u, Some(base));
+        let locs: Vec<_> = items.iter().map(|i| i.location.as_str()).collect();
+        assert_eq!(locs, [r"C:\u\music\x.mp3", r"C:\u\lists\sub\y.flac", r"C:\abs\z z.ogg", r"D:\other\a.mp3"]);
+        let written = write(&items, PlaylistFormat::M3u8, Some(base));
+        assert!(written.contains("\nsub\\y.flac\n"));
     }
 
     #[test]

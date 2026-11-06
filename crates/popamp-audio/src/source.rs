@@ -258,8 +258,8 @@ mod tests {
             std::fs::write(dir.join(f), b"").unwrap();
         }
         let items = FileSource.expand(&dir.to_string_lossy(), &Context::default()).unwrap().unwrap();
-        let names: Vec<_> = items.iter().map(|i| i.location.strip_prefix(&*dir.to_string_lossy()).unwrap().to_string()).collect();
-        assert_eq!(names, ["/9.mp3", "/10.mp3", "/sub/1.flac"]);
+        let names: Vec<_> = items.iter().map(|i| Path::new(&i.location).strip_prefix(&dir).unwrap().to_path_buf()).collect();
+        assert_eq!(names, [Path::new("9.mp3"), Path::new("10.mp3"), &Path::new("sub").join("1.flac")]);
         assert_eq!(FileSource.expand(&dir.join("9.mp3").to_string_lossy(), &Context::default()), Ok(None));
         std::fs::remove_dir_all(dir).unwrap();
     }

@@ -241,29 +241,32 @@ mod tests {
         );
     }
 
+    /// An absolute file path on this system.
+    const FILE: &str = if cfg!(windows) { r"C:\tmp\a.mp3" } else { "/tmp/a.mp3" };
+
     #[test]
     fn files_open_or_add() {
-        let o = p(&["/tmp/a.mp3", "http://x/y"]);
-        assert_eq!(o.remotes, [Remote::Open(vec!["/tmp/a.mp3".into(), "http://x/y".into()])]);
-        let o = p(&["/ADD", "/tmp/a.mp3"]);
+        let o = p(&[FILE, "http://x/y"]);
+        assert_eq!(o.remotes, [Remote::Open(vec![FILE.into(), "http://x/y".into()])]);
+        let o = p(&["/ADD", FILE]);
         assert!(matches!(&o.remotes[0], Remote::Add(v) if v.len() == 1));
     }
 
     #[test]
     fn instance_options() {
-        let o = p(&["/NEW", "/CLASS=foo", "/INIDIR=/tmp/x", "/COMMAND=40047", "/home/nope/a.mp3"]);
+        let o = p(&["/NEW", "/CLASS=foo", "/INIDIR=/tmp/x", "/COMMAND=40047", FILE]);
         assert!(o.new_instance);
         assert_eq!(o.instance_class.as_deref(), Some("foo"));
         assert_eq!(o.ini_dir, Some(PathBuf::from("/tmp/x")));
-        assert_eq!(o.remotes, [Remote::Open(vec!["/home/nope/a.mp3".into()]), Remote::Cmd(Command::Stop)]);
+        assert_eq!(o.remotes, [Remote::Open(vec![FILE.into()]), Remote::Cmd(Command::Stop)]);
     }
 
     #[test]
     fn render_options() {
-        let o = p(&["--render=/tmp/out", "/SKIN=/tmp/Base.wsz", "/tmp/a.mp3"]);
+        let o = p(&["--render=/tmp/out", "/SKIN=/tmp/Base.wsz", FILE]);
         assert_eq!(o.render, Some(PathBuf::from("/tmp/out")));
         assert_eq!(o.skin, Some(PathBuf::from("/tmp/Base.wsz")));
-        assert_eq!(o.remotes, [Remote::Open(vec!["/tmp/a.mp3".into()])]);
+        assert_eq!(o.remotes, [Remote::Open(vec![FILE.into()])]);
     }
 
     #[test]
