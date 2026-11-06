@@ -1,10 +1,14 @@
 //! The desktop's media controls: media keys, desktop widgets, playerctl.
 //! The UI thread sends [`Snapshot`]s through [`Controls`]; each system's
 //! service turns them into its own notifications and sends method calls
-//! back as remote commands. MPRIS2 over D-Bus on Unix; none on Windows yet.
+//! back as remote commands. MPRIS2 over D-Bus on Unix, the System Media
+//! Transport Controls on Windows.
 
+use crate::cli::Remote;
+use crate::ipc::Request;
 use crate::model::AppEvent;
 use popamp_audio::Shared;
+use popamp_core::Command;
 use std::sync::Arc;
 use winit::event_loop::EventLoopProxy;
 
@@ -12,15 +16,21 @@ use winit::event_loop::EventLoopProxy;
 mod mpris;
 #[cfg(unix)]
 use mpris as service;
+#[cfg(windows)]
+mod smtc;
+#[cfg(windows)]
+use smtc as service;
 
-#[cfg(not(unix))]
-mod service {
-    use super::{AppEvent, Arc, EventLoopProxy, Shared, Snapshot};
+/// Sends `remotes` to the UI thread, as a remote control would.
+fn send(proxy: &EventLoopProxy<AppEvent>, remotes: Vec<Remote>) {
+    let (tx, _rx) = crossbeam_channel::bounded(1);
+    let _ = proxy.send_event(AppEvent::Remote(Request { remotes, reply: tx }));
+}
 
-    pub fn spawn(_: EventLoopProxy<AppEvent>, _: Arc<Shared>, _: &str) -> Option<crossbeam_channel::Sender<Snapshot>> {
-        log::info!("no media controls on this system");
-        None
-    }
+/// What a Pause button asks of a player that is `status`: nothing unless
+/// it plays, since pausing a paused player resumes it.
+fn pause(status: &str) -> Option<Command> {
+    (status == "Playing").then_some(Command::Pause)
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -67,4 +77,16 @@ impl Controls {
 /// running.
 pub fn spawn(proxy: EventLoopProxy<AppEvent>, shared: Arc<Shared>, instance: &str) -> Option<Controls> {
     Some(Controls { tx: service::spawn(proxy, shared, instance)?, last: None })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pause_only_pauses() {
+        assert_eq!(pause("Playing"), Some(Command::Pause));
+        assert_eq!(pause("Paused"), None);
+        assert_eq!(pause("Stopped"), None);
+    }
 }

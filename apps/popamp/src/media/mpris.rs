@@ -6,7 +6,6 @@
 
 use super::Snapshot;
 use crate::cli::Remote;
-use crate::ipc::Request;
 use crate::model::AppEvent;
 use parking_lot::Mutex;
 use popamp_audio::Shared;
@@ -28,8 +27,7 @@ struct Ctx {
 
 impl Ctx {
     fn send(&self, remotes: Vec<Remote>) {
-        let (tx, _rx) = crossbeam_channel::bounded(1);
-        let _ = self.proxy.send_event(AppEvent::Remote(Request { remotes, reply: tx }));
+        super::send(&self.proxy, remotes);
     }
 }
 
@@ -105,8 +103,8 @@ impl Player {
         self.ctx.send(vec![Remote::Cmd(Command::Previous)]);
     }
     fn pause(&self) {
-        if self.ctx.snap.lock().status == "Playing" {
-            self.ctx.send(vec![Remote::Cmd(Command::Pause)]);
+        if let Some(c) = super::pause(self.ctx.snap.lock().status) {
+            self.ctx.send(vec![Remote::Cmd(c)]);
         }
     }
     fn play_pause(&self) {
