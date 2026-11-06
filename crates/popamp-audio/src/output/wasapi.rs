@@ -1,5 +1,6 @@
 //! WASAPI output in shared mode: the default device, fed 32-bit float at
-//! the track's rate, which Windows converts to the mixer's.
+//! the track's rate, which Windows converts to the mixer's. The device
+//! `null` plays nothing, like ALSA's.
 
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::Media::Audio::{
@@ -32,14 +33,61 @@ fn default_device() -> Result<IMMDevice, String> {
 
 /// An open, blocking, interleaved playback stream.
 pub struct WasapiPcm {
+    /// The device's stream; none for `null`.
+    stream: Option<Stream>,
+    pub rate: u32,
+    pub channels: u32,
+}
+
+impl WasapiPcm {
+    /// Opens the default device, or `null`; `device` names no other yet.
+    pub fn open(device: &str, rate: u32, channels: u32, latency_ms: u32) -> Result<Self, String> {
+        let stream = match device {
+            "null" => None,
+            _ => Some(Stream::open(device, rate, channels, latency_ms)?),
+        };
+        Ok(Self { stream, rate, channels })
+    }
+
+    /// Writes interleaved samples, blocking until the device took them.
+    pub fn write(&mut self, samples: &[f32]) -> Result<(), String> {
+        self.stream.as_mut().map_or(Ok(()), |s| s.write(samples))
+    }
+
+    /// Frames queued but not yet audible.
+    pub fn delay(&self) -> u64 {
+        self.stream.as_ref().map_or(0, |s| s.queued().unwrap_or(0) as u64)
+    }
+
+    /// Pauses or resumes, keeping what is queued.
+    pub fn pause(&mut self, on: bool) -> bool {
+        self.stream.as_mut().is_none_or(|s| s.pause(on))
+    }
+
+    /// Discards queued audio; the next write starts afresh.
+    pub fn discard(&mut self) {
+        if let Some(s) = &mut self.stream {
+            s.stop();
+        }
+    }
+
+    /// Blocks until queued audio has played.
+    pub fn drain(&mut self) {
+        if let Some(s) = &mut self.stream {
+            s.drain();
+        }
+    }
+}
+
+/// A device's shared-mode stream.
+struct Stream {
     client: IAudioClient,
     render: IAudioRenderClient,
     /// Set by WASAPI when there is room in the buffer.
     room: HANDLE,
     /// The buffer's size in frames.
     size: u32,
-    pub rate: u32,
-    pub channels: u32,
+    channels: u32,
     /// Whether the device is playing; it starts with the first write.
     running: bool,
     paused: bool,
@@ -47,11 +95,10 @@ pub struct WasapiPcm {
 
 // SAFETY: the COM objects live in the multithreaded apartment, so any
 // thread may call them; the engine uses the stream from one at a time.
-unsafe impl Send for WasapiPcm {}
+unsafe impl Send for Stream {}
 
-impl WasapiPcm {
-    /// Opens the default device; `device` names no other yet.
-    pub fn open(device: &str, rate: u32, channels: u32, latency_ms: u32) -> Result<Self, String> {
+impl Stream {
+    fn open(device: &str, rate: u32, channels: u32, latency_ms: u32) -> Result<Self, String> {
         if device != "default" && !device.is_empty() {
             log::warn!("WASAPI: playing on the default device, not {device:?}");
         }
@@ -79,7 +126,7 @@ impl WasapiPcm {
                 Ok::<_, windows::core::Error>((client.GetBufferSize()?, client.GetService::<IAudioRenderClient>()?))
             })();
             match rest {
-                Ok((size, render)) => Ok(Self { client, render, room, size, rate, channels, running: false, paused: false }),
+                Ok((size, render)) => Ok(Self { client, render, room, size, channels, running: false, paused: false }),
                 Err(e) => {
                     let _ = CloseHandle(room);
                     Err(err("cannot set up the stream", e))
@@ -119,8 +166,7 @@ impl WasapiPcm {
         unsafe { WaitForSingleObject(self.room, WAIT_MS) };
     }
 
-    /// Writes interleaved samples, blocking until the device took them.
-    pub fn write(&mut self, samples: &[f32]) -> Result<(), String> {
+    fn write(&mut self, samples: &[f32]) -> Result<(), String> {
         let ch = self.channels as usize;
         let mut rest = samples;
         while rest.len() >= ch {
@@ -146,13 +192,7 @@ impl WasapiPcm {
         Ok(())
     }
 
-    /// Frames queued but not yet audible.
-    pub fn delay(&self) -> u64 {
-        self.queued().unwrap_or(0) as u64
-    }
-
-    /// Pauses or resumes, keeping what is queued.
-    pub fn pause(&mut self, on: bool) -> bool {
+    fn pause(&mut self, on: bool) -> bool {
         self.paused = on;
         if on {
             // SAFETY: a call on our client.
@@ -164,13 +204,7 @@ impl WasapiPcm {
         }
     }
 
-    /// Discards queued audio; the next write starts afresh.
-    pub fn discard(&mut self) {
-        self.stop();
-    }
-
-    /// Blocks until queued audio has played.
-    pub fn drain(&mut self) {
+    fn drain(&mut self) {
         if self.start().is_ok() {
             while self.queued().is_ok_and(|q| q > 0) {
                 self.wait();
@@ -180,7 +214,7 @@ impl WasapiPcm {
     }
 }
 
-impl Drop for WasapiPcm {
+impl Drop for Stream {
     fn drop(&mut self) {
         // SAFETY: our client and event, closed once.
         unsafe {
