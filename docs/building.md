@@ -105,7 +105,7 @@ ARM64. Add the repository once, and Popamp updates with the rest of the
 system:
 
 ```sh
-# openSUSE Tumbleweed (Leap 16.0: replace openSUSE_Tumbleweed with 16.0)
+# openSUSE Tumbleweed (Leap 16.0: openSUSE_Leap_16.0 instead of openSUSE_Tumbleweed)
 sudo zypper addrepo https://download.opensuse.org/repositories/home:/GoodZon:/popamp/openSUSE_Tumbleweed/home:GoodZon:popamp.repo
 sudo zypper install popamp        # or popamp-plus
 
