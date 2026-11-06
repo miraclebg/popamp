@@ -1,5 +1,6 @@
 //! Audio side of Popamp: decoding, DSP, sound output and the engine thread.
 
+pub mod cover;
 pub mod decoder;
 pub mod dsp;
 pub mod engine;

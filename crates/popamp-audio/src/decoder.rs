@@ -63,7 +63,7 @@ pub struct Decoder {
     length_known: bool,
 }
 
-fn hint_for(ext: Option<&str>) -> Hint {
+pub(crate) fn hint_for(ext: Option<&str>) -> Hint {
     let mut hint = Hint::new();
     if let Some(e) = ext {
         hint.with_extension(e);
