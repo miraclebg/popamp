@@ -316,7 +316,10 @@ impl App {
         self.update_bar_area();
         let left_bar = self.win(WindowKey::Main).is_some_and(|w| w.role == WindowRole::Bar) && bar::edge(&self.model).is_none();
         for k in WindowKey::ALL {
-            if self.win(k).is_some_and(|w| w.role != self.role(k)) {
+            if let Some(w) = self.win(k).filter(|w| w.role != self.role(k)) {
+                if w.role == WindowRole::Bar {
+                    self.platform.release(&w.window);
+                }
                 self.wins[k.index()] = None;
                 if !self.create_window(el, k, &monitors) {
                     el.exit();

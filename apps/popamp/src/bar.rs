@@ -76,6 +76,17 @@ pub struct Strip {
     pub height: i32,
 }
 
+impl Strip {
+    /// The strip itself, in screen pixels.
+    pub fn area(&self) -> Screen {
+        let Strip { edge, screen, height } = *self;
+        match edge {
+            BarEdge::Top => Screen { h: height, ..screen },
+            BarEdge::Bottom => Screen { y: screen.y + screen.h - height, h: height, ..screen },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,6 +137,14 @@ mod tests {
         let work = Screen { y: 28, h: 1000, ..ABOVE_PANEL };
         let bar = Screen { y: 0, ..bar };
         assert_eq!(usable(MONITOR, &[work], Some(bar)), ABOVE_PANEL);
+    }
+
+    #[test]
+    fn a_strip_is_the_bars_height_at_its_edge() {
+        let bottom = Strip { edge: BarEdge::Bottom, screen: RIGHT_MONITOR, height: 28 };
+        assert_eq!(bottom.area(), Screen { x: 1920, y: 1024 - 28, w: 1280, h: 28 });
+        let top = Strip { edge: BarEdge::Top, ..bottom };
+        assert_eq!(top.area(), Screen { x: 1920, y: 0, w: 1280, h: 28 });
     }
 
     #[test]

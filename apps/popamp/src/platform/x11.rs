@@ -69,6 +69,9 @@ impl Platform {
         Ok(())
     }
 
+    /// Nothing to give back: a strut goes with its window.
+    pub fn release(&self, _window: &Window) {}
+
     /// The work areas the window manager publishes for the current desktop:
     /// one per monitor where it says so (`_GTK_WORKAREAS_Dn`), else one
     /// for all of them (`_NET_WORKAREA`).
@@ -109,11 +112,11 @@ fn x11_window_id(w: &Window) -> Option<u32> {
 /// `_NET_WM_STRUT_PARTIAL` for `strip`: what it takes from the root window,
 /// `root_h` pixels high.
 fn strut(strip: Strip, root_h: i32) -> [u32; 12] {
-    let Strip { edge, screen, height } = strip;
-    let (start, end) = (screen.x as u32, (screen.x + screen.w - 1) as u32);
-    match edge {
-        BarEdge::Top => [0, 0, (screen.y + height) as u32, 0, 0, 0, 0, 0, start, end, 0, 0],
-        BarEdge::Bottom => [0, 0, 0, (root_h - screen.y - screen.h + height) as u32, 0, 0, 0, 0, 0, 0, start, end],
+    let Screen { x, y, w, h } = strip.area();
+    let (start, end) = (x as u32, (x + w - 1) as u32);
+    match strip.edge {
+        BarEdge::Top => [0, 0, (y + h) as u32, 0, 0, 0, 0, 0, start, end, 0, 0],
+        BarEdge::Bottom => [0, 0, 0, (root_h - y) as u32, 0, 0, 0, 0, 0, 0, start, end],
     }
 }
 
