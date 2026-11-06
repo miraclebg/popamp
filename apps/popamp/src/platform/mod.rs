@@ -6,7 +6,7 @@ use crate::scale::Scale;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use windows::{attributes, Platform};
+pub use windows::{attributes, use_parent_console, Platform};
 #[cfg(unix)]
 mod x11;
 #[cfg(unix)]

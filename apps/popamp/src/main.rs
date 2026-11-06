@@ -1,4 +1,8 @@
-//! Popamp: a Winamp-style skinnable audio player for Linux.
+//! Popamp: a Winamp-style skinnable audio player for Linux and Windows.
+
+// A window program on Windows, so none opens a console of its own; output
+// for the command line goes to the console it was started from.
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod app;
 mod bar;
@@ -31,6 +35,8 @@ use popamp_core::config::{Config, Paths};
 use winit::event_loop::EventLoop;
 
 fn main() {
+    #[cfg(windows)]
+    platform::use_parent_console();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let opts = match cli::parse(std::env::args().skip(1)) {
         Ok(o) => o,

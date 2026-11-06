@@ -24,6 +24,27 @@ pub fn attributes(role: WindowRole) -> WindowAttributes {
     }
 }
 
+/// Sends standard output and errors to the console of the program that
+/// started this one, if any: a window program has none of its own, and
+/// `/STATUS` or `--version` from cmd or PowerShell should still print
+/// there. Output redirected to a file or pipe stays where it was.
+pub fn use_parent_console() {
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Console::{
+        AttachConsole, GetStdHandle, SetStdHandle, ATTACH_PARENT_PROCESS, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE,
+    };
+    // SAFETY: plain calls on this process's standard handles.
+    unsafe {
+        let given = [STD_OUTPUT_HANDLE, STD_ERROR_HANDLE].map(|n| (n, GetStdHandle(n)));
+        // Attaching replaces every standard handle; a redirected one goes back.
+        if AttachConsole(ATTACH_PARENT_PROCESS) != 0 {
+            for (n, h) in given.into_iter().filter(|(_, h)| !h.is_null() && *h != INVALID_HANDLE_VALUE) {
+                SetStdHandle(n, h);
+            }
+        }
+    }
+}
+
 /// Nothing to connect to: the calls go straight to the system.
 pub struct Platform;
 
