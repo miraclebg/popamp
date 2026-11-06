@@ -1,0 +1,7 @@
+<!-- wasmtime with thin LTO needs more memory and disk than OBS gives by default. -->
+<constraints>
+  <hardware>
+    <memory><size unit="G">8</size></memory>
+    <disk><size unit="G">12</size></disk>
+  </hardware>
+</constraints>

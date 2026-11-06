@@ -56,7 +56,7 @@ sudo pacman -S --needed base-devel alsa-lib libx11 libxcb libxcursor libxi \
 
 ### Windows
 
-Windows 10 or 11, x86_64. The release zip needs nothing else: sound goes
+Windows 10 or 11, x86_64. The release downloads need nothing else: sound goes
 through WASAPI, fonts and dialogs are the system's. Building needs Rust
 1.96 or newer with its default MSVC toolchain (rustup offers to install
 the Visual Studio Build Tools it needs). So far Popamp runs on Windows in
@@ -68,7 +68,10 @@ CI and under Proton; reports from real machines are welcome.
 
 Releases on the [Releases page](https://github.com/popamp/popamp/releases)
 come with Linux packages for x86_64 and ARM64 (built on Ubuntu 22.04, so
-they need glibc 2.35 or newer) and a Windows zip, in two builds:
+they need glibc 2.35 or newer) and a Windows installer and portable zip;
+Debian and Ubuntu can take the debs from an [apt repository](#debian-and-ubuntu),
+openSUSE and Fedora get rpms from a [repository](#opensuse-and-fedora).
+All come in two builds:
 
 - **popamp:** the player.
 - **popamp-plus:** the player with [plug-ins](plugins.md), such as
@@ -81,13 +84,54 @@ the other.
 |---|---|
 | Debian / Ubuntu | `sudo apt install ./popamp-<version>-linux-amd64.deb`, or `./popamp-plus-…` (ARM64: `-arm64.deb`) |
 | Anything else | `Popamp-<version>-linux-x86_64.AppImage`, or `Popamp-Plus-…`: `chmod +x` it and run it |
-| Windows | `Popamp-<version>-windows-x86_64.zip`, or `Popamp-Plus-…`: unpack it anywhere and run `popamp.exe` |
+| Windows | `Popamp-<version>-windows-x86_64-setup.exe`, or `Popamp-Plus-…`: run it |
+| Windows, portable | `Popamp-<version>-windows-x86_64-portable.zip`, or `Popamp-Plus-…`: unpack it anywhere and run `popamp.exe` |
 
-On Windows settings and skins live in `%APPDATA%\popamp`. An empty
-`popamp.ini` next to `popamp.exe` keeps them in that folder instead, for
-a portable copy on a USB stick.
+The installer asks whether to install for you alone or for all users,
+adds Popamp to the Start menu, opens `.wsz` and `.psz` skins with it and
+puts it in "Open with" for audio files and playlists. Settings and skins
+live in `%APPDATA%\popamp` and stay there when Popamp is uninstalled.
+
+The portable zip has an empty `popamp.ini` next to `popamp.exe`, which
+keeps the settings and skins in that folder instead, for a copy on a USB
+stick; unpack it where you can write.
 
 `popamp /VERSION` says which one you have.
+
+#### Debian and Ubuntu
+
+Each release puts its debs, for amd64 and arm64, in an apt repository on
+GitHub Pages. Add it once, and Popamp updates with `apt upgrade`:
+
+```sh
+sudo mkdir -p /etc/apt/keyrings
+sudo curl -fsSLo /etc/apt/keyrings/popamp.gpg https://popamp.github.io/popamp/apt/popamp.gpg
+sudo curl -fsSLo /etc/apt/sources.list.d/popamp.sources https://popamp.github.io/popamp/apt/popamp.sources
+sudo apt update
+sudo apt install popamp           # or popamp-plus
+```
+
+It works on Debian 12 and Ubuntu 22.04 or newer. The repository keeps
+only the latest release.
+
+#### openSUSE and Fedora
+
+The [openSUSE Build Service](https://download.opensuse.org/repositories/home:/GoodZon:/popamp/) builds rpms of each release for
+openSUSE Tumbleweed and Leap 16.0 and Fedora 43 and 44, x86_64 and
+ARM64. Add the repository once, and Popamp updates with the rest of the
+system:
+
+```sh
+# openSUSE Tumbleweed (Leap 16.0: openSUSE_Leap_16.0 instead of openSUSE_Tumbleweed)
+sudo zypper addrepo https://download.opensuse.org/repositories/home:/GoodZon:/popamp/openSUSE_Tumbleweed/home:GoodZon:popamp.repo
+sudo zypper install popamp        # or popamp-plus
+
+# Fedora 44 (or Fedora_43)
+sudo dnf config-manager addrepo --from-repofile=https://download.opensuse.org/repositories/home:/GoodZon:/popamp/Fedora_44/home:GoodZon:popamp.repo
+sudo dnf install popamp           # or popamp-plus
+```
+
+The first install asks you to trust the repository's signing key.
 
 The AppImage uses the system's ALSA, X11 and xkbcommon libraries, which
 nearly every desktop has. To build the packages yourself after

@@ -1,9 +1,13 @@
 name: Release
 
-# A tag v<version> builds the Linux packages and the Windows zips and
-# publishes them as a GitHub release; a manual run only builds them
+# A tag v<version> builds the Linux packages and the Windows installers
+# and portable zips, publishes them as a GitHub release and puts the debs
+# in the apt repository on GitHub Pages; a manual run only builds them
 # (download from the run's page). Two of each: popamp, the player, and
 # popamp-plus, built with plug-ins.
+# The apt repository needs the secret APT_SIGNING_KEY (an armored gpg
+# secret key without a passphrase), Pages built by GitHub Actions, and
+# tags v* allowed to deploy to the github-pages environment.
 on:
   push:
     tags: ["v*"]
@@ -27,6 +31,7 @@ jobs:
           - runner: ubuntu-22.04-arm
             arch: aarch64
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -82,6 +87,7 @@ jobs:
 
   windows:
     runs-on: windows-2025
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
@@ -94,21 +100,24 @@ jobs:
       - name: Package popamp
         run: |
           cargo build --release --locked -p popamp
-          sh packaging/build-zip.sh target/release/popamp.exe dist
+          sh packaging/build-windows.sh target/release/popamp.exe dist
       - name: Package popamp-plus
         run: |
           cargo build --release --locked -p popamp --features plugins
-          sh packaging/build-zip.sh target/release/popamp.exe dist
+          sh packaging/build-windows.sh target/release/popamp.exe dist
           ls -lh dist
       - uses: actions/upload-artifact@v7
         with:
           name: windows-x86_64
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/*.exe
 
   release:
     if: github.ref_type == 'tag'
     needs: [linux, windows]
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -123,3 +132,44 @@ jobs:
           cat SHA256SUMS.txt
           gh release create "$GITHUB_REF_NAME" * --repo "$GITHUB_REPOSITORY" \
             --title "Popamp $GITHUB_REF_NAME" --generate-notes
+
+  apt:
+    if: github.ref_type == 'tag'
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}apt/
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: linux-*
+          path: debs
+          merge-multiple: true
+      - id: pages
+        uses: actions/configure-pages@v6
+      - name: Build the repository
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          BASE_URL: ${{ steps.pages.outputs.base_url }}
+        run: |
+          if [ -z "$APT_SIGNING_KEY" ]; then
+            echo "::error::the secret APT_SIGNING_KEY is not set" >&2
+            exit 1
+          fi
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          printf '%s\n' "$APT_SIGNING_KEY" | gpg --batch --import
+          key=$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr:/ { print $10; exit }')
+          sh packaging/apt/build-apt-repo.sh debs site/apt "$BASE_URL/apt" "$key"
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v5
