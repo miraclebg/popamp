@@ -56,7 +56,7 @@ sudo pacman -S --needed base-devel alsa-lib libx11 libxcb libxcursor libxi \
 
 ### Windows
 
-Windows 10 or 11, x86_64. The release zip needs nothing else: sound goes
+Windows 10 or 11, x86_64. The release downloads need nothing else: sound goes
 through WASAPI, fonts and dialogs are the system's. Building needs Rust
 1.96 or newer with its default MSVC toolchain (rustup offers to install
 the Visual Studio Build Tools it needs). So far Popamp runs on Windows in
@@ -68,7 +68,9 @@ CI and under Proton; reports from real machines are welcome.
 
 Releases on the [Releases page](https://github.com/popamp/popamp/releases)
 come with Linux packages for x86_64 and ARM64 (built on Ubuntu 22.04, so
-they need glibc 2.35 or newer) and a Windows zip, in two builds:
+they need glibc 2.35 or newer) and a Windows installer and portable zip;
+openSUSE and Fedora get rpms from a [repository](#opensuse-and-fedora).
+All come in two builds:
 
 - **popamp:** the player.
 - **popamp-plus:** the player with [plug-ins](plugins.md), such as
@@ -94,6 +96,25 @@ keeps the settings and skins in that folder instead, for a copy on a USB
 stick; unpack it where you can write.
 
 `popamp /VERSION` says which one you have.
+
+#### openSUSE and Fedora
+
+The [openSUSE Build Service](https://download.opensuse.org/repositories/home:/GoodZon:/popamp/) builds rpms of each release for
+openSUSE Tumbleweed and Leap 16.0 and Fedora 43 and 44, x86_64 and
+ARM64. Add the repository once, and Popamp updates with the rest of the
+system:
+
+```sh
+# openSUSE Tumbleweed (Leap 16.0: replace openSUSE_Tumbleweed with 16.0)
+sudo zypper addrepo https://download.opensuse.org/repositories/home:/GoodZon:/popamp/openSUSE_Tumbleweed/home:GoodZon:popamp.repo
+sudo zypper install popamp        # or popamp-plus
+
+# Fedora 44 (or Fedora_43)
+sudo dnf config-manager addrepo --from-repofile=https://download.opensuse.org/repositories/home:/GoodZon:/popamp/Fedora_44/home:GoodZon:popamp.repo
+sudo dnf install popamp           # or popamp-plus
+```
+
+The first install asks you to trust the repository's signing key.
 
 The AppImage uses the system's ALSA, X11 and xkbcommon libraries, which
 nearly every desktop has. To build the packages yourself after

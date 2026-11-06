@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-06
+
+The first release of Popamp. It starts at 0.5.0 rather than 0.1.0, which
+was Linamp's, since much has changed since then.
+
 ### Changed
 
 - Building needs Rust 1.96 or newer (was 1.89): the plug-in host,
@@ -37,11 +42,11 @@ All notable changes to this project are documented here. The format follows
   each build. The installer adds a Start menu entry, opens skins with
   Popamp and lists it in "Open with" for audio files and playlists;
   settings are in `%APPDATA%\popamp`, or, in the portable zip, beside
-  `popamp.exe`. The program has the Popamp icon. Sound goes to the default device
-  through WASAPI, fonts come from the system's font list, and files,
-  folders and questions use Windows' own dialogs. Started from cmd or
-  PowerShell, `/STATUS`, `/VERSION` and errors print in that console;
-  started otherwise, no console window opens. Remote commands reach a
+  `popamp.exe`. The program has the Popamp icon. Sound goes to the
+  default device through WASAPI, fonts come from the system's font list,
+  and files, folders and questions use Windows' own dialogs. Started
+  from cmd or PowerShell, `/STATUS`, `/VERSION` and errors print in that
+  console; started otherwise, no console window opens. Remote commands reach a
   running instance through a named pipe. A bar skin's strip is taken out
   of the work area, as the taskbar's is. The media keys and the player
   card by the volume flyout show the track and its cover, play, pause,
@@ -63,19 +68,20 @@ All notable changes to this project are documented here. The format follows
   may do next to its check box, turns it on and edits its settings; a new
   version that asks for more stays off until it is allowed again. A
   plug-in that crashes or runs over 60 seconds three times in a row is
-  switched off, and the title display and "Plug-ins…" say why. A dsp plug-in changes the sound after the equalizer,
-  block by block, on the engine thread; a block that fails or is late
+  switched off, and the title display and "Plug-ins…" say why. A dsp
+  plug-in changes the sound after the equalizer, block by block, on the
+  engine thread; a block that fails or is late
   plays unchanged. A track given at startup waits for the plug-ins to
   load (up to 30 seconds), so it goes to its plug-in. The calls are in the
   [`popamp-plugin-api`](https://github.com/popamp/popamp-plugin-api) crate and in
   [docs/plugins.md](docs/plugins.md). Plug-ins are built only with
   `cargo build --features plugins`; the default build is the player and
   its skins, without the WebAssembly runtime.
-- [Popamp Steel](https://github.com/popamp/skin-steel), a silver and navy vector skin laid out
-  like the "modern" players of the 2000s: a dotted blue display with a
-  segmented analyzer, round transport buttons, toggles with blue lamps, an
-  equalizer with a tab and a dB scale, and a shade mode for all three
-  windows. Its texts use its own pixel fonts (`fonts/*.ttf`, Latin and
+- [Popamp Steel](https://github.com/popamp/skin-steel), a silver and
+  navy vector skin laid out like the "modern" players of the 2000s: a
+  dotted blue display with a segmented analyzer, round transport buttons,
+  toggles with blue lamps, an equalizer with a tab and a dB scale, and a
+  shade mode for all three windows. Its texts use its own pixel fonts (`fonts/*.ttf`, Latin and
   Cyrillic).
 - Bar skins: `placement = "bar-bottom"` (or `"bar-top"`) makes a vector
   skin's main window a strip across the screen at that edge, inside the
@@ -91,9 +97,9 @@ All notable changes to this project are documented here. The format follows
 - `see_through = true` in a vector skin's window: the window shows only
   where its images are opaque (and its list, vis and EQ graph), so a
   resizable window can have rounded corners.
-- [Popamp Modern](https://github.com/popamp/skin-modern), a silver vector skin with its own
-  layout, round buttons that take clicks only on their shape (the new
-  `hit` key) and rounded windows.
+- [Popamp Modern](https://github.com/popamp/skin-modern), a silver
+  vector skin with its own layout, round buttons that take clicks only on
+  their shape (the new `hit` key) and rounded windows.
 - Popamp's own skins other than the default one live in repositories of
   their own, each with the script that generates it. A skin folder skips
   hidden files, so a skin cloned into the skins folder with git works and
@@ -106,8 +112,10 @@ All notable changes to this project are documented here. The format follows
 - `.deb` and AppImage packages for x86_64 and ARM64, built by a release
   workflow on version tags (`packaging/build-deb.sh`,
   `packaging/build-appimage.sh`), and AppStream metadata.
-- rpm packages for openSUSE and Fedora, built and published in a
-  repository by the openSUSE Build Service (`packaging/obs/`).
+- rpm packages for openSUSE Tumbleweed and Leap 16.0 and Fedora 43 and
+  44 (x86_64 and ARM64), built and published in a repository by the
+  openSUSE Build Service (`packaging/obs/`), so they update with the
+  system.
 - `/RENDER=<dir>` (with optional `/SKIN=<file>` and files) draws every
   window in a set of fixed states to PNG files without a display or sound
   card, for skin previews and before/after comparisons. The set of states
@@ -177,5 +185,6 @@ First release.
 - **Packaging:** desktop entry, `.wsz` MIME type, icons and a per-user
   install script.
 
-[Unreleased]: https://github.com/popamp/popamp/commits/main
+[Unreleased]: https://github.com/popamp/popamp/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/popamp/popamp/releases/tag/v0.5.0
 [0.1.0]: https://github.com/sayoojkkarun/linamp/releases/tag/v0.1.0

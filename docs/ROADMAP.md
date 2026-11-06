@@ -23,8 +23,10 @@ repository. Two builds:
 Done: both are built, tested and packaged by the release workflow: deb
 and AppImage for x86_64 and ARM64, where `popamp-plus` provides,
 conflicts with and replaces `popamp`, and an installer and a portable
-zip for Windows x86_64. Popamp runs on Windows with sound, fonts, dialogs, remote control, the
-bar's strip and the media controls.
+zip for Windows x86_64. Popamp runs on Windows with sound, fonts,
+dialogs, remote control, the bar's strip and the media controls. rpms
+for openSUSE and Fedora are built by the openSUSE Build Service
+(`packaging/obs/`) and published in its repository.
 
 To do:
 
@@ -33,8 +35,7 @@ To do:
   repeat and cover in the media overlay.
 - Try the Windows installer: install for one user and for all, file
   types, upgrade, uninstall.
-- The package repository: rpms for openSUSE and Fedora built by the
-  openSUSE Build Service (`packaging/obs/`); the first build there.
+- Install the rpms from the repository on openSUSE and Fedora.
 
 Until then version numbers stay as they are, including the plug-in API
 (1.0), and change in place; they start to move with this release.

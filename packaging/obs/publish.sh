@@ -7,7 +7,7 @@
 # twice changes nothing.
 # Usage: packaging/obs/publish.sh <osc checkout of the package> [git ref, default HEAD]
 #   e.g. osc checkout home:GoodZon:popamp popamp   (once)
-#        packaging/obs/publish.sh home:GoodZon:popamp/popamp v0.2.0
+#        packaging/obs/publish.sh home:GoodZon:popamp/popamp v0.5.0
 # Needs: git, cargo, xz, osc logged in to the project.
 set -eu
 
