@@ -55,6 +55,18 @@ Until then version numbers stay as they are, including the plug-in API
   history (Ctrl+H).
 - **Desktop integration:** tray icon (StatusNotifierItem), track-change
   notifications, global hotkeys through the XDG portal.
+- **Catalog on the website:** one catalog of Popamp skins and plug-ins
+  on the Popamp website, to which anyone with an account can add their
+  own. Each entry must link to its git repository; the site keeps the
+  files (`.psz`, plug-in folders) and the skin previews, and publishes
+  the catalog as JSON for the player.
+- **Gallery in the player:** a window to browse and search that catalog
+  and install a skin or plug-in in a click, instead of opening a
+  downloaded file or cloning a repository into the plug-ins folder. It
+  shows a skin's preview, and what a plug-in may do before it is
+  installed, checks each download against the catalog's checksum and
+  offers updates. Needs the catalog; the Skin Museum window, which does
+  this for Winamp skins, shows the way.
 - **Native Wayland mode:** draw all windows into one surface, since Wayland
   does not let apps position their own windows.
 
