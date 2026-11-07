@@ -62,5 +62,8 @@ echo "Built $outdir/$folder-setup.exe"
 : > "$workdir/$folder/popamp.ini"
 zip="$outdir/$folder-portable.zip"
 rm -f "$zip"
-(cd "$workdir" && 7z a -tzip -bso0 "$zip" "$folder")
+# 7z is a Windows program: it reads /d/a/… as D:\d\a\…, so give it
+# the Windows path.
+(cd "$workdir" && 7z a -tzip -bso0 "$(cygpath -w "$zip")" "$folder")
+[ -f "$zip" ] || { echo "error: 7z did not write $zip" >&2; exit 1; }
 echo "Built $zip"
