@@ -22,9 +22,9 @@ impl Model {
     pub fn load_plugins(&mut self) {
         self.plugins.loads += 1;
         let n = self.plugins.loads;
-        let (root, config, cx, events) = (self.paths.plugins_dir(), self.config.plugins(), self.source_context(), self.events.clone());
+        let (roots, config, cx, events) = (self.paths.plugins_dirs(), self.config.plugins(), self.source_context(), self.events.clone());
         let _ = std::thread::Builder::new().name("popamp-plugins".into()).spawn(move || {
-            let list = installed::load_all(&root, &config, &cx);
+            let list = installed::load_all(&roots, &config, &cx);
             let effects = installed::effects(&list);
             events.send(AppEvent::Plugins(n, list, effects));
         });
@@ -188,7 +188,7 @@ mod tests {
         for (id, grant) in allowed {
             m.config.set_plugin_grant(id, grant);
         }
-        m.plugins.list = installed::load_all(&root, &m.config.plugins(), &Default::default());
+        m.plugins.list = installed::load_all(&m.paths.plugins_dirs(), &m.config.plugins(), &Default::default());
         m
     }
 
@@ -256,7 +256,7 @@ mod tests {
         std::fs::copy(fixtures.join("test/plugin.wasm"), dir.join("plugin.wasm")).unwrap();
         m.config.set_plugin_grant("test-dsp", "exec=;net=");
         m.config.set_plugin_value("test-dsp", "mode", "short");
-        let list = installed::load_all(&m.paths.plugins_dir(), &m.config.plugins(), &m.source_context());
+        let list = installed::load_all(&m.paths.plugins_dirs(), &m.config.plugins(), &m.source_context());
         let mut fx = installed::effects(&list);
         m.on_plugins(m.plugins.loads, list, Vec::new());
         fx[0].reset(8_000);
@@ -280,7 +280,7 @@ mod tests {
         for f in ["plugin.toml", "plugin.wasm"] {
             std::fs::copy(fixture.join(f), dir.join(f)).unwrap();
         }
-        let load = |m: &Model| installed::load_all(&m.paths.plugins_dir(), &m.config.plugins(), &m.source_context());
+        let load = |m: &Model| installed::load_all(&m.paths.plugins_dirs(), &m.config.plugins(), &m.source_context());
         let list = load(&m);
         m.on_plugins(m.plugins.loads, list, Vec::new());
         assert_eq!(m.sources.of("https://test.invalid/list").id(), "http", "not allowed yet");

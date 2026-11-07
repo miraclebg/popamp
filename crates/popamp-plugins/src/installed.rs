@@ -9,7 +9,7 @@ use popamp_audio::dsp::Effect;
 use popamp_audio::source::{Context, Source};
 use popamp_core::config::PluginConfig;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -64,18 +64,26 @@ impl Permissions {
     }
 }
 
-/// The plug-in folders under `root`, hidden ones skipped, by name.
-pub fn folders(root: &Path) -> Vec<PathBuf> {
-    let Ok(rd) = std::fs::read_dir(root) else { return Vec::new() };
-    let mut dirs: Vec<PathBuf> =
-        rd.flatten().filter(|e| !e.file_name().to_string_lossy().starts_with('.')).map(|e| e.path()).filter(|p| p.is_dir()).collect();
-    dirs.sort();
+/// The plug-in folders under `roots`, hidden ones skipped, by name. Of
+/// two with the same name, the one under the earlier root wins, so the
+/// user's copy hides a packaged one.
+pub fn folders(roots: &[PathBuf]) -> Vec<PathBuf> {
+    let mut seen = std::collections::HashSet::new();
+    let mut dirs: Vec<PathBuf> = roots
+        .iter()
+        .flat_map(|root| std::fs::read_dir(root).into_iter().flatten().flatten())
+        .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .filter(|p| seen.insert(p.file_name().map(ToOwned::to_owned)))
+        .collect();
+    dirs.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
     dirs
 }
 
-/// Loads every plug-in under `root` the user allowed in `config`.
-pub fn load_all(root: &Path, config: &PluginConfig, cx: &Context) -> Vec<Installed> {
-    folders(root)
+/// Loads every plug-in under `roots` the user allowed in `config`.
+pub fn load_all(roots: &[PathBuf], config: &PluginConfig, cx: &Context) -> Vec<Installed> {
+    folders(roots)
         .into_iter()
         .map(|dir| {
             let folder = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -150,7 +158,7 @@ mod tests {
             c.set_plugin_grant("asks", grant);
             c.plugins()
         };
-        let list = load_all(&root, &config("exec=;net="), &Context::default());
+        let list = load_all(std::slice::from_ref(&root), &config("exec=;net="), &Context::default());
         let states: Vec<_> = list
             .iter()
             .map(|i| match &i.state {
@@ -161,15 +169,27 @@ mod tests {
             })
             .collect();
         assert_eq!(states, ["asks off", "broken broken", "off off"]);
-        let list = load_all(&root, &config("exec=sh;net="), &Context::default());
+        let list = load_all(std::slice::from_ref(&root), &config("exec=sh;net="), &Context::default());
         assert!(matches!(&list[0].state, State::Failed(_, e) if e.starts_with("cannot compile")), "allowed, so it was loaded");
         assert!(sources(&list).is_empty());
         std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
+    fn the_users_plugin_folder_hides_a_system_one_of_the_same_name() {
+        let root = std::env::temp_dir().join(format!("popamp-installed-dirs-{}", std::process::id()));
+        let (user, system) = (root.join("user"), root.join("system"));
+        for dir in [user.join("youtube"), system.join("youtube"), system.join("crossfeed"), system.join(".hidden")] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        let list = folders(&[user.clone(), system.clone()]);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert_eq!(list, [system.join("crossfeed"), user.join("youtube")]);
+    }
+
+    #[test]
     fn sources_go_before_the_built_in_ones_and_dsp_plugins_to_the_engine() {
-        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
         let root = std::env::temp_dir().join(format!("popamp-installed-kinds-{}", std::process::id()));
         for id in ["test", "test-dsp"] {
             std::fs::create_dir_all(root.join(id)).unwrap();
@@ -179,7 +199,7 @@ mod tests {
         let mut c = popamp_core::config::Config::load(root.join("popamp.ini"));
         c.set_plugin_grant("test", "exec=sh;net=");
         c.set_plugin_grant("test-dsp", "exec=;net=");
-        let list = load_all(&root, &c.plugins(), &Context::default());
+        let list = load_all(std::slice::from_ref(&root), &c.plugins(), &Context::default());
         let ids: Vec<String> = sources(&list).iter().map(|s| s.id().to_string()).collect();
         assert_eq!(ids, ["test"]);
         let mut fx = effects(&list);

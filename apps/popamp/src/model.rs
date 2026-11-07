@@ -821,7 +821,7 @@ impl Model {
             DialogKind::Skin => {
                 let mut rows = vec!["<Popamp Default>".to_string()];
                 rows.extend(
-                    popamp_skin::list_skins(&self.paths.skins_dir())
+                    popamp_skin::list_skins(&self.paths.skins_dirs())
                         .iter()
                         .map(|p| p.file_name().unwrap_or_default().to_string_lossy().into_owned()),
                 );
@@ -1004,7 +1004,7 @@ impl Model {
                 }
             }
             DialogKind::Skin => {
-                let skins = popamp_skin::list_skins(&self.paths.skins_dir());
+                let skins = popamp_skin::list_skins(&self.paths.skins_dirs());
                 match first.and_then(|s| s.trim().parse::<usize>().ok()) {
                     Some(0) => self.set_skin(None),
                     Some(i) if i <= skins.len() => self.set_skin(Some(skins[i - 1].clone())),
@@ -1534,7 +1534,7 @@ impl Model {
             MenuItem::sep(),
         ];
         items.push(MenuItem::action("Popamp Default", "", MenuAction::Skin(None)).checked(self.skin_path.is_none()));
-        for p in popamp_skin::list_skins(&self.paths.skins_dir()).into_iter().take(40) {
+        for p in popamp_skin::list_skins(&self.paths.skins_dirs()).into_iter().take(40) {
             let name = p.file_stem().unwrap_or_default().to_string_lossy().into_owned();
             let checked = self.skin_path.as_deref() == Some(p.as_path());
             items.push(MenuItem::action(&name, "", MenuAction::Skin(Some(p))).checked(checked));

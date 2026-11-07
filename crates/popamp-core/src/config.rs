@@ -308,6 +308,9 @@ fn format_bands(bands: &[u8; 10]) -> String {
 pub struct Paths {
     pub config_dir: PathBuf,
     pub data_dir: PathBuf,
+    /// Read-only folders that packages install skins and plug-ins into,
+    /// after `data_dir` in precedence; none on Windows or in portable mode.
+    pub share_dirs: Vec<PathBuf>,
 }
 
 impl Paths {
@@ -315,11 +318,11 @@ impl Paths {
     /// portable mode, and `override_dir` (from `/INIDIR=`) wins over both.
     pub fn resolve(override_dir: Option<PathBuf>) -> Self {
         if let Some(dir) = override_dir {
-            return Self { config_dir: dir.clone(), data_dir: dir };
+            return Self { config_dir: dir.clone(), data_dir: dir, share_dirs: Vec::new() };
         }
         if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
             if exe_dir.join("popamp.ini").is_file() {
-                return Self { config_dir: exe_dir.clone(), data_dir: exe_dir };
+                return Self { config_dir: exe_dir.clone(), data_dir: exe_dir, share_dirs: Vec::new() };
             }
         }
         Self::system()
@@ -330,7 +333,7 @@ impl Paths {
     fn system() -> Self {
         let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("."));
         let dir = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| home.join("AppData").join("Roaming")).join("popamp");
-        Self { config_dir: dir.clone(), data_dir: dir }
+        Self { config_dir: dir.clone(), data_dir: dir, share_dirs: Vec::new() }
     }
 
     /// The XDG directories.
@@ -340,7 +343,11 @@ impl Paths {
         let xdg = |var: &str, fallback: &str| {
             std::env::var_os(var).map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| home.join(fallback))
         };
-        Self { config_dir: xdg("XDG_CONFIG_HOME", ".config").join("popamp"), data_dir: xdg("XDG_DATA_HOME", ".local/share").join("popamp") }
+        Self {
+            config_dir: xdg("XDG_CONFIG_HOME", ".config").join("popamp"),
+            data_dir: xdg("XDG_DATA_HOME", ".local/share").join("popamp"),
+            share_dirs: share_dirs(std::env::var_os("XDG_DATA_DIRS")),
+        }
     }
 
     pub fn ini_file(&self) -> PathBuf {
@@ -358,12 +365,42 @@ impl Paths {
     pub fn eq_auto_library(&self) -> PathBuf {
         self.config_dir.join("popamp_auto.q1")
     }
+    /// The user's skins folder, where skins are installed to.
     pub fn skins_dir(&self) -> PathBuf {
         self.data_dir.join("skins")
     }
+    /// The user's plug-ins folder.
     pub fn plugins_dir(&self) -> PathBuf {
         self.data_dir.join("plugins")
     }
+    /// Every folder skins are read from, the user's first: of two with the
+    /// same name, the first one wins.
+    pub fn skins_dirs(&self) -> Vec<PathBuf> {
+        self.with_shared("skins")
+    }
+    /// Every folder plug-ins are read from, the user's first, as for skins.
+    pub fn plugins_dirs(&self) -> Vec<PathBuf> {
+        self.with_shared("plugins")
+    }
+    fn with_shared(&self, sub: &str) -> Vec<PathBuf> {
+        std::iter::once(&self.data_dir).chain(&self.share_dirs).map(|d| d.join(sub)).collect()
+    }
+}
+
+/// `popamp` in each of `$XDG_DATA_DIRS`, where packages put what they
+/// install. As the XDG spec says, relative entries are ignored, and unset
+/// or empty means `/usr/local/share:/usr/share`.
+#[cfg(not(windows))]
+fn share_dirs(var: Option<std::ffi::OsString>) -> Vec<PathBuf> {
+    let var = var.filter(|v| !v.is_empty()).unwrap_or_else(|| "/usr/local/share:/usr/share".into());
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for dir in std::env::split_paths(&var).filter(|p| p.is_absolute()) {
+        let dir = PathBuf::from_iter(dir.components()).join("popamp");
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
+    dirs
 }
 
 /// Settings plus the parsed file they came from, so unknown keys survive a save.
@@ -496,6 +533,28 @@ mod tests {
         assert_eq!(s.volume, 255);
         assert_eq!(s.balance, 0);
         assert!(s.shuffle);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn packages_install_into_the_xdg_data_dirs() {
+        let dirs = |v: Option<&str>| share_dirs(v.map(Into::into));
+        let usr = [PathBuf::from("/usr/local/share/popamp"), PathBuf::from("/usr/share/popamp")];
+        assert_eq!(dirs(None), usr);
+        assert_eq!(dirs(Some("")), usr);
+        assert_eq!(
+            dirs(Some("/opt/x:relative:/usr/share/:/usr/share")),
+            [PathBuf::from("/opt/x/popamp"), PathBuf::from("/usr/share/popamp")]
+        );
+        let p = Paths { config_dir: "/c".into(), data_dir: "/d".into(), share_dirs: vec!["/usr/share/popamp".into()] };
+        assert_eq!(p.skins_dirs(), [PathBuf::from("/d/skins"), PathBuf::from("/usr/share/popamp/skins")]);
+        assert_eq!(p.plugins_dirs(), [PathBuf::from("/d/plugins"), PathBuf::from("/usr/share/popamp/plugins")]);
+    }
+
+    #[test]
+    fn a_portable_or_ini_dir_setup_ignores_the_system_folders() {
+        let p = Paths::resolve(Some("/x".into()));
+        assert_eq!(p.skins_dirs(), [PathBuf::from("/x/skins")]);
     }
 
     #[test]
