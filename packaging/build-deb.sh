@@ -30,7 +30,8 @@ case "$package" in
     popamp) other=""; extra=""; summary="Winamp-style skinnable audio player" ;;
     popamp-plus)
         summary="Winamp-style skinnable audio player, with plug-ins"
-        other="Provides: popamp
+        # Versioned, so a skin's "Depends: popamp (>= x)" takes popamp-plus too.
+        other="Provides: popamp (= $version)
 Conflicts: popamp
 Replaces: popamp
 "

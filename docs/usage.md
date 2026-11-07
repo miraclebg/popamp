@@ -33,11 +33,17 @@ popamp /HELP               # all options
 |---|---|---|
 | Settings, playlist, bookmarks | `~/.config/popamp/` | `%APPDATA%\popamp\` |
 | Skins, plug-ins | `~/.local/share/popamp/skins/`, `plugins/` | `%APPDATA%\popamp\skins\`, `plugins\` |
+| Skins, plug-ins from packages | `/usr/share/popamp/skins/`, `plugins/` (each of `$XDG_DATA_DIRS`) | none |
 
 Settings are in `popamp.ini`, whose key names follow `winamp.ini`; the
 playlist is saved to `popamp.m3u8`. A `popamp.ini` next to the program
 keeps everything in the program's folder (portable mode), and
 `/INIDIR=<dir>` uses another folder for one run.
+
+Skins and plug-ins installed as packages (`apt install popamp-skin-<name>`)
+are read from the system folders and removed with the package manager.
+A skin or plug-in folder of the same name in your own folder wins over
+the packaged one. Portable mode and `/INIDIR=` read your folder only.
 
 ## YouTube
 

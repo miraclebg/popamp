@@ -84,7 +84,11 @@ So plug-in support is a Cargo feature, off by default:
 ```
 
 A plug-in can be installed by cloning its repository there, like a skin
-(hidden files such as `.git` are ignored). The core ships no plug-ins.
+(hidden files such as `.git` are ignored), or as a package
+(`apt install popamp-plugin-<id>`), which puts it in
+`/usr/share/popamp/plugins/<id>/`; your own folder of the same name wins.
+A packaged plug-in, too, stays off until you allow what it asks for.
+The core ships no plug-ins.
 The menu "Plug-ins…" lists them, turns each on or off, and shows its
 settings and permissions.
 

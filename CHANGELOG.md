@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Skins and plug-ins are also read from `popamp/skins` and
+  `popamp/plugins` in each of `$XDG_DATA_DIRS` (`/usr/share/popamp/…`),
+  where their packages install them. Your own copy of the same name wins,
+  and a packaged plug-in stays off until you allow its permissions.
+
 ### Changed
 
 - The apt repository moved from GitHub Pages to https://apt.popamp.app,

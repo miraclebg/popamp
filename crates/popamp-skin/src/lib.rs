@@ -322,17 +322,20 @@ pub fn is_skin_archive(path: &Path) -> bool {
     has_extension(path, &ARCHIVE_EXTENSIONS)
 }
 
-/// Lists installable skins in `dir`: archives, plain `.zip` files and
-/// sub-directories.
-pub fn list_skins(dir: &Path) -> Vec<std::path::PathBuf> {
-    let mut v: Vec<_> = std::fs::read_dir(dir)
-        .into_iter()
-        .flatten()
-        .flatten()
+/// Lists installable skins in `dirs`: archives, plain `.zip` files and
+/// sub-directories, by name. Of two with the same name, the one in the
+/// earlier folder wins, so the user's copy hides a packaged one.
+pub fn list_skins(dirs: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
+    let mut seen = std::collections::HashSet::new();
+    let mut v: Vec<_> = dirs
+        .iter()
+        .flat_map(|dir| std::fs::read_dir(dir).into_iter().flatten().flatten())
         .map(|e| e.path())
         .filter(|p| p.is_dir() || is_skin_archive(p) || has_extension(p, &["zip"]))
+        .filter(|p| seen.insert(p.file_name().map(ToOwned::to_owned)))
         .collect();
-    v.sort_by(|a, b| popamp_core::text::natural_cmp(&a.to_string_lossy(), &b.to_string_lossy()));
+    let name = |p: &Path| p.file_name().unwrap_or_default().to_string_lossy().into_owned();
+    v.sort_by(|a, b| popamp_core::text::natural_cmp(&name(a), &name(b)));
     v
 }
 
@@ -459,9 +462,23 @@ mod tests {
         for f in ["a.wsz", "b.psz", "c.ZIP", "notes.txt"] {
             std::fs::write(dir.join(f), b"").unwrap();
         }
-        let names: Vec<String> = list_skins(&dir).iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        let names: Vec<String> =
+            list_skins(std::slice::from_ref(&dir)).iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!(names, ["a.wsz", "b.psz", "c.ZIP", "folder"]);
+    }
+
+    #[test]
+    fn the_users_skin_hides_a_system_one_of_the_same_name() {
+        let root = std::env::temp_dir().join(format!("popamp-skin-dirs-{}", std::process::id()));
+        let (user, system) = (root.join("user"), root.join("system"));
+        for dir in [user.join("steel"), system.join("steel"), system.join("Modern")] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(user.join("b.wsz"), b"").unwrap();
+        let list = list_skins(&[user.clone(), system.clone(), root.join("missing")]);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert_eq!(list, [user.join("b.wsz"), system.join("Modern"), user.join("steel")]);
     }
 
     #[test]
