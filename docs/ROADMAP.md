@@ -82,12 +82,11 @@ Until then version numbers stay as they are, including the plug-in API
   tag, builds an `Architecture: all` deb (a skin depends on
   `popamp (>> 0.5.0)`, a plug-in on `popamp-plus (>> 0.5.0)` and
   recommends the programs it runs) and adds it to apt.popamp.app, which
-  is rebuilt from every repository's latest release.
+  is rebuilt from every repository's latest release. Since Popamp 0.6.0
+  the three skins and two plug-ins are there at 1.0.0, and their READMEs
+  give the `apt install` line.
 
-  To do:
-  - Tag the first releases of the skins and plug-ins once a Popamp newer
-    than 0.5.0 is out, and add the `apt install` line to their READMEs.
-  - The same as rpms in the openSUSE Build Service.
+  To do: the same as rpms in the openSUSE Build Service.
 
   Windows has no packages, so the gallery is still needed.
 - **Native Wayland mode:** draw all windows into one surface, since Wayland
