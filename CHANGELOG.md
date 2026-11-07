@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The apt repository moved from GitHub Pages to https://apt.popamp.app,
+  built and signed by [popamp/apt](https://github.com/popamp/apt) from
+  the latest release of every popamp repository, so skins and plug-ins
+  can join it as packages. Add it again with the commands in
+  `docs/building.md`; the signing key stays the same.
+
 ## [0.5.0] - 2026-11-06
 
 The first release of Popamp. It starts at 0.5.0 rather than 0.1.0, which
