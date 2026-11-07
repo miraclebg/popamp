@@ -100,13 +100,14 @@ stick; unpack it where you can write.
 
 #### Debian and Ubuntu
 
-Each release puts its debs, for amd64 and arm64, in an apt repository on
-GitHub Pages. Add it once, and Popamp updates with `apt upgrade`:
+Each release puts its debs, for amd64 and arm64, in the apt repository
+at apt.popamp.app (built by [popamp/apt](https://github.com/popamp/apt)).
+Add it once, and Popamp updates with `apt upgrade`:
 
 ```sh
 sudo mkdir -p /etc/apt/keyrings
-sudo curl -fsSLo /etc/apt/keyrings/popamp.gpg https://popamp.github.io/popamp/apt/popamp.gpg
-sudo curl -fsSLo /etc/apt/sources.list.d/popamp.sources https://popamp.github.io/popamp/apt/popamp.sources
+sudo curl -fsSLo /etc/apt/keyrings/popamp.gpg https://apt.popamp.app/popamp.gpg
+sudo curl -fsSLo /etc/apt/sources.list.d/popamp.sources https://apt.popamp.app/popamp.sources
 sudo apt update
 sudo apt install popamp           # or popamp-plus
 ```
