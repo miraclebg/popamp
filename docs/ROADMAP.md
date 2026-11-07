@@ -35,8 +35,10 @@ To do:
   repeat and cover in the media overlay.
 - Try the Windows installer: install for one user and for all, file
   types, upgrade, uninstall.
-- Install the rpms from the repository on openSUSE and Fedora, and the
-  debs from the apt repository on Debian and Ubuntu.
+- Install the rpms from the repository on openSUSE and Fedora. (The debs
+  from https://apt.popamp.app install and start on Debian 12 and 13 and
+  Ubuntu 22.04, 24.04 and 26.04, x86_64 and ARM64; popamp/apt's Test
+  install workflow checks that daily.)
 
 Until then version numbers stay as they are, including the plug-in API
 (1.0), and change in place; they start to move with this release.
@@ -67,6 +69,27 @@ Until then version numbers stay as they are, including the plug-in API
   installed, checks each download against the catalog's checksum and
   offers updates. Needs the catalog; the Skin Museum window, which does
   this for Winamp skins, shows the way.
+- **Skins and plug-ins as packages:** `apt install popamp-skin-<name>`
+  or `popamp-plugin-<name>` (and the same as rpms), for skins and
+  plug-ins we have checked. The repositories keep their names
+  (`skin-<name>`, `plugin-<name>`); only the packages carry the
+  `popamp-` prefix.
+
+  Done for apt: Popamp reads `/usr/share/popamp/skins` and `…/plugins`
+  (all of `XDG_DATA_DIRS`) after the user's folder, whose copy wins; a
+  packaged plug-in stays off until allowed. popamp/apt's `addon-release`
+  workflow, called by each skin and plug-in repository on a `v<version>`
+  tag, builds an `Architecture: all` deb (a skin depends on
+  `popamp (>> 0.5.0)`, a plug-in on `popamp-plus (>> 0.5.0)` and
+  recommends the programs it runs) and adds it to apt.popamp.app, which
+  is rebuilt from every repository's latest release.
+
+  To do:
+  - Tag the first releases of the skins and plug-ins once a Popamp newer
+    than 0.5.0 is out, and add the `apt install` line to their READMEs.
+  - The same as rpms in the openSUSE Build Service.
+
+  Windows has no packages, so the gallery is still needed.
 - **Native Wayland mode:** draw all windows into one surface, since Wayland
   does not let apps position their own windows.
 
