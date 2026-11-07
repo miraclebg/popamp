@@ -515,7 +515,11 @@ default = "/opt/ffmpeg"
     /// module of `fixtures/test`, put together in a folder of its own.
     fn test_dsp(mode: &str) -> Arc<Plugin> {
         let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-        let dir = std::env::temp_dir().join(format!("popamp-dsp-{}-{mode}", std::process::id())).join("test-dsp");
+        // A folder per call: tests run in parallel, and two of them copying
+        // into one folder let the other read a half-written file.
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("popamp-dsp-{}-{mode}-{n}", std::process::id())).join("test-dsp");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::copy(fixtures.join("test-dsp/plugin.toml"), dir.join("plugin.toml")).unwrap();
         std::fs::copy(fixtures.join("test/plugin.wasm"), dir.join("plugin.wasm")).unwrap();
