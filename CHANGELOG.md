@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-07
+
 ### Added
 
 - Skins and plug-ins are also read from `popamp/skins` and
@@ -20,6 +22,9 @@ All notable changes to this project are documented here. The format follows
   the latest release of every popamp repository, so skins and plug-ins
   can join it as packages. Add it again with the commands in
   `docs/building.md`; the signing key stays the same.
+- The `popamp-plus` deb provides `popamp` at its own version, so a
+  package that needs a newer Popamp, such as a skin, installs next to
+  either build.
 
 ## [0.5.0] - 2026-11-06
 
@@ -203,6 +208,7 @@ First release.
 - **Packaging:** desktop entry, `.wsz` MIME type, icons and a per-user
   install script.
 
-[Unreleased]: https://github.com/popamp/popamp/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/popamp/popamp/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/popamp/popamp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/popamp/popamp/releases/tag/v0.5.0
 [0.1.0]: https://github.com/sayoojkkarun/linamp/releases/tag/v0.1.0
