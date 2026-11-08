@@ -1,6 +1,6 @@
 """Draws the Popamp logo: a brushed-metal knob in a red neon ring with a lightning bolt cut into it.
 
-Writes popamp.svg and popamp-small.svg (a plain yellow knob for 32 px and below)
+Writes popamp.svg and popamp-small.svg (a plain yellow knob for 16 and 24 px)
 next to this script, then renders png/popamp-N.png with inkscape and packs
 them into popamp.ico for Windows (the program, its shortcuts and installer).
 
@@ -20,8 +20,8 @@ SCALE = 1.1  # knob size in the 256 tile
 # Bolt outline, clockwise from the top-left corner (units of the reference drawing).
 BOLT = [(487, 316), (578, 316), (515, 422), (598, 422), (462, 635), (505, 485), (432, 485)]
 
-BIG_SIZES = (48, 64, 128, 256)
-SMALL_SIZES = (16, 24, 32)
+BIG_SIZES = (32, 48, 64, 128, 256)
+SMALL_SIZES = (16, 24)
 
 TILE = """<linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#343842"/><stop offset="1" stop-color="#1d2027"/></linearGradient>"""
 HEAD = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><title>Popamp</title><defs>\n'
