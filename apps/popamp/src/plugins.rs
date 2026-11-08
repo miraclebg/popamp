@@ -6,7 +6,9 @@ use crate::panels::{button, Act};
 use crate::widgets::{Event, Form, Rect, Widget, BUTTON};
 use popamp_audio::dsp::Effect;
 use popamp_audio::EngineCmd;
+use popamp_core::config::PluginConfig;
 use popamp_plugins::installed::{self, Installed, State};
+use popamp_plugins::manifest::Manifest;
 
 /// The plug-ins in the plug-ins folder and what became of each.
 #[derive(Default)]
@@ -23,8 +25,9 @@ impl Model {
         self.plugins.loads += 1;
         let n = self.plugins.loads;
         let (roots, config, cx, events) = (self.paths.plugins_dirs(), self.config.plugins(), self.source_context(), self.events.clone());
+        let own = [self.paths.config_dir.clone(), self.paths.data_dir.clone()];
         let _ = std::thread::Builder::new().name("popamp-plugins".into()).spawn(move || {
-            let list = installed::load_all(&roots, &config, &cx);
+            let list = installed::load_all(&roots, &config, &cx, &own);
             let effects = installed::effects(&list);
             events.send(AppEvent::Plugins(n, list, effects));
         });
@@ -69,6 +72,10 @@ struct PluginRow {
     /// The permissions it asks for now, stored as allowed when it is on.
     grant: String,
     on: bool,
+    /// The hosts its manifest lists, and whether each is ticked.
+    hosts: Vec<(String, bool)>,
+    /// The field with the folders it may read, if it reads files.
+    folders: Option<usize>,
     fields: Vec<(String, usize)>,
 }
 
@@ -112,23 +119,12 @@ impl PluginsPanel {
                     line(&mut form, &mut y, text, true);
                 }
             }
-            if !m.permissions.exec.is_empty() {
-                if let Some(path) = installed::journal_path(&model.paths.plugins_dirs(), &m.id) {
-                    line(&mut form, &mut y, format!("Journal: {}", path.display()), true);
-                }
-            }
             if let Some(text) = problem(p) {
                 line(&mut form, &mut y, text, true);
             }
-            let mut fields = Vec::new();
-            for s in &m.settings {
-                form.add(Rect::new(34, y + 2, 140, 24), Widget::Label { text: s.label.clone(), dim: false });
-                let text = config.value(&m.id, &s.key).unwrap_or(&s.default).to_string();
-                let cursor = text.chars().count();
-                fields.push((s.key.clone(), form.add(Rect::new(176, y, w - 186, 24), Widget::Input { text, cursor })));
-                y += 28;
-            }
-            rows.push(PluginRow { plugin: n, id: m.id.clone(), grant, on, fields });
+            let (hosts, folders) = permissions(&mut form, &mut y, n, m, &config);
+            let fields = settings_fields(&mut form, &mut y, m, &config);
+            rows.push(PluginRow { plugin: n, id: m.id.clone(), grant, on, hosts, folders, fields });
             y += 8;
         }
         button(&mut form, w - 2 * BUTTON.0 - 16, y, "OK", Act::Ok, true);
@@ -145,6 +141,16 @@ impl PluginsPanel {
                 }
                 true
             }
+            Event::Toggled(Act::PluginHost(n, host), on) => {
+                if let Some(row) = self.rows.iter_mut().find(|r| r.plugin == n) {
+                    row.hosts[host].1 = on;
+                }
+                true
+            }
+            Event::Clicked(Act::PluginJournal(n)) => {
+                open_journal(model, n);
+                true
+            }
             Event::Clicked(Act::Ok) => {
                 self.apply(model);
                 false
@@ -158,11 +164,86 @@ impl PluginsPanel {
     fn apply(&self, model: &mut Model) {
         for row in &self.rows {
             model.config.set_plugin_grant(&row.id, if row.on { &row.grant } else { "" });
+            let (off, on) = installed::stored_addresses(&row.hosts);
+            model.config.set_plugin_limit(&row.id, installed::HOSTS_OFF, &off);
+            model.config.set_plugin_limit(&row.id, installed::HOSTS_ON, &on);
+            if let Some(i) = row.folders {
+                model.config.set_plugin_limit(&row.id, installed::FOLDERS, self.form.text(i));
+            }
             for (key, i) in &row.fields {
                 model.config.set_plugin_value(&row.id, key, self.form.text(*i));
             }
         }
         model.load_plugins();
+    }
+}
+
+/// The fields of the plug-in's own settings, by key.
+fn settings_fields(form: &mut Form<Act>, y: &mut i32, m: &Manifest, config: &PluginConfig) -> Vec<(String, usize)> {
+    let w = form.w;
+    let mut fields = Vec::new();
+    for s in &m.settings {
+        form.add(Rect::new(34, *y + 2, 140, 24), Widget::Label { text: s.label.clone(), dim: false });
+        let text = config.value(&m.id, &s.key).unwrap_or(&s.default).to_string();
+        let cursor = text.chars().count();
+        fields.push((s.key.clone(), form.add(Rect::new(176, *y, w - 186, 24), Widget::Input { text, cursor })));
+        *y += 28;
+    }
+    fields
+}
+
+/// The block where the user narrows what plug-in number `n` may do: a
+/// check box per host, the folders it may read, and its journal. Comes
+/// before the plug-in's own settings. Returns the hosts and the folder field.
+fn permissions(form: &mut Form<Act>, y: &mut i32, n: usize, m: &Manifest, config: &PluginConfig) -> (Vec<(String, bool)>, Option<usize>) {
+    let w = form.w;
+    let asks = &m.permissions;
+    if asks.exec.is_empty() && asks.net.is_empty() && asks.files.is_none() {
+        return (Vec::new(), None);
+    }
+    form.add(Rect::new(34, *y, w - 44, 20), Widget::Label { text: "Permissions".into(), dim: false });
+    *y += 22;
+    let hosts = installed::addresses(m, config);
+    for (i, (address, open)) in hosts.iter().enumerate() {
+        let label = match installed::caution(address) {
+            Some(why) => format!("Connect to {address} ({why})"),
+            None => format!("Connect to {address}"),
+        };
+        form.add(Rect::new(34, *y, w - 44, 20), Widget::Check { label, checked: *open, action: Act::PluginHost(n, i) });
+        *y += 22;
+    }
+    let folders = asks.files.map(|_| {
+        let hint = "Folders it may read, separated by ; (~ is your whole home):";
+        form.add(Rect::new(34, *y, w - 44, 20), Widget::Label { text: hint.into(), dim: true });
+        *y += 20;
+        let text = installed::folders_text(m, config, std::env::home_dir().as_deref());
+        let cursor = text.chars().count();
+        let field = form.add(Rect::new(34, *y, w - 44, 24), Widget::Input { text, cursor });
+        *y += 28;
+        form.add(
+            Rect::new(34, *y, w - 44, 20),
+            Widget::Label { text: "Hidden folders and the player's own stay closed.".into(), dim: true },
+        );
+        *y += 22;
+        field
+    });
+    button(form, 34, *y, "Journal", Act::PluginJournal(n), false);
+    *y += BUTTON.1 + 8;
+    (hosts, folders)
+}
+
+/// Shows what plug-in number `n` asked for; an empty file if nothing yet.
+fn open_journal(model: &mut Model, n: usize) {
+    let Some(m) = model.plugins.list.get(n).and_then(Installed::manifest) else { return };
+    let Some(path) = installed::journal_path(&model.paths.plugins_dirs(), &m.id) else { return };
+    let made = path
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| std::fs::OpenOptions::new().create(true).append(true).open(&path));
+    let viewer = if cfg!(windows) { "notepad" } else { "xdg-open" };
+    if let Err(e) = made.and_then(|_| std::process::Command::new(viewer).arg(&path).spawn()) {
+        log::warn!("{}: {e}", path.display());
+        model.flash(format!("CANNOT OPEN JOURNAL: {}", path.display()));
     }
 }
 
@@ -216,7 +297,7 @@ mod tests {
         for (id, grant) in allowed {
             m.config.set_plugin_grant(id, grant);
         }
-        m.plugins.list = installed::load_all(&m.paths.plugins_dirs(), &m.config.plugins(), &Default::default());
+        m.plugins.list = installed::load_all(&m.paths.plugins_dirs(), &m.config.plugins(), &Default::default(), &[]);
         m
     }
 
@@ -254,7 +335,7 @@ mod tests {
         assert!(shown.contains(&"It runs yt-dlp with your rights.".to_string()), "{shown:?}");
         assert!(shown.contains(&"yt-dlp -j {url}".to_string()), "the user reads the command: {shown:?}");
         assert!(shown.contains(&"{url} only on x.invalid".to_string()), "{shown:?}");
-        assert!(shown.iter().any(|l| l.starts_with("Journal: ") && l.ends_with("yt.log")), "{shown:?}");
+        assert!(shown.contains(&"Permissions".to_string()), "{shown:?}");
         assert!(shown.iter().any(|l| l.starts_with("Broken: plugin.toml:")), "{shown:?}");
         let f = p.form();
         let check = (0..f.count()).find(|&i| matches!(f.widget(i), Widget::Check { .. })).unwrap();
@@ -266,6 +347,69 @@ mod tests {
         assert!(!press(&mut p, &mut m, Key::Enter), "OK closes");
         assert_eq!(m.config.plugins().grant("yt"), grant_of(YT));
         assert_eq!(m.config.plugins().value("yt", "format"), Some("best!"));
+    }
+
+    const NET: &str = "id = \"n\"\nname = \"N\"\nversion = \"1\"\napi = \"1.0\"\nkind = \"source\"\n[source]\nhosts = [\"x.invalid\"]\n[permissions]\nnet = [\"a.invalid\", \"b.invalid\"]\nfiles = \"read\"\n[[setting]]\nkey = \"own\"\nlabel = \"Own\"\ntype = \"text\"\ndefault = \"d\"\n";
+
+    fn inputs(p: &Panel) -> Vec<usize> {
+        let f = p.form();
+        (0..f.count()).filter(|&i| matches!(f.widget(i), Widget::Input { .. })).collect()
+    }
+
+    fn check_labelled(p: &Panel, label: &str) -> Rect {
+        let f = p.form();
+        f.rect((0..f.count()).find(|&i| matches!(f.widget(i), Widget::Check { label: l, .. } if l == label)).unwrap())
+    }
+
+    #[test]
+    fn hosts_can_be_unticked_and_folders_chosen_above_the_plugins_own_settings() {
+        let mut m = with_plugins(&[("n", NET)], &[]);
+        let mut p = Panel::open(PanelKind::Plugins, &m);
+        let shown = labels(&p);
+        assert!(shown.contains(&"[x] Connect to a.invalid".to_string()), "{shown:?}");
+        assert!(shown.contains(&"[x] Connect to b.invalid".to_string()), "{shown:?}");
+        let (folders, own) = (inputs(&p)[0], inputs(&p)[1]);
+        let f = p.form();
+        assert!(f.rect(folders).y < f.rect(own).y, "the permissions come first");
+        assert_eq!(f.text(own), "d");
+        let (host, field) = (check_labelled(&p, "Connect to b.invalid"), f.rect(folders));
+        click(&mut p, &mut m, host);
+        click(&mut p, &mut m, field);
+        type_text(&mut p, &mut m, ";/mnt");
+        assert!(!press(&mut p, &mut m, Key::Enter));
+        let config = m.config.plugins();
+        assert_eq!(config.limit("n", installed::HOSTS_OFF), Some("b.invalid"));
+        assert!(config.limit("n", installed::FOLDERS).unwrap().ends_with(";/mnt"));
+        assert_eq!(config.value("n", "folders"), None, "not one of its settings");
+        let again = Panel::open(PanelKind::Plugins, &m);
+        assert!(labels(&again).contains(&"[ ] Connect to b.invalid".to_string()), "kept: {:?}", labels(&again));
+    }
+
+    #[test]
+    fn an_unusual_port_or_a_local_address_stays_off_until_ticked() {
+        let text = NET.replace("\"b.invalid\"", "\"b.invalid:8000\", \"localhost:8000\"");
+        let mut m = with_plugins(&[("n", &text)], &[]);
+        let mut p = Panel::open(PanelKind::Plugins, &m);
+        let shown = labels(&p);
+        assert!(shown.contains(&"[x] Connect to a.invalid".to_string()), "{shown:?}");
+        assert!(shown.contains(&"[ ] Connect to b.invalid:8000 (unusual port)".to_string()), "{shown:?}");
+        assert!(shown.contains(&"[ ] Connect to localhost:8000 (this computer or your network)".to_string()), "{shown:?}");
+        let local = check_labelled(&p, "Connect to localhost:8000 (this computer or your network)");
+        click(&mut p, &mut m, local);
+        assert!(!press(&mut p, &mut m, Key::Enter));
+        let config = m.config.plugins();
+        assert_eq!(config.limit("n", installed::HOSTS_ON), Some("localhost:8000"));
+        assert_eq!(config.limit("n", installed::HOSTS_OFF), Some(""));
+        let again = labels(&Panel::open(PanelKind::Plugins, &m));
+        assert!(again.contains(&"[x] Connect to localhost:8000 (this computer or your network)".to_string()), "{again:?}");
+        assert!(again.contains(&"[ ] Connect to b.invalid:8000 (unusual port)".to_string()), "{again:?}");
+    }
+
+    #[test]
+    fn a_plugin_that_asks_for_nothing_has_no_permissions_block() {
+        let plain = "id = \"p\"\nname = \"P\"\nversion = \"1\"\napi = \"1.0\"\nkind = \"dsp\"\n";
+        let m = with_plugins(&[("p", plain)], &[]);
+        assert!(!labels(&Panel::open(PanelKind::Plugins, &m)).contains(&"Permissions".to_string()));
     }
 
     #[test]
@@ -299,7 +443,7 @@ mod tests {
         std::fs::copy(fixtures.join("test/plugin.wasm"), dir.join("plugin.wasm")).unwrap();
         m.config.set_plugin_grant("test-dsp", "exec=;net=");
         m.config.set_plugin_value("test-dsp", "mode", "short");
-        let list = installed::load_all(&m.paths.plugins_dirs(), &m.config.plugins(), &m.source_context());
+        let list = installed::load_all(&m.paths.plugins_dirs(), &m.config.plugins(), &m.source_context(), &[]);
         let mut fx = installed::effects(&list);
         m.on_plugins(m.plugins.loads, list, Vec::new());
         fx[0].reset(8_000);
@@ -323,7 +467,7 @@ mod tests {
         for f in ["plugin.toml", "plugin.wasm"] {
             std::fs::copy(fixture.join(f), dir.join(f)).unwrap();
         }
-        let load = |m: &Model| installed::load_all(&m.paths.plugins_dirs(), &m.config.plugins(), &m.source_context());
+        let load = |m: &Model| installed::load_all(&m.paths.plugins_dirs(), &m.config.plugins(), &m.source_context(), &[]);
         let list = load(&m);
         m.on_plugins(m.plugins.loads, list, Vec::new());
         assert_eq!(m.sources.of("https://test.invalid/list").id(), "http", "not allowed yet");

@@ -2612,7 +2612,7 @@ dependencies = [
 [[package]]
 name = "popamp-plugin-api"
 version = "1.0.0"
-source = "git+https://github.com/popamp/popamp-plugin-api?branch=main#d8d8894d3b7cd731f13d59f59b5aeb85b6d65daf"
+source = "git+https://github.com/popamp/popamp-plugin-api?branch=main#14b2f74074f6e3a1b0838c7d45fdb671bccee229"
 dependencies = [
  "serde",
 ]
@@ -2629,6 +2629,7 @@ dependencies = [
  "serde",
  "serde_json",
  "toml 1.1.8+spec-1.1.0",
+ "ureq 2.12.1",
 ]
 
 [[package]]

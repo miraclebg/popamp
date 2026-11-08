@@ -3,6 +3,7 @@
 //! or a missing module keeps the plug-in off, with the error shown.
 
 use crate::command::Command;
+use crate::net::NetEntry;
 use popamp_plugin_api::{Version, VERSION};
 use serde::Deserialize;
 use std::path::Path;
@@ -75,8 +76,17 @@ fn host_of(url: &str) -> Option<String> {
 pub struct Permissions {
     /// The commands it may run, written out; see [`Command`].
     pub exec: Vec<Command>,
-    /// Hosts it may reach over HTTP(S).
+    /// Where it may connect, see [`NetEntry`]; the user can untick any.
     pub net: Vec<String>,
+    /// That it reads files. Which folders is the user's choice, so paths,
+    /// which differ on every system, are not written here.
+    pub files: Option<FilesAccess>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FilesAccess {
+    Read,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -135,8 +145,9 @@ impl Manifest {
         let api = check_api(&f.api)?;
         let kind = kind_of(&f.kind, f.source)?;
         if kind == Kind::Dsp && f.permissions != Permissions::default() {
-            return Err("a dsp plug-in may not run programs or reach the network".into());
+            return Err("a dsp plug-in may not run programs, reach the network or read files".into());
         }
+        f.permissions.net.iter().try_for_each(|a| NetEntry::parse(a).map(|_| ()))?;
         check_exec(&f.permissions, &f.settings)?;
         check_settings(&f.settings)?;
         Ok(Manifest {
@@ -323,9 +334,9 @@ default = "yt-dlp"
         assert_eq!(with("[source]\nhosts = [\"a.b\"]\n"), "a dsp plug-in has no [source] table");
         assert_eq!(
             with("[[permissions.exec]]\nid = \"a\"\nprogram = \"echo\"\nargs = []\n"),
-            "a dsp plug-in may not run programs or reach the network"
+            "a dsp plug-in may not run programs, reach the network or read files"
         );
-        assert_eq!(with("[permissions]\nnet = [\"a.b\"]\n"), "a dsp plug-in may not run programs or reach the network");
+        assert_eq!(with("[permissions]\nnet = [\"a.b\"]\n"), "a dsp plug-in may not run programs, reach the network or read files");
     }
 
     #[test]
@@ -341,5 +352,22 @@ default = "yt-dlp"
         std::fs::rename(&dir, &other).unwrap();
         assert_eq!(Manifest::load(&other).unwrap_err(), "id \"youtube\" differs from its folder \"yt\"");
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_manifest_asks_for_hosts_by_name_and_for_files_without_paths() {
+        let source = |extra: &str| {
+            format!("id = \"a\"\nname = \"A\"\nversion = \"1\"\napi = \"1.0\"\nkind = \"source\"\n[source]\nhosts = [\"x.invalid\"]\n[permissions]\n{extra}\n")
+        };
+        let m = Manifest::parse(&source("net = [\"a.example\", \"*.b.example\"]\nfiles = \"read\"")).unwrap();
+        assert_eq!(m.permissions.net, ["a.example", "*.b.example"]);
+        assert_eq!(m.permissions.files, Some(FilesAccess::Read));
+        for host in ["*", "http://a.example", "a.example/x", "A.EXAMPLE", "", "a.example:0"] {
+            assert!(Manifest::parse(&source(&format!("net = [\"{host}\"]"))).is_err(), "{host}");
+        }
+        assert!(Manifest::parse(&source("files = \"write\"")).is_err());
+        assert!(Manifest::parse(&source("files = [\"/home\"]")).is_err());
+        let dsp = "id = \"a\"\nname = \"A\"\nversion = \"1\"\napi = \"1.0\"\nkind = \"dsp\"\n[permissions]\nfiles = \"read\"\n";
+        assert_eq!(Manifest::parse(dsp).unwrap_err(), "a dsp plug-in may not run programs, reach the network or read files");
     }
 }
