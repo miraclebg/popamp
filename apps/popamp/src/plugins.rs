@@ -107,6 +107,16 @@ impl PluginsPanel {
             let allowed = config.grant(&m.id);
             let more = if !allowed.is_empty() && allowed != grant { " (more than you allowed)" } else { "" };
             line(&mut form, &mut y, format!("It {}{more}.", m.permissions.describe()), false);
+            for command in &m.permissions.exec {
+                for text in wrapped(&command.text()).into_iter().chain(command.limits()) {
+                    line(&mut form, &mut y, text, true);
+                }
+            }
+            if !m.permissions.exec.is_empty() {
+                if let Some(path) = installed::journal_path(&model.paths.plugins_dirs(), &m.id) {
+                    line(&mut form, &mut y, format!("Journal: {}", path.display()), true);
+                }
+            }
             if let Some(text) = problem(p) {
                 line(&mut form, &mut y, text, true);
             }
@@ -156,6 +166,24 @@ impl PluginsPanel {
     }
 }
 
+/// A command in lines that fit the window, broken between words.
+fn wrapped(text: &str) -> Vec<String> {
+    const COLUMNS: usize = 64;
+    let mut lines = vec![String::new()];
+    for word in text.split(' ') {
+        let last = lines.last_mut().expect("starts with one");
+        if !last.is_empty() && last.len() + 1 + word.len() > COLUMNS {
+            lines.push(word.to_string());
+        } else {
+            if !last.is_empty() {
+                last.push(' ');
+            }
+            last.push_str(word);
+        }
+    }
+    lines
+}
+
 /// Why a plug-in is not working, in words.
 fn problem(p: &Installed) -> Option<String> {
     match &p.state {
@@ -192,7 +220,19 @@ mod tests {
         m
     }
 
-    const YT: &str = "id = \"yt\"\nname = \"YT\"\nversion = \"2\"\napi = \"1.0\"\nkind = \"source\"\ndescription = \"Videos.\"\n[source]\nhosts = [\"x.invalid\"]\n[permissions]\nexec = [\"yt-dlp\"]\n[[setting]]\nkey = \"format\"\nlabel = \"Format\"\ntype = \"text\"\ndefault = \"best\"\n";
+    const YT: &str = "id = \"yt\"\nname = \"YT\"\nversion = \"2\"\napi = \"1.0\"\nkind = \"source\"\ndescription = \"Videos.\"\n[source]\nhosts = [\"x.invalid\"]\n[[permissions.exec]]\nid = \"get\"\nprogram = \"yt-dlp\"\nargs = [\"-j\", \"{url}\"]\n[permissions.exec.vars]\nurl = { type = \"url\", hosts = [\"x.invalid\"] }\n[[setting]]\nkey = \"format\"\nlabel = \"Format\"\ntype = \"text\"\ndefault = \"best\"\n";
+
+    fn grant_of(manifest: &str) -> String {
+        popamp_plugins::manifest::Manifest::parse(manifest).unwrap().permissions.grant()
+    }
+
+    #[test]
+    fn a_long_command_is_broken_between_words() {
+        let lines = wrapped(&"word ".repeat(30));
+        assert!(lines.len() > 1 && lines.iter().all(|l| l.len() <= 64), "{lines:?}");
+        assert_eq!(lines.join(" ").trim_end(), "word ".repeat(30).trim_end());
+        assert_eq!(wrapped("short one"), ["short one"]);
+    }
 
     fn labels(p: &Panel) -> Vec<String> {
         let f = p.form();
@@ -212,6 +252,9 @@ mod tests {
         let shown = labels(&p);
         assert!(shown.contains(&"[ ] YT 2".to_string()), "{shown:?}");
         assert!(shown.contains(&"It runs yt-dlp with your rights.".to_string()), "{shown:?}");
+        assert!(shown.contains(&"yt-dlp -j {url}".to_string()), "the user reads the command: {shown:?}");
+        assert!(shown.contains(&"{url} only on x.invalid".to_string()), "{shown:?}");
+        assert!(shown.iter().any(|l| l.starts_with("Journal: ") && l.ends_with("yt.log")), "{shown:?}");
         assert!(shown.iter().any(|l| l.starts_with("Broken: plugin.toml:")), "{shown:?}");
         let f = p.form();
         let check = (0..f.count()).find(|&i| matches!(f.widget(i), Widget::Check { .. })).unwrap();
@@ -221,7 +264,7 @@ mod tests {
         click(&mut p, &mut m, input);
         type_text(&mut p, &mut m, "!");
         assert!(!press(&mut p, &mut m, Key::Enter), "OK closes");
-        assert_eq!(m.config.plugins().grant("yt"), "exec=yt-dlp;net=");
+        assert_eq!(m.config.plugins().grant("yt"), grant_of(YT));
         assert_eq!(m.config.plugins().value("yt", "format"), Some("best!"));
     }
 
@@ -238,7 +281,7 @@ mod tests {
 
     #[test]
     fn an_allowed_plugin_that_did_not_load_is_shown_ticked_with_the_reason() {
-        let m = with_plugins(&[("yt", YT)], &[("yt", "exec=yt-dlp;net=")]);
+        let m = with_plugins(&[("yt", YT)], &[("yt", &grant_of(YT))]);
         let shown = labels(&Panel::open(PanelKind::Plugins, &m));
         assert!(shown.contains(&"[x] YT 2".to_string()), "{shown:?}");
         assert!(shown.iter().any(|l| l.starts_with("Did not load: cannot compile")), "{shown:?}");
@@ -284,7 +327,7 @@ mod tests {
         let list = load(&m);
         m.on_plugins(m.plugins.loads, list, Vec::new());
         assert_eq!(m.sources.of("https://test.invalid/list").id(), "http", "not allowed yet");
-        m.config.set_plugin_grant("test", "exec=sh;net=");
+        m.config.set_plugin_grant("test", &grant_of(&std::fs::read_to_string(dir.join("plugin.toml")).unwrap()));
         let list = load(&m);
         m.on_plugins(m.plugins.loads, list, Vec::new());
         assert_eq!(m.sources.of("https://test.invalid/list").id(), "test");

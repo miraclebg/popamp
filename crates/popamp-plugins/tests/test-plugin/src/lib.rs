@@ -4,6 +4,7 @@
 
 use extism_pdk::*;
 use popamp_plugin_api::{bytes_of, config as keys, samples_of, ExecOutput, ExecRequest, Format, Play, Tags, Track, VERSION};
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 #[host_fn]
@@ -16,9 +17,9 @@ fn path(location: &str) -> &str {
     location.strip_prefix("https://test.invalid").unwrap_or(location)
 }
 
-fn exec(program: &str, script: &str) -> Result<ExecOutput, Error> {
-    let req = ExecRequest { program: program.into(), args: vec!["-c".into(), script.into()] };
-    Ok(unsafe { popamp_exec(Json(req))? }.0)
+fn exec(command: &str, vars: &[(&str, &str)]) -> Result<ExecOutput, Error> {
+    let vars: BTreeMap<String, String> = vars.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+    Ok(unsafe { popamp_exec(Json(ExecRequest { command: command.into(), vars }))? }.0)
 }
 
 #[plugin_fn]
@@ -52,13 +53,13 @@ pub fn open(Json(location): Json<String>) -> FnResult<Json<Play>> {
         "/now" => Play::Http { url: format!("http://now/{}", unsafe { popamp_now()? }.0) },
         // Asks a program for the rate, then plays 4 frames of silence.
         "/pipe" => {
-            let out = exec("sh", "echo 44100")?;
+            let out = exec("rate", &[("rate", "44100")])?;
             if let Some(e) = out.error {
                 return Err(WithReturnCode::new(Error::msg(e), 1));
             }
             Play::Pipe {
-                program: "sh".into(),
-                args: vec!["-c".into(), "head -c 32 /dev/zero".into()],
+                command: "silence".into(),
+                vars: BTreeMap::new(),
                 rate: out.stdout.trim().parse()?,
                 seekable: false,
                 tags: Tags { title: Some("Piped".into()), ..Default::default() },
@@ -66,12 +67,20 @@ pub fn open(Json(location): Json<String>) -> FnResult<Json<Play>> {
         }
         // A program that does not stop is stopped when the call's time is up.
         "/slow" => {
-            let out = exec("sh", "sleep 5")?;
+            let out = exec("slow", &[])?;
             return Err(WithReturnCode::new(Error::msg(out.error.unwrap_or_default()), 1));
         }
         "/forbidden" => {
-            exec("rm", "")?;
+            exec("rm", &[])?;
             unreachable!("the host refuses rm")
+        }
+        "/option" => {
+            exec("rate", &[("rate", "--help")])?;
+            unreachable!("the host refuses an option as a value")
+        }
+        "/extra" => {
+            exec("rate", &[("rate", "1"), ("more", "x")])?;
+            unreachable!("the host refuses a value the command has no place for")
         }
         "/trap" => panic!("a bug in the plug-in"),
         "/loop" => loop {

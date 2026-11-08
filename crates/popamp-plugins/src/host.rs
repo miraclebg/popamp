@@ -1,13 +1,15 @@
 //! Runs one plug-in: its module compiled once, a small pool of instances
 //! so two worker threads can call it at once, and the host functions it
-//! may use: `popamp_exec`, limited to the programs its manifest names, and
+//! may use: `popamp_exec`, limited to the commands its manifest writes, and
 //! `popamp_now`, the time. A dsp plug-in gets an instance of its own for
 //! the engine instead: see [`Dsp`].
 
+use crate::command::{self, Command, Vars};
+use crate::journal::Journal;
 use crate::manifest::{Kind, Manifest, SourceSpec, MODULE};
 use extism::{CompiledPlugin, CurrentPlugin, Function, Pool, PoolBuilder, UserData, Val, PTR};
 use popamp_audio::dsp::Effect;
-use popamp_audio::pipe::Pipe;
+use popamp_audio::pipe::{Pipe, START};
 use popamp_audio::source::{Context, Playback, Source};
 use popamp_core::meta::TrackMeta;
 use popamp_core::plformats::Item;
@@ -16,7 +18,7 @@ use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -48,26 +50,59 @@ pub struct Plugin {
     notice: OnceLock<StopNotice>,
 }
 
-/// The programs a plug-in may start: each name of `exec`, and where it is
-/// (the setting of the same key, or the name itself, looked up in `PATH`).
-#[derive(Debug, Clone, PartialEq)]
-pub struct Programs(Vec<(String, String)>);
+/// The commands a plug-in may run, and what the player fills in itself.
+#[derive(Debug)]
+pub struct Programs {
+    commands: Vec<Command>,
+    /// Where a program is, when the user's setting of its name says.
+    paths: HashMap<String, String>,
+    /// The user's proxy, as a URL.
+    proxy: Option<String>,
+    journal: Journal,
+}
 
 impl Programs {
-    pub fn new(m: &Manifest, settings: &HashMap<String, String>) -> Programs {
-        Programs(
-            m.permissions.exec.iter().map(|name| (name.clone(), settings.get(name).cloned().unwrap_or_else(|| name.clone()))).collect(),
-        )
+    pub fn new(m: &Manifest, settings: &HashMap<String, String>, proxy: &str, journal: Journal) -> Programs {
+        let proxy = proxy.trim();
+        Programs {
+            commands: m.permissions.exec.clone(),
+            paths: settings.iter().filter(|(_, v)| !v.trim().is_empty()).map(|(k, v)| (k.clone(), v.clone())).collect(),
+            proxy: (!proxy.is_empty()).then(|| format!("http://{proxy}")),
+            journal,
+        }
     }
 
-    /// Where the program `name` is, if the plug-in may start it.
-    pub fn find(&self, name: &str) -> Result<&str, String> {
-        self.0
-            .iter()
-            .find(|(n, _)| n == name)
-            .map(|(_, p)| p.as_str())
-            .ok_or_else(|| format!("{name} is not in the plug-in's exec permission"))
+    /// The program and arguments for a plug-in's request, if the manifest
+    /// allows exactly that; written in the journal either way.
+    pub fn prepare(&self, id: &str, vars: &Vars, seekable: bool) -> Result<(String, Vec<String>), String> {
+        let asked = request_text(id, vars);
+        let prepared = self.expand(id, vars, seekable);
+        match &prepared {
+            Ok(_) => self.journal.record("exec", &asked, "allowed"),
+            Err(why) => self.journal.record("exec", &format!("{asked} ({why})"), "refused"),
+        }
+        prepared
     }
+
+    fn expand(&self, id: &str, vars: &Vars, seekable: bool) -> Result<(String, Vec<String>), String> {
+        let command = self.commands.iter().find(|c| c.id == id).ok_or_else(|| format!("{id} is not a command of this plug-in"))?;
+        let mut built_in = Vars::new();
+        if let Some(proxy) = &self.proxy {
+            built_in.insert(command::PROXY.into(), proxy.clone());
+        }
+        if seekable {
+            built_in.insert(command::START.into(), START.into());
+        }
+        let args = command.expand(vars, &built_in)?;
+        Ok((self.paths.get(&command.program).unwrap_or(&command.program).clone(), args))
+    }
+}
+
+/// A request as the journal shows it: what the plug-in said, nothing the
+/// player added (the proxy may hold a password).
+fn request_text(id: &str, vars: &Vars) -> String {
+    let values: Vec<String> = vars.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    format!("{id} {}", values.join(" ")).trim_end().to_string()
 }
 
 /// The user's values for a plug-in's settings, defaults filled in.
@@ -83,16 +118,22 @@ impl std::fmt::Debug for Plugin {
 
 impl Plugin {
     /// Loads the plug-in in `dir`; `values` are the user's settings for it.
-    pub fn load(dir: &Path, values: &HashMap<String, String>, cx: &Context) -> Result<Plugin, String> {
-        Plugin::load_with(dir, values, cx, CALL_TIME)
+    pub fn load(dir: &Path, values: &HashMap<String, String>, cx: &Context, journal: Journal) -> Result<Plugin, String> {
+        Plugin::load_with(dir, values, cx, journal, CALL_TIME)
     }
 
-    fn load_with(dir: &Path, values: &HashMap<String, String>, cx: &Context, call_time: Duration) -> Result<Plugin, String> {
+    fn load_with(
+        dir: &Path,
+        values: &HashMap<String, String>,
+        cx: &Context,
+        journal: Journal,
+        call_time: Duration,
+    ) -> Result<Plugin, String> {
         let manifest = Manifest::load(dir)?;
         let call_time = if manifest.kind == Kind::Dsp { call_time.min(DSP_CALL_TIME) } else { call_time };
         let wasm = std::fs::read(dir.join(MODULE)).map_err(|e| format!("{MODULE}: {e}"))?;
         let settings = settings_of(&manifest, values);
-        let programs = Arc::new(Programs::new(&manifest, &settings));
+        let programs = Arc::new(Programs::new(&manifest, &settings, &cx.proxy, journal));
         let mut config: Vec<(String, String)> = settings.into_iter().collect();
         config.push((config::PROXY.into(), cx.proxy.clone()));
         let em = extism::Manifest::new([extism::Wasm::data(wasm)])
@@ -229,23 +270,22 @@ fn now(plugin: &mut CurrentPlugin, _: &[Val], outputs: &mut [Val], _: UserData<(
     Ok(())
 }
 
-/// `popamp_exec`: runs a program the manifest names, until it exits or
+/// `popamp_exec`: runs a command the manifest writes, until it exits or
 /// the call's time is up.
 fn exec(plugin: &mut CurrentPlugin, inputs: &[Val], outputs: &mut [Val], programs: UserData<Arc<Programs>>) -> Result<(), extism::Error> {
     let text: String = plugin.memory_get_val(&inputs[0])?;
     let req: ExecRequest = serde_json::from_str(&text)?;
-    let program = programs
+    let (program, args) = programs
         .get()?
         .lock()
         .map_err(|_| extism::Error::msg("poisoned"))?
-        .find(&req.program)
-        .map(str::to_string)
+        .prepare(&req.command, &req.vars, false)
         .map_err(extism::Error::msg)?;
     // Stop the program a little before the call's time is up, so the
     // plug-in can still answer that it took too long.
     let left = plugin.time_remaining().unwrap_or(CALL_TIME);
     let deadline = Instant::now() + left.saturating_sub((left / 10).min(Duration::from_secs(1)));
-    let out = run(&program, &req.args, deadline).unwrap_or_else(|e| ExecOutput { error: Some(e), ..Default::default() });
+    let out = run(&program, &args, deadline).unwrap_or_else(|e| ExecOutput { error: Some(e), ..Default::default() });
     let handle = plugin.memory_new(serde_json::to_string(&out)?)?;
     outputs[0] = plugin.memory_to_val(handle);
     Ok(())
@@ -254,13 +294,15 @@ fn exec(plugin: &mut CurrentPlugin, inputs: &[Val], outputs: &mut [Val], program
 /// Runs `program` with standard input closed; kills it at `deadline`.
 pub fn run(program: &str, args: &[String], deadline: Instant) -> Result<ExecOutput, String> {
     let mut child =
-        Command::new(program).args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                format!("{program} not found")
-            } else {
-                format!("cannot run {program}: {e}")
-            }
-        })?;
+        std::process::Command::new(program).args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(
+            |e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    format!("{program} not found")
+                } else {
+                    format!("cannot run {program}: {e}")
+                }
+            },
+        )?;
     let read = |r: Option<Box<dyn Read + Send>>| {
         std::thread::spawn(move || {
             let mut buf = Vec::new();
@@ -372,13 +414,13 @@ impl Effect for Dsp {
     }
 }
 
-/// What the player plays for a plug-in's answer; a pipe may only start a
-/// program the manifest names.
+/// What the player plays for a plug-in's answer; a pipe may only run a
+/// command the manifest writes.
 pub fn playback_of(play: Play, programs: &Programs) -> Result<Playback, String> {
     Ok(match play {
         Play::Http { url } => Playback::Http(url),
-        Play::Pipe { program, args, rate, seekable, tags } => {
-            let program = programs.find(&program)?.to_string();
+        Play::Pipe { command, vars, rate, seekable, tags } => {
+            let (program, args) = programs.prepare(&command, &vars, seekable)?;
             Playback::Pipe(Box::new(Pipe { program, args, rate, seekable, meta: meta_of(tags) }))
         }
     })
@@ -414,37 +456,78 @@ api = "1.0"
 kind = "source"
 [source]
 hosts = ["t.example"]
-[permissions]
-exec = ["yt-dlp", "ffmpeg"]
+[[permissions.exec]]
+id = "get"
+program = "yt-dlp"
+args = [["--proxy", "{proxy}"], "{word}"]
+[permissions.exec.vars]
+word = { type = "text" }
+[[permissions.exec]]
+id = "play"
+program = "ffmpeg"
+args = [["-ss", "{start}"], "pipe:1"]
 [[setting]]
 key = "ffmpeg"
 label = "ffmpeg"
 type = "path"
-default = "/opt/ffmpeg"
+default = "ffmpeg"
 "#,
         )
         .unwrap()
     }
 
-    #[test]
-    fn a_program_is_found_by_its_setting_or_its_name_and_only_if_listed() {
+    fn programs(user: &[(&str, &str)], proxy: &str, journal: Journal) -> Programs {
         let m = manifest();
-        let programs = Programs::new(&m, &settings_of(&m, &HashMap::new()));
-        assert_eq!(programs.find("ffmpeg"), Ok("/opt/ffmpeg"));
-        assert_eq!(programs.find("yt-dlp"), Ok("yt-dlp"));
-        assert_eq!(programs.find("sh"), Err("sh is not in the plug-in's exec permission".into()));
-        let mine = HashMap::from([("ffmpeg".to_string(), "/usr/bin/ffmpeg".to_string())]);
-        assert_eq!(Programs::new(&m, &settings_of(&m, &mine)).find("ffmpeg"), Ok("/usr/bin/ffmpeg"));
+        let user = user.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        Programs::new(&m, &settings_of(&m, &user), proxy, journal)
+    }
+
+    fn word(w: &str) -> Vars {
+        Vars::from([("word".to_string(), w.to_string())])
     }
 
     #[test]
-    fn a_pipe_may_start_only_a_listed_program() {
-        let m = manifest();
-        let programs = Programs::new(&m, &settings_of(&m, &HashMap::new()));
+    fn a_program_is_where_the_user_says_or_found_by_its_name() {
+        assert_eq!(programs(&[], "", Journal::default()).prepare("play", &Vars::new(), false).unwrap().0, "ffmpeg");
+        let mine = programs(&[("ffmpeg", "/usr/bin/ffmpeg")], "", Journal::default());
+        assert_eq!(mine.prepare("play", &Vars::new(), false).unwrap().0, "/usr/bin/ffmpeg");
+        let cleared = programs(&[("ffmpeg", " ")], "", Journal::default());
+        assert_eq!(cleared.prepare("play", &Vars::new(), false).unwrap().0, "ffmpeg");
+    }
+
+    #[test]
+    fn the_player_alone_fills_in_the_proxy_and_the_start() {
+        let p = programs(&[], " u:p@h:1 ", Journal::default());
+        assert_eq!(p.prepare("get", &word("a"), false).unwrap().1, ["--proxy", "http://u:p@h:1", "a"]);
+        assert_eq!(programs(&[], "", Journal::default()).prepare("get", &word("a"), false).unwrap().1, ["a"]);
+        assert_eq!(p.prepare("play", &Vars::new(), true).unwrap().1, ["-ss", START, "pipe:1"]);
+        assert_eq!(p.prepare("play", &Vars::new(), false).unwrap().1, ["pipe:1"]);
+    }
+
+    #[test]
+    fn every_request_is_in_the_journal_and_the_proxy_is_not() {
+        let dir = std::env::temp_dir().join(format!("popamp-host-journal-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let p = programs(&[], "secret@h:1", Journal::new(&dir, "t"));
+        p.prepare("get", &word("hello"), false).unwrap();
+        assert!(p.prepare("rm", &Vars::new(), false).is_err());
+        assert!(p.prepare("get", &word("--exec=x"), false).is_err());
+        let text = std::fs::read_to_string(Journal::path_in(&dir, "t")).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(lines[0].ends_with("exec allowed: get word=hello"), "{text}");
+        assert!(lines[1].ends_with("exec refused: rm (rm is not a command of this plug-in)"), "{text}");
+        assert!(lines[2].ends_with("exec refused: get word=--exec=x (word: may not start with -)"), "{text}");
+        assert!(!text.contains("secret"), "{text}");
+    }
+
+    #[test]
+    fn a_pipe_may_run_only_a_command_of_the_manifest() {
+        let programs = programs(&[("ffmpeg", "/opt/ffmpeg")], "", Journal::default());
         let pipe =
-            |program: &str| Play::Pipe { program: program.into(), args: vec![], rate: 48_000, seekable: false, tags: Tags::default() };
-        let Playback::Pipe(p) = playback_of(pipe("ffmpeg"), &programs).unwrap() else { panic!() };
-        assert_eq!(p.program, "/opt/ffmpeg");
+            |command: &str| Play::Pipe { command: command.into(), vars: Vars::new(), rate: 48_000, seekable: false, tags: Tags::default() };
+        let Playback::Pipe(p) = playback_of(pipe("play"), &programs).unwrap() else { panic!() };
+        assert_eq!((p.program.as_str(), p.args.as_slice()), ("/opt/ffmpeg", ["pipe:1".to_string()].as_slice()));
         assert!(playback_of(pipe("rm"), &programs).is_err());
         assert_eq!(playback_of(Play::Http { url: "http://a".into() }, &programs), Ok(Playback::Http("http://a".into())));
     }
@@ -475,7 +558,7 @@ default = "/opt/ffmpeg"
     fn test_plugin(values: &[(&str, &str)], call_time: Duration) -> Plugin {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test");
         let values = values.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-        Plugin::load_with(&dir, &values, &Context { proxy: "proxy:3128".into() }, call_time).unwrap()
+        Plugin::load_with(&dir, &values, &Context { proxy: "proxy:3128".into() }, Journal::default(), call_time).unwrap()
     }
 
     const AT: &str = "https://test.invalid";
@@ -524,7 +607,7 @@ default = "/opt/ffmpeg"
         std::fs::copy(fixtures.join("test-dsp/plugin.toml"), dir.join("plugin.toml")).unwrap();
         std::fs::copy(fixtures.join("test/plugin.wasm"), dir.join("plugin.wasm")).unwrap();
         let values = HashMap::from([("mode".to_string(), mode.to_string())]);
-        Arc::new(Plugin::load(&dir, &values, &Context::default()).unwrap())
+        Arc::new(Plugin::load(&dir, &values, &Context::default(), Journal::default()).unwrap())
     }
 
     /// A block of `frames` stereo frames, left 1.0 and right -1.0.
@@ -592,16 +675,19 @@ default = "/opt/ffmpeg"
         assert_eq!(*told.lock().unwrap(), [why]);
     }
 
-    // The program is a shell script.
+    // The commands are echo, head and sleep.
     #[cfg(unix)]
     #[test]
-    fn a_plugin_runs_only_the_programs_it_lists() {
+    fn a_plugin_runs_only_the_commands_it_wrote_with_values_of_their_types() {
         let p = test_plugin(&[], CALL_TIME);
         let Ok(Playback::Pipe(pipe)) = open(&p, "/pipe") else { panic!("{:?}", open(&p, "/pipe")) };
-        assert_eq!((pipe.program.as_str(), pipe.rate, pipe.meta.title.as_deref()), ("sh", 44_100, Some("Piped")));
-        assert_eq!(open(&p, "/forbidden"), Err("rm is not in the plug-in's exec permission".into()));
+        assert_eq!((pipe.program.as_str(), pipe.rate, pipe.meta.title.as_deref()), ("head", 44_100, Some("Piped")));
+        assert_eq!(pipe.args, ["-c", "32", "/dev/zero"]);
+        assert_eq!(open(&p, "/forbidden"), Err("rm is not a command of this plug-in".into()));
+        assert_eq!(open(&p, "/option"), Err("rate: may not start with -".into()));
+        assert_eq!(open(&p, "/extra"), Err("\"more\" is not a variable of command \"rate\"".into()));
         let p = test_plugin(&[], Duration::from_millis(500));
-        assert_eq!(open(&p, "/slow"), Err("sh took too long and was stopped".into()));
+        assert_eq!(open(&p, "/slow"), Err("sleep took too long and was stopped".into()));
         assert!(!p.is_off());
     }
 

@@ -107,11 +107,17 @@ hosts = ["youtube.com", "*.youtube.com", "youtu.be"]
 slow = true                    # say "CONNECTING…" while it opens
 
 [permissions]
-exec = ["yt-dlp", "ffmpeg"]    # programs it may start (see Security)
 net = []                       # hosts it may reach over HTTP
 
+[[permissions.exec]]           # a command it may run (see Security)
+id = "resolve"                 # the plug-in asks for it by this name
+program = "yt-dlp"             # a name, never a path
+args = ["-j", ["--proxy", "{proxy}"], "--", "{url}"]
+[permissions.exec.vars]
+url = { type = "url", hosts = ["youtube.com", "*.youtube.com", "youtu.be"] }
+
 [[setting]]
-key = "yt-dlp"                 # same key as in exec: where that program is
+key = "yt-dlp"                 # same key as the program: where it is
 label = "yt-dlp program"
 type = "path"
 default = "yt-dlp"
@@ -150,17 +156,39 @@ it keeps has expired. Two permissions widen this, and
 the user confirms them when turning the plug-in on, and again when a new
 version asks for more:
 
-- **`exec`**: the plug-in may start the programs named in its manifest,
-  and no others, through a host function. The program is found the way
-  the setting of the same name says (a path, or a name looked up in
-  `PATH`). The host gives the plug-in the program's standard output and
-  exit status; standard input is closed. A started program runs with the
-  user's rights, so this permission trusts that program, not the
-  plug-in: the dialog says so.
+- **`exec`**: the plug-in may run the commands written in its manifest,
+  and no others. The user reads them before allowing the plug-in; any
+  change to one in a new version asks again. The plug-in names a command
+  and gives the values of its variables; it never supplies arguments.
+  Each argument in the manifest is a fixed text or a whole `{variable}`,
+  and a list inside `args` is left out as a whole when a variable in it
+  has no value. No shell is involved: a value is always one argument.
+
+  | Type | A value must be |
+  |---|---|
+  | `url` | `https://`, on one of the variable's `hosts`; no user, port or backslash |
+  | `text` | one line that is not a path or an address |
+  | `number` | digits and at most one point |
+  | `headers` | lines of `Name: value`, each ended by CR LF |
+
+  No value may start with `-`, so none can pass for an option. The
+  player alone fills in `{proxy}` (the user's proxy, when there is one)
+  and `{start}` (the position, in a pipe that can seek). A value that
+  breaks these rules, or a variable the command does not have, fails the
+  call. A program that runs whatever it is told (a shell, an
+  interpreter, `env`, `xargs`, `find`, `sudo` and the like) is refused.
+  A setting named after a program says where that program is; its
+  default must be the program's own name, so only the user can point it
+  elsewhere. The program runs with the user's rights: what it does
+  beyond its arguments is trusted, and the dialog says so.
 - **`net`**: the plug-in may make HTTP(S) requests through Extism's HTTP
   host function, limited to the hosts listed in the manifest
   (`net = ["*.example.com"]`). Extism's HTTP does not go through the
   user's proxy yet; a plug-in that needs it reads `popamp.proxy`.
+
+Every command a plug-in asks for, allowed or refused, is written to
+`.journal/<id>.log` in the user's plug-ins folder with the values the
+plug-in gave. The Plug-ins window shows its path.
 
 Rejected alternative: plug-ins as separate processes speaking JSON over
 standard input and output. They wrap programs such as yt-dlp naturally,
@@ -184,13 +212,14 @@ Calls (JSON in and out; Rust types in `popamp-plugin-api`):
 `open` answers one of:
 
 - `http`: a URL and headers; the core opens it like any HTTP stream;
-- `pipe`: a program (one of `exec`), its arguments, the tags of the
-  track, the sample rate and whether it can seek. The program writes
-  interleaved stereo 32-bit float samples, little-endian, to standard
-  output; the core starts it and plays that output. `{start}` in an
-  argument is replaced by the position in seconds (`12.345`) each time
-  the core starts the program: when the track opens and on every seek,
-  so seeking calls no plug-in.
+- `pipe`: a command (one of `exec`), the values of its variables, the
+  tags of the track, the sample rate and whether it can seek. The
+  program writes interleaved stereo 32-bit float samples, little-endian,
+  to standard output; the core starts it and plays that output.
+  `{start}` in the command is the position in seconds (`12.345`) each
+  time the core starts the program: when the track opens and on every
+  seek, so seeking calls no plug-in. A part of the command with
+  `{start}` is left out when the track cannot seek.
 
 An error is a string the core shows in the title display.
 
