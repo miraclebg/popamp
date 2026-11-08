@@ -18,3 +18,4 @@ serde_json.workspace = true
 popamp-plugin-api.workspace = true
 serde.workspace = true
 toml.workspace = true
+ureq.workspace = true

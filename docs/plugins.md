@@ -107,7 +107,8 @@ hosts = ["youtube.com", "*.youtube.com", "youtu.be"]
 slow = true                    # say "CONNECTING…" while it opens
 
 [permissions]
-net = []                       # hosts it may reach over HTTP
+net = []                       # addresses it may reach over HTTP(S)
+# files = "read"               # that it reads files; the user picks the folders
 
 [[permissions.exec]]           # a command it may run (see Security)
 id = "resolve"                 # the plug-in asks for it by this name
@@ -152,7 +153,7 @@ plug-in code runs on the UI or engine thread.
 By default a plug-in can compute and nothing else: no files, no network,
 and no clock but the host function `popamp_now`, which returns
 the time in milliseconds since 1970 UTC, so a plug-in can tell when what
-it keeps has expired. Two permissions widen this, and
+it keeps has expired. Three permissions widen this, and
 the user confirms them when turning the plug-in on, and again when a new
 version asks for more:
 
@@ -181,14 +182,37 @@ version asks for more:
   default must be the program's own name, so only the user can point it
   elsewhere. The program runs with the user's rights: what it does
   beyond its arguments is trusted, and the dialog says so.
-- **`net`**: the plug-in may make HTTP(S) requests through Extism's HTTP
-  host function, limited to the hosts listed in the manifest
-  (`net = ["*.example.com"]`). Extism's HTTP does not go through the
-  user's proxy yet; a plug-in that needs it reads `popamp.proxy`.
+- **`net`**: the plug-in may make HTTP(S) requests through `popamp_http`,
+  to the addresses its manifest lists: `example.com`, `*.example.com`
+  (no bare `*`), each with `:port` if it needs another port than 80 or
+  443. The user can untick any of them. An address with an unusual port
+  (`radio.example.com:8000`), and one on this machine or the user's
+  network, written out by name (`localhost:8000`, `192.168.1.5:8000`),
+  is off until the user ticks it. Any other address cannot lead to this
+  machine or the user's network: without a proxy only public addresses
+  are connected to; through a proxy, which resolves names itself, a name
+  known to be local is refused. Redirects are not followed: the answer
+  comes back as it is, and going there is a new request to a listed
+  address. Requests use the user's proxy, local ones go direct. Extism's
+  own HTTP is shut for every plug-in.
+- **`files`**: `files = "read"` says the plug-in reads files, through
+  `popamp_list` and `popamp_read`. Paths differ on every system, so the
+  manifest names none: the user chooses, at first their music folder,
+  or a list of folders, or `~` for the whole home. Links are followed
+  before checking, so one inside a chosen folder leads nowhere else.
+  Hidden files and folders (`.ssh`, `.gnupg`, `.config`, browser
+  profiles), `AppData` and `Library` in the home, and the player's own
+  folders stay closed whatever was chosen.
 
-Every command a plug-in asks for, allowed or refused, is written to
+The Plug-ins window shows these above the plug-in's own settings. What
+the user unticks or chooses is kept apart from those settings, so no
+manifest can set or read it, and being refused is an answer to the
+plug-in, not a failure of it.
+
+Every request of these three kinds, allowed or refused, is written to
 `.journal/<id>.log` in the user's plug-ins folder with the values the
-plug-in gave. The Plug-ins window shows its path.
+plug-in gave, never the contents of a file. The Journal button in the
+Plug-ins window opens it.
 
 Rejected alternative: plug-ins as separate processes speaking JSON over
 standard input and output. They wrap programs such as yt-dlp naturally,

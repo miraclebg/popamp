@@ -1,23 +1,30 @@
 //! Runs one plug-in: its module compiled once, a small pool of instances
 //! so two worker threads can call it at once, and the host functions it
-//! may use: `popamp_exec`, limited to the commands its manifest writes, and
-//! `popamp_now`, the time. A dsp plug-in gets an instance of its own for
-//! the engine instead: see [`Dsp`].
+//! may use: `popamp_exec`, limited to the commands its manifest writes,
+//! `popamp_http` and the two that read files, limited to what the manifest
+//! asks and the user left open, and `popamp_now`, the time. A dsp plug-in
+//! gets an instance of its own for the engine instead: see [`Dsp`].
 
 use crate::command::{self, Command, Vars};
+use crate::files::{Closed, Folders};
 use crate::journal::Journal;
 use crate::manifest::{Kind, Manifest, SourceSpec, MODULE};
+use crate::net::Network;
 use extism::{CompiledPlugin, CurrentPlugin, Function, Pool, PoolBuilder, UserData, Val, PTR};
 use popamp_audio::dsp::Effect;
 use popamp_audio::pipe::{Pipe, START};
 use popamp_audio::source::{Context, Playback, Source};
 use popamp_core::meta::TrackMeta;
 use popamp_core::plformats::Item;
-use popamp_plugin_api::{bytes_of, calls, config, host, samples_of, ExecOutput, ExecRequest, Format, Play, Tags, Track, Version, VERSION};
+use popamp_plugin_api::{
+    bytes_of, calls, config, host, samples_of, ExecOutput, ExecRequest, Format, HttpRequest, Play, ReadRequest, Tags, Track, Version,
+    VERSION,
+};
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -50,6 +57,17 @@ pub struct Plugin {
     notice: OnceLock<StopNotice>,
 }
 
+/// What the user decided about a plug-in, past what its manifest asks.
+#[derive(Debug, Default)]
+pub struct Access {
+    pub journal: Arc<Journal>,
+    /// The addresses of the manifest that are open.
+    pub hosts: Vec<String>,
+    /// The folders it may read; see [`Closed`] for what stays shut.
+    pub folders: Vec<PathBuf>,
+    pub closed: Closed,
+}
+
 /// The commands a plug-in may run, and what the player fills in itself.
 #[derive(Debug)]
 pub struct Programs {
@@ -58,11 +76,11 @@ pub struct Programs {
     paths: HashMap<String, String>,
     /// The user's proxy, as a URL.
     proxy: Option<String>,
-    journal: Journal,
+    journal: Arc<Journal>,
 }
 
 impl Programs {
-    pub fn new(m: &Manifest, settings: &HashMap<String, String>, proxy: &str, journal: Journal) -> Programs {
+    pub fn new(m: &Manifest, settings: &HashMap<String, String>, proxy: &str, journal: Arc<Journal>) -> Programs {
         let proxy = proxy.trim();
         Programs {
             commands: m.permissions.exec.clone(),
@@ -118,32 +136,42 @@ impl std::fmt::Debug for Plugin {
 
 impl Plugin {
     /// Loads the plug-in in `dir`; `values` are the user's settings for it.
-    pub fn load(dir: &Path, values: &HashMap<String, String>, cx: &Context, journal: Journal) -> Result<Plugin, String> {
-        Plugin::load_with(dir, values, cx, journal, CALL_TIME)
+    pub fn load(dir: &Path, values: &HashMap<String, String>, cx: &Context, access: Access) -> Result<Plugin, String> {
+        Plugin::load_with(dir, values, cx, access, CALL_TIME)
     }
 
     fn load_with(
         dir: &Path,
         values: &HashMap<String, String>,
         cx: &Context,
-        journal: Journal,
+        access: Access,
         call_time: Duration,
     ) -> Result<Plugin, String> {
         let manifest = Manifest::load(dir)?;
         let call_time = if manifest.kind == Kind::Dsp { call_time.min(DSP_CALL_TIME) } else { call_time };
         let wasm = std::fs::read(dir.join(MODULE)).map_err(|e| format!("{MODULE}: {e}"))?;
         let settings = settings_of(&manifest, values);
-        let programs = Arc::new(Programs::new(&manifest, &settings, &cx.proxy, journal));
+        let programs = Arc::new(Programs::new(&manifest, &settings, &cx.proxy, access.journal.clone()));
+        let network = Network::new(&access.hosts, &cx.proxy, access.journal.clone());
+        let folders = Arc::new(Folders::new(&access.folders, access.closed, access.journal));
         let mut config: Vec<(String, String)> = settings.into_iter().collect();
         config.push((config::PROXY.into(), cx.proxy.clone()));
         let em = extism::Manifest::new([extism::Wasm::data(wasm)])
             .with_timeout(call_time)
             .with_memory_max(MEMORY_PAGES)
-            .with_allowed_hosts(manifest.permissions.net.clone().into_iter())
             .with_config(config.into_iter());
         let compiled = extism::PluginBuilder::new(em)
             .with_wasi(false)
-            .with_functions([exec_function(programs.clone()), now_function()])
+            .with_functions([
+                exec_function(programs.clone()),
+                now_function(),
+                function(host::HTTP, move |req: HttpRequest, left| network.fetch(req, left)),
+                function(host::LIST, {
+                    let folders = folders.clone();
+                    move |path: String, _| folders.list(&path)
+                }),
+                function(host::READ, move |req: ReadRequest, _| folders.read(&req)),
+            ])
             .compile()
             .map_err(|e| format!("cannot compile {MODULE}: {e}"))?;
         let compiled = Arc::new(compiled);
@@ -252,6 +280,25 @@ impl Plugin {
 /// for ones the plug-in returned itself.
 fn is_crash(error: &str) -> bool {
     error == "timeout" || error == "oom" || error.contains("wasm trap") || error.contains("wasm backtrace")
+}
+
+/// A host function that takes JSON and answers JSON, given the time the
+/// call has left. Whatever goes wrong is said in the answer: being refused
+/// what the user unticked is no failure of the plug-in.
+fn function<I, O>(name: &str, answer: impl Fn(I, Duration) -> O + Send + Sync + 'static) -> Function
+where
+    I: DeserializeOwned,
+    O: Serialize,
+{
+    let call = move |plugin: &mut CurrentPlugin, inputs: &[Val], outputs: &mut [Val], _: UserData<()>| {
+        let text: String = plugin.memory_get_val(&inputs[0])?;
+        let left = plugin.time_remaining().unwrap_or(CALL_TIME);
+        let out = answer(serde_json::from_str(&text)?, left);
+        let handle = plugin.memory_new(serde_json::to_string(&out)?)?;
+        outputs[0] = plugin.memory_to_val(handle);
+        Ok(())
+    };
+    Function::new(name, [PTR], [PTR], UserData::new(()), call)
 }
 
 fn exec_function(programs: Arc<Programs>) -> Function {
@@ -479,7 +526,7 @@ default = "ffmpeg"
     fn programs(user: &[(&str, &str)], proxy: &str, journal: Journal) -> Programs {
         let m = manifest();
         let user = user.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-        Programs::new(&m, &settings_of(&m, &user), proxy, journal)
+        Programs::new(&m, &settings_of(&m, &user), proxy, Arc::new(journal))
     }
 
     fn word(w: &str) -> Vars {
@@ -558,7 +605,45 @@ default = "ffmpeg"
     fn test_plugin(values: &[(&str, &str)], call_time: Duration) -> Plugin {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test");
         let values = values.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-        Plugin::load_with(&dir, &values, &Context { proxy: "proxy:3128".into() }, Journal::default(), call_time).unwrap()
+        Plugin::load_with(&dir, &values, &Context { proxy: "proxy:3128".into() }, Access::default(), call_time).unwrap()
+    }
+
+    fn with_access(access: Access) -> Plugin {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test");
+        Plugin::load_with(&dir, &HashMap::new(), &Context::default(), access, CALL_TIME).unwrap()
+    }
+
+    #[test]
+    fn a_plugin_reads_the_folder_it_was_given_and_not_others() {
+        let dir = std::env::temp_dir().join(format!("popamp-host-files-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("song.txt"), "la la").unwrap();
+        let given = with_access(Access { folders: vec![dir.clone()], ..Default::default() });
+        assert_eq!(open(&given, "/files"), Ok(Playback::Http("http://files/la la".into())));
+        let none = with_access(Access::default());
+        assert_eq!(open(&none, "/files").unwrap_err(), "no folders");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_refused_request_is_an_answer_and_not_a_failure_of_the_plugin() {
+        let p = with_access(Access::default());
+        for _ in 0..FAILURES_TO_STOP + 1 {
+            assert_eq!(open(&p, "/net-refused").unwrap_err(), "host not-listed.invalid is not allowed");
+        }
+        assert!(!p.is_off());
+    }
+
+    #[test]
+    fn a_host_the_user_unticked_is_closed_like_one_never_listed() {
+        let p = with_access(Access { hosts: vec!["other.invalid".into()], ..Default::default() });
+        assert_eq!(open(&p, "/net-listed").unwrap_err(), "host test.invalid is not allowed");
+    }
+
+    #[test]
+    fn the_http_of_the_runtime_is_shut_even_for_a_listed_host() {
+        let err = open(&with_access(Access::default()), "/extism-http").unwrap_err();
+        assert!(err.contains("not allowed"), "{err}");
     }
 
     const AT: &str = "https://test.invalid";
@@ -607,7 +692,7 @@ default = "ffmpeg"
         std::fs::copy(fixtures.join("test-dsp/plugin.toml"), dir.join("plugin.toml")).unwrap();
         std::fs::copy(fixtures.join("test/plugin.wasm"), dir.join("plugin.wasm")).unwrap();
         let values = HashMap::from([("mode".to_string(), mode.to_string())]);
-        Arc::new(Plugin::load(&dir, &values, &Context::default(), Journal::default()).unwrap())
+        Arc::new(Plugin::load(&dir, &values, &Context::default(), Access::default()).unwrap())
     }
 
     /// A block of `frames` stereo frames, left 1.0 and right -1.0.

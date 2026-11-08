@@ -437,6 +437,11 @@ impl Config {
         self.ini.set(&format!("plugin.{id}"), key, value);
     }
 
+    /// Stores how far the user narrowed what plug-in `id` may do.
+    pub fn set_plugin_limit(&mut self, id: &str, key: &str, value: &str) {
+        self.ini.set(&format!("limits.{id}"), key, value);
+    }
+
     pub fn set_plugin_grant(&mut self, id: &str, grant: &str) {
         self.ini.set("plugins", id, grant);
     }
@@ -472,6 +477,12 @@ impl PluginConfig {
     /// The user's value for setting `key` of plug-in `id`.
     pub fn value(&self, id: &str, key: &str) -> Option<&str> {
         self.0.get(&format!("plugin.{id}"), key)
+    }
+
+    /// How far the user narrowed what plug-in `id` may do. Apart from its
+    /// settings, so that no manifest can write or read these.
+    pub fn limit(&self, id: &str, key: &str) -> Option<&str> {
+        self.0.get(&format!("limits.{id}"), key)
     }
 
     /// The permissions allowed to plug-in `id`, as the plug-in host writes

@@ -32,6 +32,11 @@ pub enum Act {
     /// The check box of the n-th plug-in.
     #[cfg(feature = "plugins")]
     Plugin(usize),
+    /// A host of plug-in `.0`, by its place in the manifest.
+    #[cfg(feature = "plugins")]
+    PluginHost(usize, usize),
+    #[cfg(feature = "plugins")]
+    PluginJournal(usize),
 }
 
 pub enum Panel {

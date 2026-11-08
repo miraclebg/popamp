@@ -3,7 +3,10 @@
 //! and a dsp with `fixtures/test-dsp`, where its `mode` setting does.
 
 use extism_pdk::*;
-use popamp_plugin_api::{bytes_of, config as keys, samples_of, ExecOutput, ExecRequest, Format, Play, Tags, Track, VERSION};
+use popamp_plugin_api::{
+    bytes_of, config as keys, samples_of, ExecOutput, ExecRequest, FileData, Format, HttpResponse, Listing, Play, ReadRequest, Tags, Track,
+    VERSION,
+};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -11,6 +14,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 extern "ExtismHost" {
     fn popamp_exec(req: Json<ExecRequest>) -> Json<ExecOutput>;
     fn popamp_now() -> Json<u64>;
+    fn popamp_http(req: Json<popamp_plugin_api::HttpRequest>) -> Json<HttpResponse>;
+    fn popamp_list(path: Json<String>) -> Json<Listing>;
+    fn popamp_read(req: Json<ReadRequest>) -> Json<FileData>;
 }
 
 fn path(location: &str) -> &str {
@@ -20,6 +26,23 @@ fn path(location: &str) -> &str {
 fn exec(command: &str, vars: &[(&str, &str)]) -> Result<ExecOutput, Error> {
     let vars: BTreeMap<String, String> = vars.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
     Ok(unsafe { popamp_exec(Json(ExecRequest { command: command.into(), vars }))? }.0)
+}
+
+/// The error `popamp_http` answers for `url`, as this plug-in's own.
+fn http_error(url: &str) -> Result<Play, Error> {
+    let req = popamp_plugin_api::HttpRequest { method: "GET".into(), url: url.into(), headers: BTreeMap::new(), body: None };
+    let out = unsafe { popamp_http(Json(req))? }.0;
+    Err(Error::msg(out.error.unwrap_or_else(|| "no error".into())))
+}
+
+/// What the first file of the first folder the user allowed says.
+fn first_file() -> Result<String, Error> {
+    let roots = unsafe { popamp_list(Json(String::new()))? }.0;
+    let root = roots.entries.first().ok_or_else(|| Error::msg("no folders"))?;
+    let files = unsafe { popamp_list(Json(root.path.clone()))? }.0;
+    let file = files.entries.first().ok_or_else(|| Error::msg("no files"))?;
+    let data = unsafe { popamp_read(Json(ReadRequest { path: file.path.clone(), offset: 0, length: 100 }))? }.0;
+    Ok(String::from_utf8_lossy(&data.data).into_owned())
 }
 
 #[plugin_fn]
@@ -81,6 +104,18 @@ pub fn open(Json(location): Json<String>) -> FnResult<Json<Play>> {
         "/extra" => {
             exec("rate", &[("rate", "1"), ("more", "x")])?;
             unreachable!("the host refuses a value the command has no place for")
+        }
+        "/files" => match first_file() {
+            Ok(text) => Play::Http { url: format!("http://files/{text}") },
+            Err(e) => return Err(WithReturnCode::new(e, 1)),
+        },
+        "/net-refused" => return Err(WithReturnCode::new(http_error("https://not-listed.invalid/").unwrap_err(), 1)),
+        "/net-listed" => return Err(WithReturnCode::new(http_error("https://test.invalid/").unwrap_err(), 1)),
+        // The runtime's own HTTP, with a host the manifest lists.
+        "/extism-http" => {
+            let req = extism_pdk::HttpRequest::new("https://test.invalid/");
+            let e = http::request::<()>(&req, None).err().unwrap_or_else(|| Error::msg("it was let through"));
+            return Err(WithReturnCode::new(e, 1));
         }
         "/trap" => panic!("a bug in the plug-in"),
         "/loop" => loop {

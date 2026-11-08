@@ -9,6 +9,10 @@ description = "Answers the host's tests; see tests/test-plugin."
 hosts = ["test.invalid"]
 slow = true
 
+[permissions]
+net = ["test.invalid"]
+files = "read"
+
 [[permissions.exec]]
 id = "rate"
 program = "echo"
