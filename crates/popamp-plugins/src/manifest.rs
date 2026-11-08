@@ -2,6 +2,7 @@
 //! may do. Checked strictly, like `skin.toml`: an unknown key, a bad value
 //! or a missing module keeps the plug-in off, with the error shown.
 
+use crate::command::Command;
 use popamp_plugin_api::{Version, VERSION};
 use serde::Deserialize;
 use std::path::Path;
@@ -45,11 +46,17 @@ impl SourceSpec {
     /// True when `location` is an http(s) URL on one of the hosts.
     pub fn takes(&self, location: &str) -> bool {
         let Some(host) = host_of(location) else { return false };
-        self.hosts.iter().any(|p| match p.strip_prefix("*.") {
-            Some(domain) => host.strip_suffix(domain).is_some_and(|sub| sub.ends_with('.') && sub.len() > 1),
-            None => host == *p,
-        })
+        host_matches(&self.hosts, &host)
     }
+}
+
+/// True when `host` (lowercase) is one of `patterns`: `example.com` that
+/// host only, `*.example.com` its subdomains.
+pub(crate) fn host_matches(patterns: &[String], host: &str) -> bool {
+    patterns.iter().any(|p| match p.strip_prefix("*.") {
+        Some(domain) => host.strip_suffix(domain).is_some_and(|sub| sub.ends_with('.') && sub.len() > 1),
+        None => host == p,
+    })
 }
 
 /// The host of an http(s) URL, lowercase, without user or port.
@@ -66,9 +73,8 @@ fn host_of(url: &str) -> Option<String> {
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Permissions {
-    /// Programs it may start, by name; the setting of the same key, if
-    /// there is one, says where each program is.
-    pub exec: Vec<String>,
+    /// The commands it may run, written out; see [`Command`].
+    pub exec: Vec<Command>,
     /// Hosts it may reach over HTTP(S).
     pub net: Vec<String>,
 }
@@ -131,7 +137,7 @@ impl Manifest {
         if kind == Kind::Dsp && f.permissions != Permissions::default() {
             return Err("a dsp plug-in may not run programs or reach the network".into());
         }
-        check_exec(&f.permissions)?;
+        check_exec(&f.permissions, &f.settings)?;
         check_settings(&f.settings)?;
         Ok(Manifest {
             id: f.id,
@@ -171,9 +177,14 @@ fn kind_of(kind: &str, source: Option<SourceSpec>) -> Result<Kind, String> {
     }
 }
 
-fn check_exec(p: &Permissions) -> Result<(), String> {
-    match p.exec.iter().find(|p| p.is_empty() || p.contains('/')) {
-        Some(p) => Err(format!("exec {p:?} must be a program name, not a path")),
+fn check_exec(p: &Permissions, settings: &[Setting]) -> Result<(), String> {
+    p.exec.iter().try_for_each(Command::check)?;
+    if let Some((i, c)) = p.exec.iter().enumerate().find(|(i, c)| p.exec[..*i].iter().any(|o| o.id == c.id)) {
+        return Err(format!("command {:?} is given twice (number {})", c.id, i + 1));
+    }
+    // The user read "yt-dlp"; only the user may point that name elsewhere.
+    match settings.iter().find(|s| p.exec.iter().any(|c| c.program == s.key) && s.default != s.key) {
+        Some(s) => Err(format!("setting {0:?} says where that program is, so its default must be {0:?}", s.key)),
         None => Ok(()),
     }
 }
@@ -189,13 +200,15 @@ fn check_hosts(spec: SourceSpec) -> Result<SourceSpec, String> {
     if spec.hosts.is_empty() {
         return Err("[source] hosts is empty".into());
     }
-    let valid = |h: &str| {
-        let name = h.strip_prefix("*.").unwrap_or(h);
-        !name.is_empty() && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'.')
-    };
-    match spec.hosts.iter().find(|h| !valid(h)) {
-        Some(h) => Err(format!("host {h:?} must be a lowercase name, or *. and a name")),
-        None => Ok(spec),
+    spec.hosts.iter().try_for_each(|h| check_host_pattern(h))?;
+    Ok(spec)
+}
+
+pub(crate) fn check_host_pattern(h: &str) -> Result<(), String> {
+    let name = h.strip_prefix("*.").unwrap_or(h);
+    match !name.is_empty() && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'.') {
+        true => Ok(()),
+        false => Err(format!("host {h:?} must be a lowercase name, or *. and a name")),
     }
 }
 
@@ -215,8 +228,12 @@ description = "Plays YouTube videos."
 hosts = ["youtube.com", "*.youtube.com", "youtu.be"]
 slow = true
 
-[permissions]
-exec = ["yt-dlp", "ffmpeg"]
+[[permissions.exec]]
+id = "resolve"
+program = "yt-dlp"
+args = ["-j", "{url}"]
+[permissions.exec.vars]
+url = { type = "url", hosts = ["youtu.be"] }
 
 [[setting]]
 key = "yt-dlp"
@@ -236,7 +253,7 @@ default = "yt-dlp"
         assert_eq!((m.id.as_str(), m.api.to_string(), m.version.as_str()), ("youtube", "1.0".into(), "1.0.0"));
         let Kind::Source(spec) = &m.kind else { panic!("{:?}", m.kind) };
         assert!(spec.slow);
-        assert_eq!(m.permissions.exec, ["yt-dlp", "ffmpeg"]);
+        assert_eq!(m.permissions.exec[0].text(), "yt-dlp -j {url}");
         assert!(m.permissions.net.is_empty());
         assert_eq!(m.settings[0].kind, SettingKind::Path);
     }
@@ -270,7 +287,12 @@ default = "yt-dlp"
             (("id = \"youtube\"", "id = \"You Tube\""), "id \"You Tube\" must be [a-z0-9-]"),
             (("kind = \"source\"", "kind = \"vis\""), "unknown kind \"vis\"; this Popamp knows \"source\" and \"dsp\""),
             (("[source]", "[other]"), "unknown field"),
-            (("exec = [\"yt-dlp\"", "exec = [\"/usr/bin/yt-dlp\""), "exec \"/usr/bin/yt-dlp\" must be a program name, not a path"),
+            (("program = \"yt-dlp\"", "program = \"/usr/bin/yt-dlp\""), "must be a program name, not a path"),
+            (("program = \"yt-dlp\"", "program = \"sh\""), "would run anything it is told"),
+            (
+                ("default = \"yt-dlp\"", "default = \"/tmp/evil\""),
+                "setting \"yt-dlp\" says where that program is, so its default must be \"yt-dlp\"",
+            ),
             (("\"*.youtube.com\"", "\"*.YouTube.com\""), "host \"*.YouTube.com\" must be a lowercase name, or *. and a name"),
             (("type = \"path\"", "type = \"colour\""), "unknown variant"),
             (("slow = true", "slow = true\ncolour = 1"), "unknown field `colour`"),
@@ -278,10 +300,19 @@ default = "yt-dlp"
             let err = with(change).unwrap_err();
             assert!(err.contains(error), "{change:?}: {err}");
         }
-        let twice = format!("{YOUTUBE}\n[[setting]]\nkey = \"yt-dlp\"\nlabel = \"again\"\ntype = \"text\"\ndefault = \"\"\n");
+        let twice = format!("{YOUTUBE}\n[[setting]]\nkey = \"yt-dlp\"\nlabel = \"again\"\ntype = \"text\"\ndefault = \"yt-dlp\"\n");
         assert_eq!(Manifest::parse(&twice).unwrap_err(), "setting \"yt-dlp\" is given twice");
         let no_source = YOUTUBE.split("[source]").next().unwrap().to_string() + "[permissions]\n";
         assert_eq!(Manifest::parse(&no_source).unwrap_err(), "a source needs a [source] table with its hosts");
+    }
+
+    #[test]
+    fn a_command_id_is_given_once() {
+        let twice = YOUTUBE.replace(
+            "[[setting]]\nkey = \"yt-dlp\"",
+            "[[permissions.exec]]\nid = \"resolve\"\nprogram = \"echo\"\nargs = []\n\n[[setting]]\nkey = \"yt-dlp\"",
+        );
+        assert_eq!(Manifest::parse(&twice).unwrap_err(), "command \"resolve\" is given twice (number 2)");
     }
 
     #[test]
@@ -290,7 +321,10 @@ default = "yt-dlp"
         assert_eq!(Manifest::parse(dsp).unwrap().kind, Kind::Dsp);
         let with = |extra: &str| Manifest::parse(&format!("{dsp}{extra}")).unwrap_err();
         assert_eq!(with("[source]\nhosts = [\"a.b\"]\n"), "a dsp plug-in has no [source] table");
-        assert_eq!(with("[permissions]\nexec = [\"sh\"]\n"), "a dsp plug-in may not run programs or reach the network");
+        assert_eq!(
+            with("[[permissions.exec]]\nid = \"a\"\nprogram = \"echo\"\nargs = []\n"),
+            "a dsp plug-in may not run programs or reach the network"
+        );
         assert_eq!(with("[permissions]\nnet = [\"a.b\"]\n"), "a dsp plug-in may not run programs or reach the network");
     }
 

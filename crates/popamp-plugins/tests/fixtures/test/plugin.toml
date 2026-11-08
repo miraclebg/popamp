@@ -9,8 +9,22 @@ description = "Answers the host's tests; see tests/test-plugin."
 hosts = ["test.invalid"]
 slow = true
 
-[permissions]
-exec = ["sh"]
+[[permissions.exec]]
+id = "rate"
+program = "echo"
+args = ["{rate}"]
+[permissions.exec.vars]
+rate = { type = "number" }
+
+[[permissions.exec]]
+id = "silence"
+program = "head"
+args = ["-c", "32", "/dev/zero"]
+
+[[permissions.exec]]
+id = "slow"
+program = "sleep"
+args = ["5"]
 
 [[setting]]
 key = "greeting"

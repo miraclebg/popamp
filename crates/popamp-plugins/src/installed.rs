@@ -3,13 +3,15 @@
 //! the user allowed are the ones its manifest asks for now, so a new
 //! version that asks for more waits to be allowed again.
 
+use crate::command::Command;
 use crate::host::Plugin;
+use crate::journal::Journal;
 use crate::manifest::{Kind, Manifest, Permissions};
 use popamp_audio::dsp::Effect;
 use popamp_audio::source::{Context, Source};
 use popamp_core::config::PluginConfig;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -42,16 +44,30 @@ impl Installed {
 }
 
 impl Permissions {
-    /// The permissions as stored when the user allows them.
+    /// The permissions as stored when the user allows them: the commands
+    /// in full (as hex, to keep the settings file plain), so that any
+    /// change to one asks the user again.
     pub fn grant(&self) -> String {
-        format!("exec={};net={}", self.exec.join(","), self.net.join(","))
+        let commands = self.exec.iter().map(Command::canon).collect::<Vec<_>>().join("\n\n");
+        let hex: String = commands.bytes().map(|b| format!("{b:02x}")).collect();
+        format!("exec={hex};net={}", self.net.join(","))
+    }
+
+    fn programs(&self) -> Vec<&str> {
+        let mut names: Vec<&str> = Vec::new();
+        for c in &self.exec {
+            if !names.contains(&c.program.as_str()) {
+                names.push(&c.program);
+            }
+        }
+        names
     }
 
     /// What the user is asked to allow, in words.
     pub fn describe(&self) -> String {
         let mut parts = Vec::new();
         if !self.exec.is_empty() {
-            parts.push(format!("runs {} with your rights", self.exec.join(", ")));
+            parts.push(format!("runs {} with your rights", self.programs().join(", ")));
         }
         if !self.net.is_empty() {
             parts.push(format!("connects to {}", self.net.join(", ")));
@@ -62,6 +78,22 @@ impl Permissions {
             parts.join("; ")
         }
     }
+}
+
+/// Inside the user's plug-ins folder; hidden, so it is no plug-in.
+const JOURNALS: &str = ".journal";
+
+fn journals(roots: &[PathBuf]) -> Option<PathBuf> {
+    roots.first().map(|r| r.join(JOURNALS))
+}
+
+/// Where the journal of plug-in `id` is.
+pub fn journal_path(roots: &[PathBuf], id: &str) -> Option<PathBuf> {
+    journals(roots).map(|dir| Journal::path_in(&dir, id))
+}
+
+fn journal_of(dir: Option<&Path>, id: &str) -> Journal {
+    dir.map_or_else(Journal::default, |d| Journal::new(d, id))
 }
 
 /// The plug-in folders under `roots`, hidden ones skipped, by name. Of
@@ -83,6 +115,7 @@ pub fn folders(roots: &[PathBuf]) -> Vec<PathBuf> {
 
 /// Loads every plug-in under `roots` the user allowed in `config`.
 pub fn load_all(roots: &[PathBuf], config: &PluginConfig, cx: &Context) -> Vec<Installed> {
+    let journals = journals(roots);
     folders(roots)
         .into_iter()
         .map(|dir| {
@@ -90,7 +123,7 @@ pub fn load_all(roots: &[PathBuf], config: &PluginConfig, cx: &Context) -> Vec<I
             let state = match Manifest::load(&dir) {
                 Err(e) => State::Broken(e),
                 Ok(m) if config.grant(&m.id) != m.permissions.grant() => State::Off(m),
-                Ok(m) => match Plugin::load(&dir, &values(&m, config), cx) {
+                Ok(m) => match Plugin::load(&dir, &values(&m, config), cx, journal_of(journals.as_deref(), &m.id)) {
                     Ok(p) => State::On(Arc::new(p)),
                     Err(e) => State::Failed(m, e),
                 },
@@ -139,14 +172,22 @@ pub fn effects(list: &[Installed]) -> Vec<Box<dyn Effect>> {
 mod tests {
     use super::*;
 
-    fn manifest(id: &str, exec: &str) -> String {
-        format!("id = \"{id}\"\nname = \"N\"\nversion = \"1\"\napi = \"1.0\"\nkind = \"source\"\n[source]\nhosts = [\"x.invalid\"]\n[permissions]\nexec = [{exec}]\n")
+    fn manifest(id: &str, program: &str) -> String {
+        let exec = match program {
+            "" => String::new(),
+            p => format!("[[permissions.exec]]\nid = \"a\"\nprogram = \"{p}\"\nargs = []\n"),
+        };
+        format!("id = \"{id}\"\nname = \"N\"\nversion = \"1\"\napi = \"1.0\"\nkind = \"source\"\n[source]\nhosts = [\"x.invalid\"]\n{exec}")
+    }
+
+    fn grant_of(text: &str) -> String {
+        crate::manifest::Manifest::parse(text).unwrap().permissions.grant()
     }
 
     #[test]
     fn a_plugin_is_on_only_with_the_permissions_it_asks_for_now() {
         let root = std::env::temp_dir().join(format!("popamp-installed-{}", std::process::id()));
-        for (id, text) in [("asks", manifest("asks", "\"sh\"")), ("broken", "id = 1".into()), ("off", manifest("off", ""))] {
+        for (id, text) in [("asks", manifest("asks", "echo")), ("broken", "id = 1".into()), ("off", manifest("off", ""))] {
             std::fs::create_dir_all(root.join(id)).unwrap();
             std::fs::write(root.join(id).join("plugin.toml"), text).unwrap();
             std::fs::write(root.join(id).join("plugin.wasm"), b"not wasm").unwrap();
@@ -169,7 +210,7 @@ mod tests {
             })
             .collect();
         assert_eq!(states, ["asks off", "broken broken", "off off"]);
-        let list = load_all(std::slice::from_ref(&root), &config("exec=sh;net="), &Context::default());
+        let list = load_all(std::slice::from_ref(&root), &config(&grant_of(&manifest("asks", "echo"))), &Context::default());
         assert!(matches!(&list[0].state, State::Failed(_, e) if e.starts_with("cannot compile")), "allowed, so it was loaded");
         assert!(sources(&list).is_empty());
         std::fs::remove_dir_all(&root).unwrap();
@@ -197,7 +238,8 @@ mod tests {
             std::fs::copy(fixtures.join("test/plugin.wasm"), root.join(id).join("plugin.wasm")).unwrap();
         }
         let mut c = popamp_core::config::Config::load(root.join("popamp.ini"));
-        c.set_plugin_grant("test", "exec=sh;net=");
+        let test = std::fs::read_to_string(root.join("test/plugin.toml")).unwrap();
+        c.set_plugin_grant("test", &grant_of(&test));
         c.set_plugin_grant("test-dsp", "exec=;net=");
         let list = load_all(std::slice::from_ref(&root), &c.plugins(), &Context::default());
         let ids: Vec<String> = sources(&list).iter().map(|s| s.id().to_string()).collect();
@@ -213,13 +255,33 @@ mod tests {
 
     #[test]
     fn the_user_is_told_what_a_plugin_may_do() {
-        let p = |exec: &[&str], net: &[&str]| Permissions {
-            exec: exec.iter().map(|s| s.to_string()).collect(),
+        let command = |id: &str, program: &str| Command { id: id.into(), program: program.into(), args: vec![], vars: Default::default() };
+        let p = |exec: &[(&str, &str)], net: &[&str]| Permissions {
+            exec: exec.iter().map(|(id, program)| command(id, program)).collect(),
             net: net.iter().map(|s| s.to_string()).collect(),
         };
-        assert_eq!(p(&["yt-dlp", "ffmpeg"], &[]).describe(), "runs yt-dlp, ffmpeg with your rights");
+        let both = p(&[("a", "yt-dlp"), ("b", "yt-dlp"), ("c", "ffmpeg")], &[]);
+        assert_eq!(both.describe(), "runs yt-dlp, ffmpeg with your rights");
         assert_eq!(p(&[], &["*.example.com"]).describe(), "connects to *.example.com");
         assert_eq!(p(&[], &[]).describe(), "needs no permissions");
-        assert_eq!(p(&["a", "b"], &["h"]).grant(), "exec=a,b;net=h");
+        assert_eq!(p(&[], &["h"]).grant(), "exec=;net=h");
+    }
+
+    #[test]
+    fn any_change_to_a_command_asks_the_user_again() {
+        let grant = grant_of(&manifest("a", "echo"));
+        assert_ne!(grant, grant_of(&manifest("a", "printf")));
+        assert_eq!(grant, grant_of(&manifest("a", "echo")));
+        assert!(!grant.contains("echo"), "plain in the settings file: {grant}");
+    }
+
+    #[test]
+    fn the_journal_folder_is_not_taken_for_a_plugin() {
+        let root = std::env::temp_dir().join(format!("popamp-installed-journal-{}", std::process::id()));
+        let path = journal_path(std::slice::from_ref(&root), "yt").unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let list = folders(std::slice::from_ref(&root));
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(list.is_empty(), "{list:?}");
     }
 }
