@@ -1,0 +1,12 @@
+id = "test-visual"
+name = "Test Visual"
+version = "0.1.0"
+api = "1.0"
+kind = "visual"
+description = "Answers the host's tests with the module of ../test; see tests/test-plugin."
+
+[[setting]]
+key = "mode"
+label = "Mode"
+type = "text"
+default = "echo"

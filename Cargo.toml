@@ -5,6 +5,7 @@ members = [
     "crates/popamp-audio",
     "crates/popamp-skin",
     "crates/popamp-plugins",
+    "crates/popamp-visual",
     "apps/popamp",
 ]
 
@@ -23,6 +24,7 @@ popamp-audio = { path = "crates/popamp-audio" }
 popamp-skin = { path = "crates/popamp-skin" }
 popamp-plugin-api = { git = "https://github.com/popamp/popamp-plugin-api", branch = "main" }
 popamp-plugins = { path = "crates/popamp-plugins" }
+popamp-visual = { path = "crates/popamp-visual" }
 symphonia = { version = "0.5", features = ["all", "opt-simd"] }
 libloading = "0.8"
 rustfft = "6"
@@ -39,6 +41,10 @@ fastrand = "2"
 ureq = "2"
 serde_json = "1"
 extism = "1.41"
+# Visualizer plug-ins only. No OpenGL: Vulkan on Linux, Direct3D 12 on Windows.
+wgpu = { version = "30", default-features = false, features = ["std", "wgsl", "vulkan", "dx12", "parking_lot"] }
+pollster = "0.4"
+raw-window-handle = "0.6"
 serde = { version = "1", features = ["derive"] }
 toml = "1"
 log = "0.4"

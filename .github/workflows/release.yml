@@ -4,7 +4,7 @@ name: Release
 # and portable zips, publishes them as a GitHub release and asks
 # popamp/apt to put the debs in https://apt.popamp.app; a manual run only
 # builds them (download from the run's page). Two of each: popamp, the
-# player, and popamp-plus, built with plug-ins.
+# player, and popamp-plus, built with every function.
 # Asking popamp/apt needs the secret APT_INDEX_TOKEN (see popamp/apt's
 # README); without it, popamp/apt's daily run picks the release up.
 on:
@@ -43,7 +43,7 @@ jobs:
             exit 1
           fi
       - run: cargo test --release --locked --workspace
-      - run: cargo test --release --locked --workspace --features popamp/plugins
+      - run: cargo test --release --locked --workspace --features popamp/plus
       - name: Install appimagetool
         # Pinned releases with checksums: this job can write to the repository.
         run: |
@@ -73,7 +73,7 @@ jobs:
           sh packaging/build-appimage.sh target/release/popamp dist
       - name: Package popamp-plus
         run: |
-          cargo build --release --locked -p popamp --features plugins
+          cargo build --release --locked -p popamp --features plus
           sh packaging/build-deb.sh target/release/popamp dist
           sh packaging/build-appimage.sh target/release/popamp dist
           ls -lh dist
@@ -95,14 +95,14 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --release --locked --workspace
-      - run: cargo test --release --locked --workspace --features popamp/plugins
+      - run: cargo test --release --locked --workspace --features popamp/plus
       - name: Package popamp
         run: |
           cargo build --release --locked -p popamp
           sh packaging/build-windows.sh target/release/popamp.exe dist
       - name: Package popamp-plus
         run: |
-          cargo build --release --locked -p popamp --features plugins
+          cargo build --release --locked -p popamp --features plus
           sh packaging/build-windows.sh target/release/popamp.exe dist
           ls -lh dist
       - uses: actions/upload-artifact@v7

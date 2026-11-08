@@ -204,23 +204,28 @@ pub fn values(m: &Manifest, config: &PluginConfig) -> HashMap<String, String> {
     m.settings.iter().filter_map(|s| config.value(&m.id, &s.key).map(|v| (s.key.clone(), v.to_string()))).collect()
 }
 
-/// The plug-ins that are on, dsp ones or the others,, in folder order.
-fn on(list: &[Installed], dsp: bool) -> impl Iterator<Item = &Arc<Plugin>> {
+/// The plug-ins of one kind that are on, in folder order.
+fn on(list: &[Installed], wanted: fn(&Kind) -> bool) -> impl Iterator<Item = &Arc<Plugin>> {
     list.iter().filter_map(move |i| match &i.state {
-        State::On(p) if (p.manifest().kind == Kind::Dsp) == dsp => Some(p),
+        State::On(p) if wanted(&p.manifest().kind) => Some(p),
         _ => None,
     })
 }
 
+/// The visual plug-ins that are on, in folder order.
+pub fn visuals(list: &[Installed]) -> Vec<Arc<Plugin>> {
+    on(list, |k| *k == Kind::Visual).cloned().collect()
+}
+
 /// The sources of the plug-ins that are on, in folder order.
 pub fn sources(list: &[Installed]) -> Vec<Arc<dyn Source>> {
-    on(list, false).map(|p| p.clone() as Arc<dyn Source>).collect()
+    on(list, |k| matches!(k, Kind::Source(_))).map(|p| p.clone() as Arc<dyn Source>).collect()
 }
 
 /// An instance of each dsp plug-in that is on, in folder order, for the
 /// engine; one that cannot be made is left out.
 pub fn effects(list: &[Installed]) -> Vec<Box<dyn Effect>> {
-    on(list, true)
+    on(list, |k| *k == Kind::Dsp)
         .filter_map(|p| match p.effect() {
             Ok(e) => Some(Box::new(e) as Box<dyn Effect>),
             Err(e) => {

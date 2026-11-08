@@ -102,6 +102,8 @@ pub struct App {
     wins: [Option<SkinWindow>; 3],
     popups: Vec<Popup>,
     panels: Vec<PanelWindow>,
+    #[cfg(feature = "visualizers")]
+    visualizer: Option<crate::visualizer::VisualizerWindow>,
     tip: Option<Tooltip>,
     /// The skin's cursors, made into window-system cursors.
     cursors: HashMap<CursorKind, CustomCursor>,
@@ -133,6 +135,8 @@ impl App {
             skins: [SkinWin::new(WindowKey::Main), SkinWin::new(WindowKey::Eq), SkinWin::new(WindowKey::Playlist)],
             wins: [None, None, None],
             popups: Vec::new(),
+            #[cfg(feature = "visualizers")]
+            visualizer: None,
             panels: Vec::new(),
             tip: None,
             cursors: HashMap::new(),
@@ -507,6 +511,25 @@ impl App {
 
     /// Opens the dialog `kind`, or raises it
     /// when it is already open.
+    /// One visualizer at a time: opening another replaces it.
+    #[cfg(feature = "visualizers")]
+    fn open_visualizer(&mut self, el: &ActiveEventLoop, id: &str) {
+        self.close_visualizer();
+        let Some(plugin) = self.model.visual_plugin(id) else { return };
+        let (shared, events) = (self.model.engine.shared().clone(), self.model.events().clone());
+        match crate::visualizer::VisualizerWindow::open(el, &plugin, shared, events) {
+            Ok(v) => self.visualizer = Some(v),
+            Err(why) => self.model.on_plugin_stopped(id, &why),
+        }
+    }
+
+    #[cfg(feature = "visualizers")]
+    fn close_visualizer(&mut self) {
+        if let Some(v) = self.visualizer.take() {
+            v.close();
+        }
+    }
+
     fn open_panel(&mut self, el: &ActiveEventLoop, kind: PanelKind) {
         if let Some(p) = self.panels.iter().find(|p| p.panel.kind() == kind) {
             p.window.focus_window();
@@ -1164,6 +1187,8 @@ impl App {
                     });
                 }
                 UiReq::Panel(kind) => self.open_panel(el, kind),
+                #[cfg(feature = "visualizers")]
+                UiReq::Visualizer(id) => self.open_visualizer(el, &id),
                 UiReq::Menu(items) => {
                     let at = self.cursor_screen(WindowKey::Main);
                     self.open_popup(el, items, at, false);
@@ -1396,6 +1421,11 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::Plugins(n, list, effects) => self.model.on_plugins(n, list, effects),
             #[cfg(feature = "plugins")]
             AppEvent::PluginStopped(id, why) => self.model.on_plugin_stopped(&id, &why),
+            #[cfg(feature = "visualizers")]
+            AppEvent::VisualizerStopped(id, why) => {
+                self.close_visualizer();
+                self.model.on_plugin_stopped(&id, &why);
+            }
             AppEvent::Museum(f) => {
                 if let Some(i) = self.panels.iter().position(|p| p.panel.kind() == PanelKind::SkinMuseum) {
                     self.panels[i].panel.fetched(f, &mut self.model);
@@ -1411,6 +1441,13 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn window_event(&mut self, el: &ActiveEventLoop, id: WindowId, ev: WindowEvent) {
+        #[cfg(feature = "visualizers")]
+        if self.visualizer.as_ref().is_some_and(|v| v.window.id() == id) {
+            if !self.visualizer.as_ref().is_some_and(|v| v.event(ev)) {
+                self.close_visualizer();
+            }
+            return;
+        }
         if let Some(i) = self.panels.iter().position(|p| p.window.id() == id) {
             return self.panel_event(el, i, ev);
         }

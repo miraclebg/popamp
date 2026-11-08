@@ -27,6 +27,8 @@ mod scale;
 mod skinwin;
 mod ui;
 mod vis;
+#[cfg(feature = "visualizers")]
+mod visualizer;
 mod widgets;
 
 use cli::Remote;

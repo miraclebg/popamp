@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Visualizer plug-ins** (`--features visualizers`): a WebAssembly
+  plug-in supplies WGSL shaders and the player makes every GPU call, in a
+  window of its own that can go full screen.
+
 ## [0.6.0] - 2026-11-07
 
 ### Added

@@ -97,4 +97,4 @@ Until then version numbers stay as they are, including the plug-in API
 - MilkDrop-compatible visualizer window through libprojectM.
 - Local media library (folder scanning, search, library playlists).
 - Modern skins (Wasabi XML layout and the MAKI script VM).
-- Decoder and visualizer plug-ins.
+- Decoder plug-ins.

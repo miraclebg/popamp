@@ -29,6 +29,9 @@ pub enum Kind {
     /// Changes the decoded sound; it may not run programs or reach the
     /// network, since it runs on every block.
     Dsp,
+    /// Draws to the sound with its own shaders. It may not run programs,
+    /// reach the network or read files; the player makes every GPU call.
+    Visual,
 }
 
 /// Which locations a source takes, so the player can tell without
@@ -144,8 +147,8 @@ impl Manifest {
         check_id(&f.id)?;
         let api = check_api(&f.api)?;
         let kind = kind_of(&f.kind, f.source)?;
-        if kind == Kind::Dsp && f.permissions != Permissions::default() {
-            return Err("a dsp plug-in may not run programs, reach the network or read files".into());
+        if !matches!(kind, Kind::Source(_)) && f.permissions != Permissions::default() {
+            return Err(format!("a {} plug-in may not run programs, reach the network or read files", f.kind));
         }
         f.permissions.net.iter().try_for_each(|a| NetEntry::parse(a).map(|_| ()))?;
         check_exec(&f.permissions, &f.settings)?;
@@ -184,7 +187,9 @@ fn kind_of(kind: &str, source: Option<SourceSpec>) -> Result<Kind, String> {
         ("source", None) => Err("a source needs a [source] table with its hosts".into()),
         ("dsp", None) => Ok(Kind::Dsp),
         ("dsp", Some(_)) => Err("a dsp plug-in has no [source] table".into()),
-        (other, _) => Err(format!("unknown kind {other:?}; this Popamp knows \"source\" and \"dsp\"")),
+        ("visual", None) => Ok(Kind::Visual),
+        ("visual", Some(_)) => Err("a visual plug-in has no [source] table".into()),
+        (other, _) => Err(format!("unknown kind {other:?}; this Popamp knows \"source\", \"dsp\" and \"visual\"")),
     }
 }
 
@@ -296,7 +301,7 @@ default = "yt-dlp"
             (("api = \"1.0\"", "api = \"2.0\""), too_new.as_str()),
             (("api = \"1.0\"", "api = \"1\""), "bad API version \"1\", expected MAJOR.MINOR"),
             (("id = \"youtube\"", "id = \"You Tube\""), "id \"You Tube\" must be [a-z0-9-]"),
-            (("kind = \"source\"", "kind = \"vis\""), "unknown kind \"vis\"; this Popamp knows \"source\" and \"dsp\""),
+            (("kind = \"source\"", "kind = \"vis\""), "unknown kind \"vis\"; this Popamp knows \"source\", \"dsp\" and \"visual\""),
             (("[source]", "[other]"), "unknown field"),
             (("program = \"yt-dlp\"", "program = \"/usr/bin/yt-dlp\""), "must be a program name, not a path"),
             (("program = \"yt-dlp\"", "program = \"sh\""), "would run anything it is told"),
@@ -330,6 +335,10 @@ default = "yt-dlp"
     fn a_dsp_plugin_changes_sound_and_may_do_nothing_else() {
         let dsp = "id = \"crossfeed\"\nname = \"Crossfeed\"\nversion = \"1\"\napi = \"1.0\"\nkind = \"dsp\"\n";
         assert_eq!(Manifest::parse(dsp).unwrap().kind, Kind::Dsp);
+        let visual = dsp.replace("\"dsp\"", "\"visual\"");
+        assert_eq!(Manifest::parse(&visual).unwrap().kind, Kind::Visual);
+        let reaching = format!("{visual}[permissions]\nfiles = \"read\"\n");
+        assert_eq!(Manifest::parse(&reaching).unwrap_err(), "a visual plug-in may not run programs, reach the network or read files");
         let with = |extra: &str| Manifest::parse(&format!("{dsp}{extra}")).unwrap_err();
         assert_eq!(with("[source]\nhosts = [\"a.b\"]\n"), "a dsp plug-in has no [source] table");
         assert_eq!(

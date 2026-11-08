@@ -71,7 +71,7 @@ version, so one player and its skins work on both systems.
 Downloads are on the [Releases page](https://github.com/popamp/popamp/releases),
 and Debian, Ubuntu, openSUSE and Fedora can install it from a repository
 that keeps it up to date. Both come in two builds: **popamp**, the player, and **popamp-plus**, the player
-with [plug-ins](docs/plugins.md) such as YouTube.
+with [plug-ins](docs/plugins.md) such as YouTube and visualizers.
 
 | System | Download |
 |---|---|
@@ -84,7 +84,7 @@ Or build it yourself with Rust 1.96 or newer:
 
 ```sh
 git clone https://github.com/popamp/popamp.git && cd popamp
-cargo build --release                      # add --features plugins for popamp-plus
+cargo build --release                      # add --features plus for popamp-plus
 ./target/release/popamp ~/Music
 ```
 

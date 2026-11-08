@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds a Popamp .AppImage from an already-compiled release binary;
-# Popamp-Plus-… for a binary built with --features plugins (its /VERSION
+# Popamp-Plus-… for a binary built with --features plus (its /VERSION
 # says which).
 # Usage: packaging/build-appimage.sh [target/release/popamp] [output-dir]
 # Needs: appimagetool (https://github.com/AppImage/appimagetool) and strip.

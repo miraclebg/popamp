@@ -12,6 +12,9 @@ pub enum MenuAction {
     Cmd(Command),
     Skin(Option<PathBuf>),
     VisMode(i32),
+    /// Opens the visual plug-in with this id.
+    #[cfg(feature = "visualizers")]
+    Visualizer(String),
     SaStyle(i32),
     OscStyle(i32),
     SaPeaks,

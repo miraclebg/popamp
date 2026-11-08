@@ -17,6 +17,7 @@ popamp-core.workspace = true
 popamp-audio.workspace = true
 popamp-skin.workspace = true
 popamp-plugins = { workspace = true, optional = true }
+popamp-visual = { workspace = true, optional = true }
 winit.workspace = true
 softbuffer.workspace = true
 fontdue.workspace = true
@@ -44,6 +45,11 @@ winresource = "0.1.34"
 # Source plug-ins (WebAssembly, run by Extism). Off by default: without
 # it Popamp is the player and its skins, and builds without wasmtime.
 plugins = ["dep:popamp-plugins"]
+# Visualizer plug-ins: their shaders on the GPU, through wgpu. Off by
+# default, and needs `plugins`; without it no GPU code is in the program.
+visualizers = ["plugins", "dep:popamp-visual"]
+# Popamp Plus: every function above. Other mixes are for whoever builds them.
+plus = ["plugins", "visualizers"]
 
 [dev-dependencies]
 zip.workspace = true
