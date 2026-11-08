@@ -14,6 +14,8 @@ mod edition;
 mod font;
 mod headless;
 mod ipc;
+#[cfg(feature = "visualizers")]
+mod keep_awake;
 mod media;
 mod menu;
 mod model;

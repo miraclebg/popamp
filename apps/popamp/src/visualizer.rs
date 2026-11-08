@@ -6,7 +6,7 @@ use popamp_audio::{PlayState, Shared};
 use popamp_plugins::host::{Plugin, Visual};
 use popamp_visual::{Control, Feed, SPECTRUM_LEN, WAVE_LEN};
 use rustfft::{num_complex::Complex, Fft, FftPlanner};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -19,6 +19,7 @@ const FLOOR_DB: f32 = -70.0;
 pub struct VisualizerWindow {
     pub window: Arc<Window>,
     control: Arc<Control>,
+    full: Arc<AtomicBool>,
 }
 
 impl VisualizerWindow {
@@ -28,6 +29,8 @@ impl VisualizerWindow {
         let window = Arc::new(el.create_window(attrs).map_err(|e| e.to_string())?);
         let control = Control::new(pixels(window.inner_size()));
         let id = plugin.manifest().id.clone();
+        let full = Arc::new(AtomicBool::new(false));
+        keep_screen_on_while_watched(&control, &full, shared.clone());
         let feed = Box::new(Player { visual, shared, sound: Sound::new() });
         let (for_thread, control_there) = (window.clone(), control.clone());
         std::thread::Builder::new()
@@ -38,7 +41,7 @@ impl VisualizerWindow {
                 }
             })
             .map_err(|e| e.to_string())?;
-        Ok(VisualizerWindow { window, control })
+        Ok(VisualizerWindow { window, control, full })
     }
 
     /// The thread is told to stop and not waited for: a stuck GPU must not stop the player.
@@ -64,13 +67,28 @@ impl VisualizerWindow {
         }
         let full = self.window.fullscreen().is_some();
         match event.physical_key {
-            PhysicalKey::Code(KeyCode::KeyF) => self.window.set_fullscreen((!full).then_some(Fullscreen::Borderless(None))),
-            PhysicalKey::Code(KeyCode::Escape) if full => self.window.set_fullscreen(None),
+            PhysicalKey::Code(KeyCode::KeyF) => self.set_full(!full),
+            PhysicalKey::Code(KeyCode::Escape) if full => self.set_full(false),
             PhysicalKey::Code(KeyCode::Escape) => return false,
             _ => {}
         }
         true
     }
+
+    fn set_full(&self, on: bool) {
+        self.window.set_fullscreen(on.then_some(Fullscreen::Borderless(None)));
+        self.full.store(on, Ordering::Relaxed);
+    }
+}
+
+/// Full screen with music playing is being watched; a paused player left
+/// in full screen may still let the monitor sleep.
+fn keep_screen_on_while_watched(control: &Arc<Control>, full: &Arc<AtomicBool>, shared: Arc<Shared>) {
+    let (control, full) = (control.clone(), full.clone());
+    crate::keep_awake::spawn(
+        move || full.load(Ordering::Relaxed) && shared.state() == PlayState::Playing,
+        move || control.stop.load(Ordering::Relaxed),
+    );
 }
 
 fn pixels(size: PhysicalSize<u32>) -> (u32, u32) {

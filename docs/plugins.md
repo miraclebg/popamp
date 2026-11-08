@@ -274,6 +274,11 @@ menu entry. It is written `kind = "visual"`, may ask for no permissions,
 and opens from the Visualization menu. F toggles full screen, Esc leaves
 it or closes the window.
 
+While it is full screen and music is playing, the screen saver and the
+monitor's sleep stay off. On Linux that asks the desktop through
+`org.freedesktop.ScreenSaver`; a desktop without that service blanks as
+usual. A paused player lets the monitor sleep.
+
 | Call | Input | Output |
 |---|---|---|
 | `api_version` | none | `"1.0"` |

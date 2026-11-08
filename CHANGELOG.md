@@ -10,7 +10,8 @@ All notable changes to this project are documented here. The format follows
 
 - **Visualizer plug-ins** (`--features visualizers`): a WebAssembly
   plug-in supplies WGSL shaders and the player makes every GPU call, in a
-  window of its own that can go full screen.
+  window of its own that can go full screen. While it is full screen and
+  music is playing, the screen saver and monitor sleep stay off.
 
 ## [0.6.0] - 2026-11-07
 
