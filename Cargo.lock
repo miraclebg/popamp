@@ -2787,7 +2787,7 @@ dependencies = [
 [[package]]
 name = "popamp-plugin-api"
 version = "1.0.0"
-source = "git+https://github.com/popamp/popamp-plugin-api?branch=main#14b2f74074f6e3a1b0838c7d45fdb671bccee229"
+source = "git+https://github.com/popamp/popamp-plugin-api?branch=main#476a1ab7114733d30109822dc0592919f7f6c0c6"
 dependencies = [
  "serde",
 ]
