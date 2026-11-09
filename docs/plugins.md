@@ -372,10 +372,11 @@ major version and the same or an older minor version; minor versions
 only add calls or optional fields. A plug-in built for another major
 version stays off, with a message naming both versions.
 
-Until Popamp 1.0 the API stays 1.0 and changes in place: dependents
-follow the crate's `main` branch, and `Cargo.lock` pins the commit.
-A plug-in's package names the oldest Popamp it runs on. The API version
-starts to move with Popamp 1.0.
+**The API is under development: until Popamp 1.0 it can change with no
+compatibility with older plug-ins.** It stays 1.0 and changes in place:
+dependents follow the crate's `main` branch, and `Cargo.lock` pins the
+commit. A plug-in's package names the oldest Popamp it runs on. The API
+version starts to move with Popamp 1.0.
 
 ## What left the core
 

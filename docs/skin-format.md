@@ -312,3 +312,18 @@ skin.toml, line 12: unknown command `plya`; it can be one of: exit, ...
   sizes everything is smooth anyway.
 - SVG `<text>` is not drawn. Convert texts in pictures to outlines.
 - Keep each SVG's `width` and `height` equal to the area it covers.
+
+## Converting a bitmap skin
+
+Redraw the design with the simplest primitives; do not trace its pixels.
+Matching the bitmap pixel for pixel with thousands of tiny shapes is the
+wrong goal: such a sheet is heavy and shows seams at fractional scales.
+
+- Draw each element whole: a panel, bar, button or slot is one shape, or a
+  few, never a mosaic.
+- Draw a gradient as one gradient fill, not as a stack of coloured strips.
+- Same-coloured details that cannot be one rectangle, such as letters and
+  digits, are outlines in one `<path>`, not separate pixels.
+- Do not carry over the bitmap's artifacts. Stretching and scaling in the
+  original leave stray pixels, blur, banding and uneven repeats: filter
+  them out and draw what the artist meant.

@@ -51,83 +51,57 @@
 </defs>
 <rect x="0" y="0" width="136" height="36" fill="#262b38"/>
 <rect x="0" y="0" width="23" height="18" fill="url(#g0)"/>
-<rect x="0" y="0" width="23" height="1" fill="#8d95a8"/>
-<rect x="0" y="0" width="1" height="18" fill="#8d95a8"/>
-<rect x="0" y="17" width="23" height="1" fill="#12151c"/>
-<rect x="22" y="0" width="1" height="18" fill="#12151c"/>
+<path d="M0 0H23V1H1V18H0z" fill="#8d95a8"/>
+<path d="M0 17H22V0H23V18H0z" fill="#12151c"/>
 <rect x="6" y="5" width="2" height="8" fill="#e6eaf2"/>
 <polygon points="15.5,5 15.5,13 8.5,9" fill="#e6eaf2"/>
 <rect x="0" y="18" width="23" height="18" fill="url(#g1)"/>
-<rect x="0" y="18" width="23" height="1" fill="#12151c"/>
-<rect x="0" y="18" width="1" height="18" fill="#12151c"/>
-<rect x="0" y="35" width="23" height="1" fill="#5d6780"/>
-<rect x="22" y="18" width="1" height="18" fill="#5d6780"/>
+<path d="M0 18H23V19H1V36H0z" fill="#12151c"/>
+<path d="M0 35H22V18H23V36H0z" fill="#5d6780"/>
 <rect x="6" y="23" width="2" height="8" fill="#e6eaf2"/>
 <polygon points="15.5,23 15.5,31 8.5,27" fill="#e6eaf2"/>
 <rect x="23" y="0" width="23" height="18" fill="url(#g2)"/>
-<rect x="23" y="0" width="23" height="1" fill="#8d95a8"/>
-<rect x="23" y="0" width="1" height="18" fill="#8d95a8"/>
-<rect x="23" y="17" width="23" height="1" fill="#12151c"/>
-<rect x="45" y="0" width="1" height="18" fill="#12151c"/>
+<path d="M23 0H46V1H24V18H23z" fill="#8d95a8"/>
+<path d="M23 17H45V0H46V18H23z" fill="#12151c"/>
 <polygon points="31.5,4 31.5,14 39.5,9" fill="#e6eaf2"/>
 <rect x="23" y="18" width="23" height="18" fill="url(#g3)"/>
-<rect x="23" y="18" width="23" height="1" fill="#12151c"/>
-<rect x="23" y="18" width="1" height="18" fill="#12151c"/>
-<rect x="23" y="35" width="23" height="1" fill="#5d6780"/>
-<rect x="45" y="18" width="1" height="18" fill="#5d6780"/>
+<path d="M23 18H46V19H24V36H23z" fill="#12151c"/>
+<path d="M23 35H45V18H46V36H23z" fill="#5d6780"/>
 <polygon points="31.5,22 31.5,32 39.5,27" fill="#e6eaf2"/>
 <rect x="46" y="0" width="23" height="18" fill="url(#g4)"/>
-<rect x="46" y="0" width="23" height="1" fill="#8d95a8"/>
-<rect x="46" y="0" width="1" height="18" fill="#8d95a8"/>
-<rect x="46" y="17" width="23" height="1" fill="#12151c"/>
-<rect x="68" y="0" width="1" height="18" fill="#12151c"/>
-<rect x="53" y="5" width="3" height="8" fill="#e6eaf2"/>
-<rect x="58" y="5" width="3" height="8" fill="#e6eaf2"/>
+<path d="M46 0H69V1H47V18H46z" fill="#8d95a8"/>
+<path d="M46 17H68V0H69V18H46z" fill="#12151c"/>
+<path d="M53 5H56V13H53zM58 5H61V13H58z" fill="#e6eaf2"/>
 <rect x="46" y="18" width="23" height="18" fill="url(#g5)"/>
-<rect x="46" y="18" width="23" height="1" fill="#12151c"/>
-<rect x="46" y="18" width="1" height="18" fill="#12151c"/>
-<rect x="46" y="35" width="23" height="1" fill="#5d6780"/>
-<rect x="68" y="18" width="1" height="18" fill="#5d6780"/>
-<rect x="53" y="23" width="3" height="8" fill="#e6eaf2"/>
-<rect x="58" y="23" width="3" height="8" fill="#e6eaf2"/>
+<path d="M46 18H69V19H47V36H46z" fill="#12151c"/>
+<path d="M46 35H68V18H69V36H46z" fill="#5d6780"/>
+<path d="M53 23H56V31H53zM58 23H61V31H58z" fill="#e6eaf2"/>
 <rect x="69" y="0" width="23" height="18" fill="url(#g6)"/>
-<rect x="69" y="0" width="23" height="1" fill="#8d95a8"/>
-<rect x="69" y="0" width="1" height="18" fill="#8d95a8"/>
-<rect x="69" y="17" width="23" height="1" fill="#12151c"/>
-<rect x="91" y="0" width="1" height="18" fill="#12151c"/>
+<path d="M69 0H92V1H70V18H69z" fill="#8d95a8"/>
+<path d="M69 17H91V0H92V18H69z" fill="#12151c"/>
 <rect x="76" y="5" width="8" height="8" fill="#e6eaf2"/>
 <rect x="69" y="18" width="23" height="18" fill="url(#g7)"/>
-<rect x="69" y="18" width="23" height="1" fill="#12151c"/>
-<rect x="69" y="18" width="1" height="18" fill="#12151c"/>
-<rect x="69" y="35" width="23" height="1" fill="#5d6780"/>
-<rect x="91" y="18" width="1" height="18" fill="#5d6780"/>
+<path d="M69 18H92V19H70V36H69z" fill="#12151c"/>
+<path d="M69 35H91V18H92V36H69z" fill="#5d6780"/>
 <rect x="76" y="23" width="8" height="8" fill="#e6eaf2"/>
 <rect x="92" y="0" width="22" height="18" fill="url(#g8)"/>
-<rect x="92" y="0" width="22" height="1" fill="#8d95a8"/>
-<rect x="92" y="0" width="1" height="18" fill="#8d95a8"/>
-<rect x="92" y="17" width="22" height="1" fill="#12151c"/>
-<rect x="113" y="0" width="1" height="18" fill="#12151c"/>
+<path d="M92 0H114V1H93V18H92z" fill="#8d95a8"/>
+<path d="M92 17H113V0H114V18H92z" fill="#12151c"/>
 <polygon points="99,5 99,13 106,9" fill="#e6eaf2"/>
 <rect x="106" y="5" width="2" height="8" fill="#e6eaf2"/>
 <rect x="92" y="18" width="22" height="18" fill="url(#g9)"/>
-<rect x="92" y="18" width="22" height="1" fill="#12151c"/>
-<rect x="92" y="18" width="1" height="18" fill="#12151c"/>
-<rect x="92" y="35" width="22" height="1" fill="#5d6780"/>
-<rect x="113" y="18" width="1" height="18" fill="#5d6780"/>
+<path d="M92 18H114V19H93V36H92z" fill="#12151c"/>
+<path d="M92 35H113V18H114V36H92z" fill="#5d6780"/>
 <polygon points="99,23 99,31 106,27" fill="#e6eaf2"/>
 <rect x="106" y="23" width="2" height="8" fill="#e6eaf2"/>
 <rect x="114" y="0" width="22" height="16" fill="url(#g10)"/>
-<rect x="114" y="0" width="22" height="1" fill="#8d95a8"/>
-<rect x="114" y="0" width="1" height="16" fill="#8d95a8"/>
-<rect x="114" y="15" width="22" height="1" fill="#12151c"/>
-<rect x="135" y="0" width="1" height="16" fill="#12151c"/>
+<path d="M114 0H136V1H115V16H114z" fill="#8d95a8"/>
+<path d="M114 15H135V0H136V16H114z" fill="#12151c"/>
 <polygon points="120,9 130,9 125,3" fill="#e6eaf2"/>
 <rect x="120" y="11" width="10" height="2" fill="#e6eaf2"/>
 <rect x="114" y="16" width="22" height="16" fill="url(#g11)"/>
-<rect x="114" y="16" width="22" height="1" fill="#12151c"/>
-<rect x="114" y="16" width="1" height="16" fill="#12151c"/>
-<rect x="114" y="31" width="22" height="1" fill="#5d6780"/>
-<rect x="135" y="16" width="1" height="16" fill="#5d6780"/>
+<path d="M114 16H136V17H115V32H114z" fill="#12151c"/>
+<path d="M114 31H135V16H136V32H114z" fill="#5d6780"/>
 <polygon points="120,25 130,25 125,19" fill="#e6eaf2"/>
 <rect x="120" y="27" width="10" height="2" fill="#e6eaf2"/>
 </svg>
