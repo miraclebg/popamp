@@ -31,8 +31,10 @@
 - **Plug-ins** (in a build with `--features plugins`): WebAssembly
   sources such as [YouTube](https://github.com/popamp/plugin-youtube) and
   sound effects such as [Crossfeed](https://github.com/popamp/plugin-crossfeed),
-  each allowed by you in Options > Plug-ins…. See
-  [plugins.md](plugins.md).
+  each allowed by you in Options > Plug-ins…. In a build with
+  `--features visualizers`, also GPU visualizers such as
+  [Spectrum](https://github.com/popamp/plugin-spectrum), in a window that
+  can go full screen. See [plugins.md](plugins.md).
 - **Playlist:**
   - M3U, M3U8, PLS and XSPF.
   - Sort, reverse, randomize, crop, remove dead entries.

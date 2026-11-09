@@ -34,6 +34,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets    # expected: no warnings
 cargo test --workspace
 cargo test --workspace --features popamp/plugins   # adds the plug-in tests
+cargo test --workspace --features popamp/plus      # adds the visualizer tests
 ```
 
 The unit tests cover:
