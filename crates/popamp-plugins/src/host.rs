@@ -35,9 +35,6 @@ pub type StopNotice = Box<dyn Fn(&str) + Send + Sync>;
 
 /// The longest a call may run, the programs it starts included.
 pub const CALL_TIME: Duration = Duration::from_secs(60);
-/// What a visual plug-in exports besides `api_version`.
-const SCENE: &str = "scene";
-const FRAME: &str = "frame";
 
 /// The longest a dsp call may run; it holds up the sound, so this is the
 /// limit for a plug-in that hangs, not the budget of a block.
@@ -481,11 +478,11 @@ pub struct Visual {
 
 impl Visual {
     pub fn scene(&mut self) -> Result<Vec<u8>, String> {
-        self.call(SCENE, &[])
+        self.call(calls::SCENE, &[])
     }
 
     pub fn frame(&mut self, input: &[u8]) -> Result<Vec<u8>, String> {
-        self.call(FRAME, input)
+        self.call(calls::FRAME, input)
     }
 
     fn call(&mut self, name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
