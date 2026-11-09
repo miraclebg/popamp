@@ -268,6 +268,11 @@ its own, called only by the engine, so it may keep state in statics.
 
 ## Visualizer plug-ins
 
+The code that draws them is the
+[`popamp-visual`](https://github.com/popamp/popamp-visual) repository, and
+[`plugin-spectrum`](https://github.com/popamp/plugin-spectrum) is a working
+example.
+
 Only in a build with the `visualizers` feature; see
 [building.md](building.md). Elsewhere a `visual` plug-in loads but has no
 menu entry. It is written `kind = "visual"`, may ask for no permissions,

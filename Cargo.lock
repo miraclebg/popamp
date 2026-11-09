@@ -2824,6 +2824,7 @@ dependencies = [
 [[package]]
 name = "popamp-visual"
 version = "0.6.0"
+source = "git+https://github.com/popamp/popamp-visual?branch=main#17dca45e7edd92ed433abe26e1da653fa5b0d686"
 dependencies = [
  "log",
  "parking_lot",
