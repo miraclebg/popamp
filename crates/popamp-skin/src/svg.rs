@@ -11,6 +11,15 @@ use std::rc::Rc;
 /// Picture number, area of it, and the screen size it is drawn at.
 type Key = (u16, Rect, i32, i32);
 
+/// Options under which a picture may only use what it carries inside itself.
+/// A skin can come from anywhere, so its `<image>` must not reach files on disk.
+fn self_contained() -> usvg::Options<'static> {
+    usvg::Options {
+        image_href_resolver: usvg::ImageHrefResolver { resolve_string: Box::new(|_, _| None), ..Default::default() },
+        ..Default::default()
+    }
+}
+
 #[derive(Default)]
 pub struct Svgs {
     trees: Vec<usvg::Tree>,
@@ -21,7 +30,7 @@ impl Svgs {
     /// Parses an SVG file and returns its number.
     pub fn add(&mut self, data: &[u8]) -> Result<u16, String> {
         let id = u16::try_from(self.trees.len()).map_err(|_| "too many SVG files".to_string())?;
-        let tree = usvg::Tree::from_data(data, &usvg::Options::default()).map_err(|e| e.to_string())?;
+        let tree = usvg::Tree::from_data(data, &self_contained()).map_err(|e| e.to_string())?;
         self.trees.push(tree);
         Ok(id)
     }
@@ -69,6 +78,66 @@ mod tests {
         assert_eq!(full.px, [0xffff0000, 0xffff0000, 0, 0, 0xffff0000, 0xffff0000, 0, 0]);
         let right = s.raster(id, Rect { x: 1, y: 0, w: 1, h: 1 }, 3, 3).unwrap();
         assert!(right.px.iter().all(|&p| p == 0), "the right half is empty");
+    }
+
+    fn red_png() -> Vec<u8> {
+        let mut pixmap = tiny_skia::Pixmap::new(1, 1).unwrap();
+        pixmap.fill(tiny_skia::Color::from_rgba8(255, 0, 0, 255));
+        pixmap.encode_png().unwrap()
+    }
+
+    fn data_url(mime: &str, bytes: &[u8]) -> String {
+        let escaped: String = bytes.iter().map(|b| format!("%{b:02x}")).collect();
+        format!("data:{mime},{escaped}")
+    }
+
+    fn picture_of(href: &str) -> Vec<u8> {
+        format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">
+            <image href="{href}" width="1" height="1"/></svg>"#
+        )
+        .into_bytes()
+    }
+
+    fn drawn(svg: &[u8]) -> u32 {
+        let mut s = Svgs::default();
+        let id = s.add(svg).unwrap();
+        s.raster(id, Rect { x: 0, y: 0, w: 1, h: 1 }, 1, 1).unwrap().px[0]
+    }
+
+    /// A real picture on disk, removed when the test ends.
+    struct PngOnDisk(std::path::PathBuf);
+
+    impl PngOnDisk {
+        fn new(name: &str) -> Self {
+            let path = std::env::temp_dir().join(format!("popamp-svg-{name}-{}.png", std::process::id()));
+            std::fs::write(&path, red_png()).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for PngOnDisk {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    #[test]
+    fn a_picture_carried_inside_the_svg_is_drawn() {
+        assert_eq!(drawn(&picture_of(&data_url("image/png", &red_png()))), 0xffff0000);
+    }
+
+    #[test]
+    fn a_picture_on_disk_is_not_read() {
+        let file = PngOnDisk::new("direct");
+        assert_eq!(drawn(&picture_of(file.0.to_str().unwrap())), 0);
+    }
+
+    #[test]
+    fn an_svg_inside_the_svg_cannot_read_the_disk_either() {
+        let file = PngOnDisk::new("nested");
+        let inner = picture_of(file.0.to_str().unwrap());
+        assert_eq!(drawn(&picture_of(&data_url("image/svg+xml", &inner))), 0);
     }
 
     #[test]
