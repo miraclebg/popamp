@@ -305,23 +305,31 @@ mod tests {
         assert!(!text.contains("abcdefgh") && !text.contains("secret"), "{text}");
     }
 
+    /// Where an absolute path starts: on Windows it needs a drive.
+    const ROOT: &str = if cfg!(windows) { "C:" } else { "" };
+
+    fn absolute(path: &str) -> PathBuf {
+        PathBuf::from(format!("{ROOT}{path}"))
+    }
+
     #[test]
     fn folders_are_written_with_semicolons_and_a_tilde() {
-        let home = Path::new("/home/u");
-        let got = parse_folders(" ~/Music ; /mnt/a b;; relative ; ~ ;~other", Some(home));
-        assert_eq!(got, [PathBuf::from("/home/u/Music"), PathBuf::from("/mnt/a b"), PathBuf::from("/home/u")]);
+        let home = absolute("/home/u");
+        let home = Some(home.as_path());
+        let got = parse_folders(&format!(" ~/Music ; {ROOT}/mnt/a b;; relative ; ~ ;~other"), home);
+        assert_eq!(got, [absolute("/home/u/Music"), absolute("/mnt/a b"), absolute("/home/u")]);
         assert_eq!(parse_folders("~/x", None), Vec::<PathBuf>::new());
-        assert_eq!(shown(Path::new("/home/u/Music"), Some(home)), "~/Music");
-        assert_eq!(shown(home, Some(home)), "~");
-        assert_eq!(shown(Path::new("/mnt/a"), Some(home)), "/mnt/a");
+        assert_eq!(shown(&absolute("/home/u/Music"), home), "~/Music");
+        assert_eq!(shown(&absolute("/home/u"), home), "~");
+        assert_eq!(shown(&absolute("/mnt/a"), home), format!("{ROOT}/mnt/a"));
     }
 
     #[test]
     fn the_music_folder_has_the_name_the_desktop_gave_it() {
-        let home = Path::new("/home/u");
+        let home = absolute("/home/u");
         let text = "# comment\nXDG_DESKTOP_DIR=\"$HOME/x\"\nXDG_MUSIC_DIR=\"$HOME/Музыка\"\n";
-        assert_eq!(music_in_user_dirs(text, home), Some(PathBuf::from("/home/u/Музыка")));
-        assert_eq!(music_in_user_dirs("XDG_MUSIC_DIR=\"/data/m\"", home), Some(PathBuf::from("/data/m")));
-        assert_eq!(music_in_user_dirs("", home), None);
+        assert_eq!(music_in_user_dirs(text, &home), Some(absolute("/home/u/Музыка")));
+        assert_eq!(music_in_user_dirs(&format!("XDG_MUSIC_DIR=\"{ROOT}/data/m\""), &home), Some(absolute("/data/m")));
+        assert_eq!(music_in_user_dirs("", &home), None);
     }
 }
