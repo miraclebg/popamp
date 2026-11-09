@@ -14,6 +14,8 @@ mod edition;
 mod font;
 mod headless;
 mod ipc;
+#[cfg(feature = "visualizers")]
+mod keep_awake;
 mod media;
 mod menu;
 mod model;
@@ -27,6 +29,8 @@ mod scale;
 mod skinwin;
 mod ui;
 mod vis;
+#[cfg(feature = "visualizers")]
+mod visualizer;
 mod widgets;
 
 use cli::Remote;

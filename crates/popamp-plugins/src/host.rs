@@ -35,6 +35,10 @@ pub type StopNotice = Box<dyn Fn(&str) + Send + Sync>;
 
 /// The longest a call may run, the programs it starts included.
 pub const CALL_TIME: Duration = Duration::from_secs(60);
+/// What a visual plug-in exports besides `api_version`.
+const SCENE: &str = "scene";
+const FRAME: &str = "frame";
+
 /// The longest a dsp call may run; it holds up the sound, so this is the
 /// limit for a plug-in that hangs, not the budget of a block.
 pub const DSP_CALL_TIME: Duration = Duration::from_millis(250);
@@ -148,7 +152,7 @@ impl Plugin {
         call_time: Duration,
     ) -> Result<Plugin, String> {
         let manifest = Manifest::load(dir)?;
-        let call_time = if manifest.kind == Kind::Dsp { call_time.min(DSP_CALL_TIME) } else { call_time };
+        let call_time = if matches!(manifest.kind, Kind::Source(_)) { call_time } else { call_time.min(DSP_CALL_TIME) };
         let wasm = std::fs::read(dir.join(MODULE)).map_err(|e| format!("{MODULE}: {e}"))?;
         let settings = settings_of(&manifest, values);
         let programs = Arc::new(Programs::new(&manifest, &settings, &cx.proxy, access.journal.clone()));
@@ -235,7 +239,7 @@ impl Plugin {
     fn spec(&self) -> Option<&SourceSpec> {
         match &self.manifest.kind {
             Kind::Source(spec) => Some(spec),
-            Kind::Dsp => None,
+            Kind::Dsp | Kind::Visual => None,
         }
     }
 
@@ -243,6 +247,12 @@ impl Plugin {
     pub fn effect(self: &Arc<Self>) -> Result<Dsp, String> {
         let instance = extism::Plugin::new_from_compiled(&self.compiled).map_err(|e| format!("{e:#}"))?;
         Ok(Dsp { plugin: self.clone(), instance, rate: 44_100 })
+    }
+
+    /// An instance of a visual plug-in for the thread that draws it.
+    pub fn visual(self: &Arc<Self>) -> Result<Visual, String> {
+        let instance = extism::Plugin::new_from_compiled(&self.compiled).map_err(|e| format!("{e:#}"))?;
+        Ok(Visual { plugin: self.clone(), instance })
     }
 
     /// Calls `name` with `input` as JSON and reads its JSON answer.
@@ -457,6 +467,37 @@ impl Effect for Dsp {
                 self.plugin.failures.store(0, Ordering::Relaxed);
             }
             Err(e) => self.plugin.count_failure(&e),
+        }
+    }
+}
+
+/// A visual plug-in as the drawing thread runs it. `scene` answers what
+/// to draw, as JSON. `frame`, needed only by a scene with `data_bytes`,
+/// gets the frame's numbers and answers the bytes its shaders read.
+pub struct Visual {
+    plugin: Arc<Plugin>,
+    instance: extism::Plugin,
+}
+
+impl Visual {
+    pub fn scene(&mut self) -> Result<Vec<u8>, String> {
+        self.call(SCENE, &[])
+    }
+
+    pub fn frame(&mut self, input: &[u8]) -> Result<Vec<u8>, String> {
+        self.call(FRAME, input)
+    }
+
+    fn call(&mut self, name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
+        if self.plugin.is_off() {
+            return Err(format!("plug-in {} is off after failing {FAILURES_TO_STOP} times", self.plugin.manifest.id));
+        }
+        match self.instance.call::<&[u8], Vec<u8>>(name, input) {
+            Ok(out) => {
+                self.plugin.failures.store(0, Ordering::Relaxed);
+                Ok(out)
+            }
+            Err(e) => Err(self.plugin.failed(&e)),
         }
     }
 }
@@ -693,6 +734,33 @@ default = "ffmpeg"
         std::fs::copy(fixtures.join("test/plugin.wasm"), dir.join("plugin.wasm")).unwrap();
         let values = HashMap::from([("mode".to_string(), mode.to_string())]);
         Arc::new(Plugin::load(&dir, &values, &Context::default(), Access::default()).unwrap())
+    }
+
+    fn test_visual(mode: &str) -> Visual {
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let dir = std::env::temp_dir().join(format!("popamp-visual-{}-{mode}", std::process::id())).join("test-visual");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::copy(fixtures.join("test-visual/plugin.toml"), dir.join("plugin.toml")).unwrap();
+        std::fs::copy(fixtures.join("test/plugin.wasm"), dir.join("plugin.wasm")).unwrap();
+        let values = HashMap::from([("mode".to_string(), mode.to_string())]);
+        Arc::new(Plugin::load(&dir, &values, &Context::default(), Access::default()).unwrap()).visual().unwrap()
+    }
+
+    #[test]
+    fn a_visual_plugin_answers_its_scene_and_frames() {
+        let mut v = test_visual("echo");
+        let scene: serde_json::Value = serde_json::from_slice(&v.scene().unwrap()).unwrap();
+        assert_eq!(scene["data_bytes"], 4);
+        assert_eq!(v.frame(&[1, 2, 3, 4, 5, 6]).unwrap(), [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn a_visual_plugin_that_hangs_three_times_is_switched_off() {
+        let mut v = test_visual("hang");
+        for _ in 0..3 {
+            assert_eq!(v.frame(&[0; 4]).unwrap_err(), "timeout");
+        }
+        assert!(v.frame(&[0; 4]).unwrap_err().contains("is off after failing 3 times"));
     }
 
     /// A block of `frames` stereo frames, left 1.0 and right -1.0.

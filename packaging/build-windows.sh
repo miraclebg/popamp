@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds Popamp's Windows downloads from an already-compiled release
 # popamp.exe: an installer (Inno Setup) and a portable zip. Popamp-Plus-…
-# for one built with --features plugins (its /VERSION says which).
+# for one built with --features plus (its /VERSION says which).
 # The zip holds one folder: the exe, its papers and an empty popamp.ini,
 # which keeps the settings in that folder instead of %APPDATA%.
 # Usage: packaging/build-windows.sh [target/release/popamp.exe] [output-dir]

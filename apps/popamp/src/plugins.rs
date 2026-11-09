@@ -52,6 +52,21 @@ impl Model {
 
     /// Says in the title display that a plug-in stopped, and why; the
     /// Plug-ins window says it too.
+    /// The visual plug-ins that are on, to open from the menu.
+    #[cfg(feature = "visualizers")]
+    pub fn visualizer_items(&self) -> Vec<crate::menu::MenuItem> {
+        use crate::menu::{MenuAction, MenuItem};
+        let plugins = installed::visuals(&self.plugins.list);
+        let open = plugins.iter().map(|p| MenuItem::action(&p.manifest().name, "", MenuAction::Visualizer(p.manifest().id.clone())));
+        plugins.first().map(|_| MenuItem::sep()).into_iter().chain(open).collect()
+    }
+
+    /// The visual plug-in with this id, if it is on.
+    #[cfg(feature = "visualizers")]
+    pub fn visual_plugin(&self, id: &str) -> Option<std::sync::Arc<popamp_plugins::host::Plugin>> {
+        installed::visuals(&self.plugins.list).into_iter().find(|p| p.manifest().id == id)
+    }
+
     pub fn on_plugin_stopped(&mut self, id: &str, why: &str) {
         let name = self.plugins.list.iter().filter_map(Installed::manifest).find(|m| m.id == id).map_or(id, |m| m.name.as_str());
         self.flash(format!("PLUG-IN {} STOPPED: {why}", name.to_uppercase()));

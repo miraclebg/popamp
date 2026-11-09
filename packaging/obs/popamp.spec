@@ -1,13 +1,13 @@
 # Popamp for openSUSE and Fedora, built on the openSUSE Build Service.
 # One spec, two packages: _multibuild's "plus" flavour is popamp-plus,
-# built with plug-ins; each replaces the other, as the debs do.
+# built with every function; each replaces the other, as the debs do.
 # The sources are two tarballs made by packaging/obs/publish.sh: the
 # project at a tag, and its crates (cargo vendor), since OBS builds offline.
 
 %{!?flavor:%define flavor @BUILD_FLAVOR@%{nil}}
 %if "%{flavor}" == "plus"
 %define pkgname popamp-plus
-%define features --features plugins
+%define features --features plus
 %else
 %define pkgname popamp
 %define features %{nil}
@@ -61,6 +61,8 @@ Recommends:     dejavu-sans-fonts
 %endif
 
 %if "%{flavor}" == "plus"
+# Only the visualizers need it, and they say so if it is missing.
+Recommends:     libvulkan.so.1()(64bit)
 Provides:       popamp = %{version}-%{release}
 Conflicts:      popamp
 %else
@@ -77,7 +79,8 @@ streams.
 
 This is Popamp Plus, built with plug-ins: WebAssembly modules, installed
 separately and allowed one by one, that add sources such as YouTube and
-sound effects such as crossfeed.
+sound effects such as crossfeed, and visualizers that draw with their
+own shaders on the graphics card.
 %endif
 
 %prep

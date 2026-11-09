@@ -74,8 +74,9 @@ openSUSE and Fedora get rpms from a [repository](#opensuse-and-fedora).
 All come in two builds:
 
 - **popamp:** the player.
-- **popamp-plus:** the player with [plug-ins](plugins.md), such as
-  YouTube. It is larger, since it carries a WebAssembly runtime.
+- **popamp-plus:** the player with everything: [plug-ins](plugins.md),
+  such as YouTube, and visualizers. It is larger, since it carries a
+  WebAssembly runtime and GPU code.
 
 Both install `popamp` and share its settings; installing one replaces
 the other.
@@ -136,7 +137,7 @@ The first install asks you to trust the repository's signing key.
 
 The AppImage uses the system's ALSA, X11 and xkbcommon libraries, which
 nearly every desktop has. To build the packages yourself after
-`cargo build --release` (or with `--features plugins` for popamp-plus;
+`cargo build --release` (or with `--features plus` for popamp-plus;
 the scripts ask the binary which it is):
 
 ```sh
@@ -172,6 +173,17 @@ is larger:
 ```sh
 cargo build --release --features plugins
 ```
+
+Visualizer plug-ins draw with their own shaders on the GPU, through wgpu
+(Vulkan on Linux, Direct3D 12 on Windows). They are a separate choice and
+turn plug-ins on as well; without this feature the program has no GPU code:
+
+```sh
+cargo build --release --features visualizers
+```
+
+`--features plus` is everything, and is what popamp-plus is built with.
+Only such a build calls itself Popamp Plus.
 
 ### 3. Install for the current user (optional)
 

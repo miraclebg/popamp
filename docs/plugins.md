@@ -266,6 +266,74 @@ engine runs dsp plug-ins in folder order, after the equalizer and
 before the visualizer, volume and balance. Each one has an instance of
 its own, called only by the engine, so it may keep state in statics.
 
+## Visualizer plug-ins
+
+Only in a build with the `visualizers` feature; see
+[building.md](building.md). Elsewhere a `visual` plug-in loads but has no
+menu entry. It is written `kind = "visual"`, may ask for no permissions,
+and opens from the Visualization menu. F toggles full screen, Esc leaves
+it or closes the window.
+
+While it is full screen and music is playing, the screen saver and the
+monitor's sleep stay off. On Linux that asks the desktop through
+`org.freedesktop.ScreenSaver`; a desktop without that service blanks as
+usual. A paused player lets the monitor sleep.
+
+| Call | Input | Output |
+|---|---|---|
+| `api_version` | none | `"1.0"` |
+| `scene` | none | the scene, JSON |
+| `frame` | the frame's numbers, raw bytes | `data_bytes` bytes for the shaders |
+
+`frame` is needed only by a scene with `data_bytes` above 0, and is
+called once per frame. Its input is 32-bit little-endian floats: `time`,
+`dt`, `width`, `height`, 1024 samples of the wave, then 512 spectrum
+levels from 0 (silence) to 1 (full scale).
+
+A plug-in owns its look and the player owns the GPU: the plug-in says
+what to draw, and every GPU call is the player's.
+
+```json
+{
+  "data_bytes": 4,
+  "targets": [{ "name": "trail", "scale": 1.0 }],
+  "passes": [
+    { "shader": "...", "target": "trail", "inputs": ["trail"] },
+    { "shader": "...", "inputs": ["trail"] }
+  ]
+}
+```
+
+A pass has `shader` (WGSL with the entry points `vs` and `fs`) and may
+have `target` (absent means the window), `inputs`, `vertices` (3),
+`instances` (1), `topology` (`triangles`, `lines`, `points`) and `blend`
+(`none`, `alpha`, `add`). One pass must draw to the window, and a target
+has one pass drawing to it. An input drawn by an earlier pass is this
+frame's picture; any other is the last frame's, which is how trails are
+made.
+
+Every shader sees these in group 0:
+
+| Binding | Declaration |
+|---|---|
+| 0 | `var<uniform> frame: Frame`, four floats: `time`, `dt`, `width`, `height` |
+| 1 | `var<storage, read> audio: Audio`: `wave: array<f32, 1024>`, `spectrum: array<f32, 512>` |
+| 2 | `var<storage, read> data: ...`: the bytes from `frame` |
+| 3 | `var s: sampler`, linear |
+| 4 on | `var t: texture_2d<f32>`, one per input, in order |
+
+A scene has at most 16 passes, 4 targets, 4 inputs per pass, 256 KiB per
+shader, 2,000,000 vertices per frame and 1 MiB of data. Compute shaders
+cannot be started.
+
+A shader runs on the graphics card and cannot read files or the network,
+and its array accesses are kept inside what it was given. **It can still
+keep the card busy**: no check can tell in advance how long a shader
+runs. Drawing has a thread of its own, so the player keeps playing; three
+frames in a row that fail or take over 2 s close the visualizer, and the
+driver's own reset handles a card that stops answering, which may
+disturb the whole screen for a moment.
+
 ## Threads and time limits
 
 - **No source call runs on the audio callback, the UI thread or the

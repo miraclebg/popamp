@@ -154,3 +154,20 @@ pub fn process(block: Vec<u8>) -> FnResult<Vec<u8>> {
     }
     Ok(bytes_of(&samples))
 }
+
+/// The answer of a visual plug-in; `fixtures/test-visual` selects it.
+#[plugin_fn]
+pub fn scene(_: Vec<u8>) -> FnResult<String> {
+    Ok(r#"{"data_bytes":4,"passes":[{"shader":"x"}]}"#.to_string())
+}
+
+/// `echo` gives back the first four bytes; `hang` never answers.
+#[plugin_fn]
+pub fn frame(input: Vec<u8>) -> FnResult<Vec<u8>> {
+    if config::get("mode")?.unwrap_or_default() == "hang" {
+        loop {
+            std::hint::black_box(0);
+        }
+    }
+    Ok(input[..4].to_vec())
+}

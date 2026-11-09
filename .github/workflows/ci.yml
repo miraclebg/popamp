@@ -25,6 +25,9 @@ jobs:
       # The player with plug-ins (cargo build --features plugins).
       - run: cargo clippy --workspace --all-targets --locked --features popamp/plugins -- -D warnings
       - run: cargo test --workspace --locked --features popamp/plugins
+      # And Popamp Plus, with the GPU visualizers (--features plus).
+      - run: cargo clippy --workspace --all-targets --locked --features popamp/plus -- -D warnings
+      - run: cargo test --workspace --locked --features popamp/plus
 
   windows:
     name: Windows - clippy, test
@@ -42,6 +45,9 @@ jobs:
       - run: cargo test --workspace --locked
       - run: cargo clippy --workspace --all-targets --locked --features popamp/plugins -- -D warnings
       - run: cargo test --workspace --locked --features popamp/plugins
+      # And Popamp Plus, with the GPU visualizers (--features plus).
+      - run: cargo clippy --workspace --all-targets --locked --features popamp/plus -- -D warnings
+      - run: cargo test --workspace --locked --features popamp/plus
 
   msrv:
     name: minimum Rust version (1.96)

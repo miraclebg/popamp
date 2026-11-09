@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds a .deb package from an already-compiled release binary: popamp,
-# or popamp-plus for a binary built with --features plugins (the binary
+# or popamp-plus for a binary built with --features plus (the binary
 # says which in its /VERSION). Each replaces the other.
 # Usage: packaging/build-deb.sh [target/release/popamp] [output-dir]
 # Needs: dpkg-deb, objdump and strip (binutils). Version is read from Cargo.toml.
@@ -27,9 +27,11 @@ if [ "${2:-}" != "$version" ]; then
     exit 1
 fi
 case "$package" in
-    popamp) other=""; extra=""; summary="Winamp-style skinnable audio player" ;;
+    popamp) other=""; extra=""; vulkan=""; summary="Winamp-style skinnable audio player" ;;
     popamp-plus)
         summary="Winamp-style skinnable audio player, with plug-ins"
+        # Only the visualizers need it, and they say so if it is missing.
+        vulkan=", libvulkan1"
         # Versioned, so a skin's "Depends: popamp (>= x)" takes popamp-plus too.
         other="Provides: popamp (= $version)
 Conflicts: popamp
@@ -38,7 +40,8 @@ Replaces: popamp
         extra=" .
  This is Popamp Plus, built with plug-ins: WebAssembly modules, installed
  separately and allowed one by one, that add sources such as YouTube and
- sound effects such as crossfeed."
+ sound effects such as crossfeed, and visualizers that draw with their
+ own shaders on the graphics card."
         ;;
     *) echo "error: $bin says it is $package, not popamp or popamp-plus" >&2; exit 1 ;;
 esac
@@ -85,7 +88,7 @@ Maintainer: Gunyakov <web@gunyakov.pro>
 Installed-Size: $(du -sk "$pkg/usr" | cut -f1)
 Homepage: https://github.com/popamp/popamp
 Depends: libc6 (>= $glibc), libasound2t64 | libasound2, libx11-6, libx11-xcb1, libxcursor1, libxi6, libxkbcommon0, libxkbcommon-x11-0, fontconfig
-Recommends: zenity | kdialog, fonts-dejavu-core
+Recommends: zenity | kdialog, fonts-dejavu-core$vulkan
 ${other}Description: $summary
  Popamp is an audio player in the style of the classic Winamp 2: main
  window, equalizer and playlist editor that dock together, with support

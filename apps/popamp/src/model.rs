@@ -52,6 +52,9 @@ pub enum AppEvent {
     /// A plug-in stopped after failing: its id, and the last failure.
     #[cfg(feature = "plugins")]
     PluginStopped(String, String),
+    /// A visualizer's window has to close: the plug-in's id, and why.
+    #[cfg(feature = "visualizers")]
+    VisualizerStopped(String, String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,6 +71,9 @@ pub enum UiReq {
     /// Open (or raise) one of Popamp's own dialog windows.
     Panel(PanelKind),
     Menu(Vec<MenuItem>),
+    /// Open the visual plug-in with this id.
+    #[cfg(feature = "visualizers")]
+    Visualizer(String),
     /// Window visibility/size/scale changed; re-layout and redraw.
     Layout,
     Minimize,
@@ -1314,6 +1320,8 @@ impl Model {
             MenuAction::Cmd(c) => self.exec(c),
             MenuAction::Skin(p) => self.set_skin(p),
             MenuAction::VisMode(m) => self.settings_mut().sa = m,
+            #[cfg(feature = "visualizers")]
+            MenuAction::Visualizer(id) => self.ui.push(UiReq::Visualizer(id)),
             MenuAction::SaStyle(s) => self.settings_mut().sa_style = s,
             MenuAction::OscStyle(s) => self.settings_mut().osc_style = s,
             MenuAction::SaPeaks => {
@@ -1510,7 +1518,8 @@ impl Model {
 
     pub fn vis_menu(&self) -> Vec<MenuItem> {
         let s = self.settings();
-        vec![
+        #[cfg_attr(not(feature = "visualizers"), allow(unused_mut))]
+        let mut items = vec![
             MenuItem::action("Spectrum analyzer", "", MenuAction::VisMode(1)).checked(s.sa == 1),
             MenuItem::action("Oscilloscope", "", MenuAction::VisMode(2)).checked(s.sa == 2),
             MenuItem::action("Off", "", MenuAction::VisMode(0)).checked(s.sa == 0),
@@ -1524,7 +1533,10 @@ impl Model {
             MenuItem::action("Scope: dots", "", MenuAction::OscStyle(0)).checked(s.osc_style == 0),
             MenuItem::action("Scope: lines", "", MenuAction::OscStyle(1)).checked(s.osc_style == 1),
             MenuItem::action("Scope: solid", "", MenuAction::OscStyle(2)).checked(s.osc_style == 2),
-        ]
+        ];
+        #[cfg(feature = "visualizers")]
+        items.extend(self.visualizer_items());
+        items
     }
 
     pub fn skins_menu(&self) -> Vec<MenuItem> {
