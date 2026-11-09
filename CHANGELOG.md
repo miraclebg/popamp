@@ -32,6 +32,9 @@ All notable changes to this project are documented here. The format follows
   written out in the manifest and stay off until ticked; redirects are
   not followed. A plug-in that reads files gets the folders you choose.
 - The taskbar icon at 32 px is the bolt, like the larger sizes.
+- The default skin is drawn from whole shapes instead of thousands of
+  small ones: its files are five times smaller and show no seams at
+  fractional sizes.
 
 ### Security
 
