@@ -6,12 +6,37 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-09
+
 ### Added
 
-- **Visualizer plug-ins** (`--features visualizers`): a WebAssembly
-  plug-in supplies WGSL shaders and the player makes every GPU call, in a
-  window of its own that can go full screen. While it is full screen and
-  music is playing, the screen saver and monitor sleep stay off.
+- **Visualizer plug-ins** (`--features visualizers`, part of popamp-plus):
+  a WebAssembly plug-in supplies WGSL shaders and the player makes every
+  GPU call, in a window of its own that can go full screen. While it is
+  full screen and music is playing, the screen saver and monitor sleep
+  stay off. The first one is
+  [Spectrum](https://github.com/popamp/plugin-spectrum).
+- A journal for each plug-in records every command, network request and
+  file read, allowed or refused.
+
+### Changed
+
+- **A plug-in now runs only the commands its manifest spells out.**
+  `permissions.exec` is a list of command templates: you see each full
+  command when you allow it, any change asks again, and the plug-in only
+  fills in typed values. A plug-in made for 0.6.0 that runs programs has
+  to be updated; [YouTube](https://github.com/popamp/plugin-youtube)
+  1.1.0 is.
+- **You decide what a plug-in may reach and read.** Any address can be
+  unticked. An unusual port, this computer or your network must be
+  written out in the manifest and stay off until ticked; redirects are
+  not followed. A plug-in that reads files gets the folders you choose.
+- The taskbar icon at 32 px is the bolt, like the larger sizes.
+
+### Security
+
+- An `<image>` in a skin's SVG can no longer read files on the computer;
+  only pictures carried inside the SVG are drawn.
 
 ## [0.6.0] - 2026-11-07
 
@@ -215,7 +240,8 @@ First release.
 - **Packaging:** desktop entry, `.wsz` MIME type, icons and a per-user
   install script.
 
-[Unreleased]: https://github.com/popamp/popamp/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/popamp/popamp/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/popamp/popamp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/popamp/popamp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/popamp/popamp/releases/tag/v0.5.0
 [0.1.0]: https://github.com/sayoojkkarun/linamp/releases/tag/v0.1.0

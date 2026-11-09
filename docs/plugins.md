@@ -372,10 +372,10 @@ major version and the same or an older minor version; minor versions
 only add calls or optional fields. A plug-in built for another major
 version stays off, with a message naming both versions.
 
-Until the first release (the one that ships packages) the API stays
-1.0 and changes in place: dependents follow the crate's `main` branch,
-and `Cargo.lock` pins the commit. Versions start to move with that
-release.
+Until Popamp 1.0 the API stays 1.0 and changes in place: dependents
+follow the crate's `main` branch, and `Cargo.lock` pins the commit.
+A plug-in's package names the oldest Popamp it runs on. The API version
+starts to move with Popamp 1.0.
 
 ## What left the core
 
@@ -411,7 +411,10 @@ With the YouTube plug-in:
    `process` in the API, the engine's effect chain
    (`popamp_audio::dsp::Effect`), `host::Dsp`, and
    [plugin-crossfeed](https://github.com/popamp/plugin-crossfeed).
-6. Later: `decoder` (version 2), `vis`.
+6. Visualizers. Done: kind `visual`, the crate
+   [popamp-visual](https://github.com/popamp/popamp-visual) and
+   [plugin-spectrum](https://github.com/popamp/plugin-spectrum).
+7. Later: `decoder`.
 
 ## Decisions
 

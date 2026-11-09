@@ -60,8 +60,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-CI runs the same checks, again with `--features popamp/plugins`, plus a
-build with the minimum supported Rust version (1.96).
+CI runs the same checks, again with `--features popamp/plugins` and with
+`--features popamp/plus`, plus a build with the minimum supported Rust
+version (1.96).
 
 ## Repositories
 
