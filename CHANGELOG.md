@@ -21,12 +21,14 @@ All notable changes to this project are documented here. The format follows
   `~/.config/mimeapps.list`, with a desktop entry of its own for an
   AppImage or a build from source); on Windows, a button that opens
   Settings > Default apps at Popamp, where the installer now lists it.
-- Gallery window (Skins or Options > Gallery): the skins and plug-ins of
-  popamp.app with previews, what each plug-in may do, and install or
-  update in a click. Downloads are checked against the catalog's size
+- Gallery window (Skins or Options > Gallery): the skins, plug-ins and
+  visualizations of popamp.app on tabs of their own, sorted by
+  popularity, rating or date as on the site, with previews, ratings,
+  what each plug-in may do, and install or update in a click. Downloads are checked against the catalog's size
   and SHA-256; plug-ins unpack into a folder of their own, replacing an
   older version only once the new one is whole, and stay off until
-  turned on in Plug-ins. The build without plug-ins lists only skins.
+  turned on in Plug-ins. In the build without plug-ins only the Skins
+  tab lists anything.
 
 ### Changed
 

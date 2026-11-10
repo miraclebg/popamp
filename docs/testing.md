@@ -54,8 +54,9 @@ The unit tests cover:
   with `POPAMP_BLESS=1 cargo test -p popamp golden` and look at them
   before committing.
 - Command-line parsing and control-socket round trips.
-- Gallery: the catalog, checksums, installing and updating skins and
-  plug-ins, archives that try to write outside their folder.
+- Gallery: the catalog, the tabs and the three orders, checksums,
+  installing and updating skins and plug-ins, archives that try to
+  write outside their folder.
   `cargo test -p popamp gallery_live -- --ignored` installs everything
   popamp.app offers into a folder of its own.
 

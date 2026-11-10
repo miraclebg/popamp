@@ -74,6 +74,12 @@ pub enum Widget<A> {
     Group {
         label: String,
     },
+    /// A row of segments, one of them picked: tabs, or a choice of order.
+    Tabs {
+        labels: Vec<String>,
+        selected: usize,
+        action: A,
+    },
     /// A picture, or `note` in an empty frame until it arrives.
     Image {
         image: Option<Bitmap>,
@@ -88,6 +94,8 @@ pub enum Event<A> {
     /// A button was clicked, or Enter pressed with a default button.
     Clicked(A),
     Toggled(A, bool),
+    /// Another segment of a [`Widget::Tabs`] was picked.
+    Picked(A, usize),
     /// The text of a field changed.
     Edited,
     /// The list selection moved.
@@ -184,6 +192,14 @@ impl<A: Copy + PartialEq> Form<A> {
         matches!(self.controls[i].1, Widget::Check { checked: true, .. })
     }
 
+    /// The picked segment of tabs `i`.
+    pub fn tab(&self, i: usize) -> usize {
+        match &self.controls[i].1 {
+            Widget::Tabs { selected, .. } => *selected,
+            _ => 0,
+        }
+    }
+
     /// The selected row of list `i`.
     pub fn selected(&self, i: usize) -> Option<usize> {
         match &self.controls[i].1 {
@@ -264,6 +280,15 @@ impl<A: Copy + PartialEq> Form<A> {
             Widget::Check { checked, action, .. } => {
                 *checked = !*checked;
                 Event::Toggled(*action, *checked)
+            }
+            Widget::Tabs { labels, selected, action } => {
+                let n = ((x - rect.x) * labels.len() as i32 / rect.w.max(1)).clamp(0, labels.len() as i32 - 1) as usize;
+                let picked = std::mem::replace(selected, n) != n;
+                if picked {
+                    Event::Picked(*action, n)
+                } else {
+                    Event::None
+                }
             }
             Widget::Label { .. } | Widget::Group { .. } | Widget::Image { .. } => Event::None,
         }
@@ -352,6 +377,7 @@ impl<A: Copy + PartialEq> Form<A> {
                 Widget::Check { label, checked, .. } => draw_check(b, font, *r, label, *checked),
                 Widget::Group { label } => draw_group(b, font, *r, label),
                 Widget::Image { image, note } => draw_image(b, font, *r, image.as_ref(), note),
+                Widget::Tabs { labels, selected, .. } => draw_tabs(b, font, *r, labels, *selected),
             }
         }
     }
@@ -438,6 +464,20 @@ fn draw_button(b: &mut Bitmap, font: &mut Font, r: Rect, label: &str, down: bool
     b.bevel(r.x, r.y, r.w, r.h, edge, edge);
     let tw = font.width(label, FONT_PX);
     font.draw(b, r.x + (r.w - tw) / 2, text_y(r), label, FONT_PX, TEXT, r.x + 2, r.w - 4);
+}
+
+fn draw_tabs(b: &mut Bitmap, font: &mut Font, r: Rect, labels: &[String], selected: usize) {
+    let n = labels.len().max(1) as i32;
+    for (k, label) in labels.iter().enumerate() {
+        let (x0, x1) = (r.x + r.w * k as i32 / n, r.x + r.w * (k as i32 + 1) / n);
+        let seg = Rect::new(x0, r.y, x1 - x0 + 1, r.h);
+        let face = if k == selected { HILITE } else { mix(BG, BORDER, 0.35) };
+        b.fill(seg.x, seg.y, seg.w, seg.h, face);
+        b.bevel(seg.x, seg.y, seg.w, seg.h, BORDER, BORDER);
+        let t = font.fit(label, FONT_PX, seg.w - 6);
+        let tw = font.width(&t, FONT_PX);
+        font.draw(b, seg.x + (seg.w - tw) / 2, text_y(seg), &t, FONT_PX, TEXT, seg.x + 2, seg.w - 4);
+    }
 }
 
 fn draw_check(b: &mut Bitmap, font: &mut Font, r: Rect, label: &str, checked: bool) {
@@ -609,6 +649,20 @@ mod tests {
         f.wheel(100);
         f.mouse_down(15, 40 + 2, false);
         assert_eq!(f.selected(list), Some(0));
+    }
+
+    #[test]
+    fn tabs_pick_the_segment_under_the_mouse() {
+        let mut f: Form<Act> = Form::new(300, 40);
+        let t = f.add(
+            Rect::new(0, 0, 300, 24),
+            Widget::Tabs { labels: vec!["A".into(), "B".into(), "C".into()], selected: 0, action: Act::Flag },
+        );
+        assert_eq!(f.mouse_down(250, 10, false), Event::Picked(Act::Flag, 2));
+        assert_eq!(f.tab(t), 2);
+        assert_eq!(f.mouse_down(250, 10, false), Event::None, "already picked");
+        assert_eq!(f.mouse_down(99, 10, false), Event::Picked(Act::Flag, 0));
+        assert_eq!(f.mouse_down(100, 10, false), Event::Picked(Act::Flag, 1));
     }
 
     #[test]

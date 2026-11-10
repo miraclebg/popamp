@@ -44,6 +44,83 @@ pub struct Item {
     pub preview: Option<String>,
     /// What a plug-in may do, one line each, from its permissions.
     pub permissions: Vec<String>,
+    /// The average of the stars it got, and from how many people.
+    pub rating: f64,
+    pub votes: u64,
+    pub downloads: u64,
+    /// When it last changed, "YYYY-MM-DD HH:MM:SS": it sorts as text.
+    pub updated: String,
+}
+
+impl Item {
+    /// The site's rank for "Top rated": the average as if every entry had
+    /// started with five votes of 3.5, so a few fives do not top many
+    /// good votes. Entries nobody rated come last.
+    fn score(&self) -> f64 {
+        if self.votes == 0 {
+            return 0.0;
+        }
+        let votes = self.votes as f64;
+        (5.0 * 3.5 + self.rating * votes) / (5.0 + votes)
+    }
+
+    fn section(&self) -> Section {
+        match &self.kind {
+            Kind::Skin => Section::Skins,
+            Kind::Plugin(k) if k == "visual" => Section::Visuals,
+            Kind::Plugin(_) => Section::Plugins,
+        }
+    }
+}
+
+/// The tabs of the gallery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Section {
+    Skins,
+    Plugins,
+    Visuals,
+}
+
+impl Section {
+    const ALL: [Section; 3] = [Section::Skins, Section::Plugins, Section::Visuals];
+
+    fn label(self) -> &'static str {
+        match self {
+            Section::Skins => "Skins",
+            Section::Plugins => "Plug-ins",
+            Section::Visuals => "Visualizations",
+        }
+    }
+}
+
+/// The orders of the list, the site's three.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Sort {
+    Popular,
+    Rating,
+    New,
+}
+
+impl Sort {
+    const ALL: [Sort; 3] = [Sort::Popular, Sort::Rating, Sort::New];
+
+    fn label(self) -> &'static str {
+        match self {
+            Sort::Popular => "Popular",
+            Sort::Rating => "Top rated",
+            Sort::New => "New",
+        }
+    }
+
+    /// Best first; ties by name.
+    fn order(self, a: &Item, b: &Item) -> std::cmp::Ordering {
+        let first = match self {
+            Sort::Popular => b.downloads.cmp(&a.downloads),
+            Sort::Rating => b.score().total_cmp(&a.score()),
+            Sort::New => b.updated.cmp(&a.updated),
+        };
+        first.then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    }
 }
 
 /// Reads the catalog. Entries that are not well formed are left out.
@@ -79,6 +156,10 @@ fn parse_item(v: &serde_json::Value) -> Result<Item, String> {
         size,
         preview: text("preview").filter(|u| u.starts_with(SITE)),
         permissions: permissions(&v["permissions"]),
+        rating: v["rating"].as_f64().filter(|r| (0.0..=5.0).contains(r)).unwrap_or(0.0),
+        votes: v["rating_count"].as_u64().unwrap_or(0),
+        downloads: v["downloads"].as_u64().unwrap_or(0),
+        updated: text("updated_at").unwrap_or_default(),
         id,
     })
 }
@@ -349,6 +430,8 @@ const COLUMNS: usize = 42;
 /// or update in a click.
 pub struct GalleryPanel {
     pub(crate) form: Form<Act>,
+    sections: usize,
+    sort: usize,
     search: usize,
     list: usize,
     preview: usize,
@@ -395,16 +478,21 @@ impl GalleryPanel {
         let (list_w, (shot_w, shot_h)) = (260, PREVIEW);
         let w = 10 + list_w + 10 + shot_w + 10;
         let mut form = Form::new(w, 0);
-        let search = form.add(Rect::new(10, 10, list_w - 80, 24), Widget::Input { text: String::new(), cursor: 0 });
-        button(&mut form, 10 + list_w - 74, 10, "Search", Act::Search, true);
+        let tabs =
+            |labels: Vec<&str>| Widget::Tabs { labels: labels.into_iter().map(str::to_string).collect(), selected: 0, action: Act::Search };
+        let sections = form.add(Rect::new(10, 10, w - 20, BUTTON.1), tabs(Section::ALL.map(Section::label).to_vec()));
+        let y = 10 + BUTTON.1 + 10;
+        let search = form.add(Rect::new(10, y, list_w - 80, 24), Widget::Input { text: String::new(), cursor: 0 });
+        button(&mut form, 10 + list_w - 74, y, "Search", Act::Search, true);
+        let sort = form.add(Rect::new(10, y + 32, list_w, 22), tabs(Sort::ALL.map(Sort::label).to_vec()));
         let list_h = 4 + 10 * ROW_H;
-        let list = form.add(Rect::new(10, 42, list_w, list_h), Widget::List { rows: vec![], selected: None, scroll: 0 });
-        let top = 42 + list_h + 8;
+        let list = form.add(Rect::new(10, y + 62, list_w, list_h), Widget::List { rows: vec![], selected: None, scroll: 0 });
+        let top = y + 62 + list_h + 8;
         let details = std::array::from_fn(|n| {
             form.add(Rect::new(12, top + n as i32 * ROW_H, list_w - 4, ROW_H), Widget::Label { text: String::new(), dim: n > 0 })
         });
-        let preview = form.add(Rect::new(10 + list_w + 10, 10, shot_w, shot_h), Widget::Image { image: None, note: String::new() });
-        let y = (10 + shot_h).max(top + DETAIL_LINES as i32 * ROW_H) + 14;
+        let preview = form.add(Rect::new(10 + list_w + 10, y, shot_w, shot_h), Widget::Image { image: None, note: String::new() });
+        let y = (y + shot_h).max(top + DETAIL_LINES as i32 * ROW_H) + 14;
         let status = form.add(Rect::new(10, y, w - 2 * BUTTON.0 - 36, BUTTON.1), Widget::Label { text: String::new(), dim: true });
         let action = form.add(
             Rect::new(w - 2 * BUTTON.0 - 16, y, BUTTON.0, BUTTON.1),
@@ -415,6 +503,8 @@ impl GalleryPanel {
         let index_file = model.paths.data_dir.join("gallery.json");
         let mut p = GalleryPanel {
             form,
+            sections,
+            sort,
             search,
             list,
             preview,
@@ -463,15 +553,18 @@ impl GalleryPanel {
         format!("{} {}{tag}", item.name, item.version)
     }
 
-    /// Shows the entries that have every word of the search.
+    /// Shows the entries of the picked tab that have every word of the
+    /// search, in the picked order.
     fn filter(&mut self) {
+        let (section, sort) = (Section::ALL[self.form.tab(self.sections)], Sort::ALL[self.form.tab(self.sort)]);
         let words: Vec<String> = self.form.text(self.search).to_lowercase().split_whitespace().map(str::to_string).collect();
         let keep = |i: &Item| {
             let text = format!("{} {} {}", i.name, i.summary, i.author).to_lowercase();
             words.iter().all(|w| text.contains(w.as_str()))
         };
         let current = self.selected().map(|i| i.id.clone());
-        self.shown = (0..self.items.len()).filter(|&n| keep(&self.items[n])).collect();
+        self.shown = (0..self.items.len()).filter(|&n| self.items[n].section() == section && keep(&self.items[n])).collect();
+        self.shown.sort_by(|&a, &b| sort.order(&self.items[a], &self.items[b]));
         let rows = self.shown.iter().map(|&n| self.row(&self.items[n])).collect();
         let select = current.and_then(|id| self.shown.iter().position(|&n| self.items[n].id == id)).or(Some(0));
         self.form.set_rows(self.list, rows, select);
@@ -484,29 +577,11 @@ impl GalleryPanel {
             for &d in &self.details {
                 self.form.set_label(d, String::new());
             }
-            self.form.set_image(self.preview, None, "");
+            let note = self.empty_note();
+            self.form.set_image(self.preview, None, note);
             return;
         };
-        let what = match &item.kind {
-            Kind::Skin => "Skin".to_string(),
-            Kind::Plugin(k) if k.is_empty() => "Plug-in".to_string(),
-            Kind::Plugin(k) => format!("{} plug-in", if k == "dsp" { "DSP".to_string() } else { capital(k) }),
-        };
-        let mut lines = vec![[Some(what), Some(item.author.clone()).filter(|a| !a.is_empty()).map(|a| format!("by {a}"))]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>()
-            .join(" ")];
-        lines.extend(wrap(&item.summary));
-        if matches!(item.kind, Kind::Plugin(_)) {
-            if item.permissions.is_empty() {
-                lines.push("Asks for no permissions.".into());
-            }
-            lines.extend(item.permissions.iter().flat_map(|l| wrap(l)));
-        }
-        if !item.license.is_empty() {
-            lines.push(format!("License: {}", item.license));
-        }
+        let lines = details(&item);
         for (n, &d) in self.details.iter().enumerate() {
             self.form.set_label(d, lines.get(n).cloned().unwrap_or_default());
         }
@@ -521,9 +596,21 @@ impl GalleryPanel {
         }
     }
 
+    /// What the preview says when the list is empty.
+    fn empty_note(&self) -> &'static str {
+        let section = Section::ALL[self.form.tab(self.sections)];
+        if section != Section::Skins && !cfg!(feature = "plugins") {
+            "Plug-ins need Popamp Plus"
+        } else if self.items.is_empty() {
+            ""
+        } else {
+            "Nothing found"
+        }
+    }
+
     pub(crate) fn handle(&mut self, ev: Event<Act>, model: &mut Model) -> bool {
         match ev {
-            Event::Edited | Event::Clicked(Act::Search) => self.filter(),
+            Event::Edited | Event::Clicked(Act::Search) | Event::Picked(..) => self.filter(),
             Event::Selected => self.show_selected(),
             Event::Clicked(Act::Ok) | Event::Activated => self.act(model),
             Event::Clicked(Act::Close) | Event::Cancel => return false,
@@ -628,6 +715,38 @@ fn foreign(item: &Item, dir: &Path) -> bool {
     }
 }
 
+/// The lines about `item` under the list.
+fn details(item: &Item) -> Vec<String> {
+    let what = match &item.kind {
+        Kind::Skin => "Skin".to_string(),
+        Kind::Plugin(k) if k.is_empty() => "Plug-in".to_string(),
+        Kind::Plugin(k) => format!("{} plug-in", if k == "dsp" { "DSP".to_string() } else { capital(k) }),
+    };
+    let by = Some(&item.author).filter(|a| !a.is_empty()).map(|a| format!(" by {a}")).unwrap_or_default();
+    let mut lines = vec![what + &by, standing(item)];
+    lines.extend(wrap(&item.summary));
+    if matches!(item.kind, Kind::Plugin(_)) {
+        if item.permissions.is_empty() {
+            lines.push("Asks for no permissions.".into());
+        }
+        lines.extend(item.permissions.iter().flat_map(|l| wrap(l)));
+    }
+    if !item.license.is_empty() {
+        lines.push(format!("License: {}", item.license));
+    }
+    lines
+}
+
+/// "Rated 4.5 of 5 by 12, 340 downloads".
+fn standing(item: &Item) -> String {
+    let rated = match item.votes {
+        0 => "Not rated yet".to_string(),
+        n => format!("Rated {:.1} of 5 by {n}", item.rating),
+    };
+    let s = if item.downloads == 1 { "" } else { "s" };
+    format!("{rated}, {} download{s}", item.downloads)
+}
+
 fn capital(s: &str) -> String {
     let mut c = s.chars();
     c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
@@ -657,7 +776,7 @@ pub mod tests {
         {"kind":"skin","id":"popamp-steel","name":"Popamp Steel","summary":"Brushed steel.","author":"GoodZon","version":"1.0",
          "url":"https://popamp.app/skins/popamp-steel/download?v=1.0","sha256":"7DDF38BB4B9C224AB95BC8602DA069B4D513CEDCAAD066F2F3285BAA5D05FB67",
          "size":55038,"preview":"https://popamp.app/uploads/previews/a.png","license":"MIT or Apache-2.0","api":null,"plugin_kind":null,
-         "permissions":{"exec":[],"net":[],"files":false}},
+         "permissions":{"exec":[],"net":[],"files":false},"rating":4.5,"rating_count":2,"downloads":13,"updated_at":"2026-11-08 13:51:07"},
         {"kind":"plugin","id":"youtube","name":"YouTube","summary":"Plays YouTube links.","author":"GoodZon","version":"1.0.0",
          "url":"https://popamp.app/plugins/youtube/download?v=1.0.0","sha256":"206e12f5672d1c789f220771ef7f580a4aad38f4b79fa4a71f4733f747f5852d",
          "size":94315,"preview":null,"license":"MIT","api":"1.0","plugin_kind":"source",
@@ -686,6 +805,8 @@ pub mod tests {
             ["May run yt-dlp", "  {url} only on youtube.com", "May connect to example.org", "May read the folders you allow"]
         );
         assert!(skin.permissions.is_empty());
+        assert_eq!((skin.rating, skin.votes, skin.downloads, skin.updated.as_str()), (4.5, 2, 13, "2026-11-08 13:51:07"));
+        assert_eq!((plugin.rating, plugin.votes, plugin.downloads, plugin.updated.as_str()), (0.0, 0, 0, ""));
         assert!(parse_catalog(&serde_json::json!({"format": 2, "items": []})).is_err());
     }
 
@@ -704,6 +825,10 @@ pub mod tests {
             size: data.len() as u64,
             preview: None,
             permissions: vec![],
+            rating: 0.0,
+            votes: 0,
+            downloads: 0,
+            updated: String::new(),
         }
     }
 
@@ -835,11 +960,10 @@ pub mod tests {
     fn the_catalog_fills_the_list_and_shows_the_first_entry() {
         let (mut p, mut m) = panel();
         p.fetched(Fetched::Catalog(Ok(catalog())), &mut m);
+        assert_eq!(rows(&p), ["Popamp Steel 1.0"], "the skins tab");
         if cfg!(feature = "plugins") {
-            assert_eq!(rows(&p), ["Popamp Steel 1.0", "YouTube 1.0.0"]);
             assert_eq!(label(&p, p.status), "2 in the gallery.");
         } else {
-            assert_eq!(rows(&p), ["Popamp Steel 1.0"]);
             assert_eq!(label(&p, p.status), "1 in the gallery; 1 plug-in needs Popamp Plus.");
         }
         assert_eq!(label(&p, p.details[0]), "Skin by GoodZon");
@@ -852,11 +976,78 @@ pub mod tests {
     fn a_plugin_shows_what_it_may_do_before_it_is_installed() {
         let (mut p, mut m) = panel();
         p.fetched(Fetched::Catalog(Ok(catalog())), &mut m);
-        let ev = p.form.key(crate::widgets::Key::Down);
-        p.handle(ev, &mut m);
+        let t = p.sections;
+        pick(&mut p, &mut m, t, 1);
         let details: Vec<String> = p.details.iter().map(|&d| label(&p, d)).collect();
-        assert_eq!(details[..4], ["Source plug-in by GoodZon", "Plays YouTube links.", "May run yt-dlp", "{url} only on youtube.com"]);
+        assert_eq!(
+            details[..5],
+            [
+                "Source plug-in by GoodZon",
+                "Not rated yet, 0 downloads",
+                "Plays YouTube links.",
+                "May run yt-dlp",
+                "{url} only on youtube.com"
+            ]
+        );
         assert!(matches!(p.form.widget(p.preview), Widget::Image { image: None, note } if note == "No preview"));
+    }
+
+    fn ranked(id: &str, kind: Kind, rating: f64, votes: u64, downloads: u64, updated: &str) -> Item {
+        Item { rating, votes, downloads, updated: updated.into(), ..item(kind, id, id.as_bytes()) }
+    }
+
+    fn pick(p: &mut GalleryPanel, m: &mut Model, tabs: usize, n: usize) {
+        let r = p.form.rect(tabs);
+        let ev = p.form.mouse_down(r.x + r.w * n as i32 / 3 + 2, r.y + 2, false);
+        p.handle(ev, m);
+    }
+
+    #[test]
+    fn skins_plugins_and_visualizations_have_tabs_of_their_own() {
+        let (mut p, mut m) = panel();
+        let items = vec![
+            ranked("steel", Kind::Skin, 0.0, 0, 1, "2026-01-01"),
+            ranked("echo", Kind::Plugin("dsp".into()), 0.0, 0, 1, "2026-01-01"),
+            ranked("bars", Kind::Plugin("visual".into()), 0.0, 0, 1, "2026-01-01"),
+            ranked("tube", Kind::Plugin("source".into()), 0.0, 0, 1, "2026-01-01"),
+        ];
+        p.fetched(Fetched::Catalog(Ok(items)), &mut m);
+        assert_eq!(rows(&p), ["steel 1.0"]);
+        let t = p.sections;
+        pick(&mut p, &mut m, t, 1);
+        let plugins: &[&str] = if cfg!(feature = "plugins") { &["echo 1.0", "tube 1.0"] } else { &[] };
+        assert_eq!(rows(&p), plugins);
+        let t = p.sections;
+        pick(&mut p, &mut m, t, 2);
+        let visuals: &[&str] = if cfg!(feature = "plugins") { &["bars 1.0"] } else { &[] };
+        assert_eq!(rows(&p), visuals);
+        if !cfg!(feature = "plugins") {
+            assert!(matches!(p.form.widget(p.preview), Widget::Image { note, .. } if note == "Plug-ins need Popamp Plus"));
+        }
+    }
+
+    #[test]
+    fn sorts_like_the_site_by_downloads_rating_or_date() {
+        let (mut p, mut m) = panel();
+        let items = vec![
+            // Two votes of 5 rank below twenty of 4.5, as on the site.
+            ranked("few-fives", Kind::Skin, 5.0, 2, 10, "2026-03-01 10:00:00"),
+            ranked("many", Kind::Skin, 4.5, 20, 30, "2026-01-01 10:00:00"),
+            ranked("unrated", Kind::Skin, 0.0, 0, 50, "2026-02-01 10:00:00"),
+        ];
+        p.fetched(Fetched::Catalog(Ok(items)), &mut m);
+        assert_eq!(rows(&p), ["unrated 1.0", "many 1.0", "few-fives 1.0"], "popular first");
+        let t = p.sort;
+        pick(&mut p, &mut m, t, 1);
+        assert_eq!(rows(&p), ["many 1.0", "few-fives 1.0", "unrated 1.0"]);
+        let t = p.sort;
+        pick(&mut p, &mut m, t, 2);
+        assert_eq!(rows(&p), ["few-fives 1.0", "unrated 1.0", "many 1.0"]);
+        assert_eq!(label(&p, p.details[1]), "Not rated yet, 50 downloads", "the selection stays");
+        let r = p.form.rect(p.list);
+        let ev = p.form.mouse_down(r.x + 5, r.y + 3, false);
+        p.handle(ev, &mut m);
+        assert_eq!(label(&p, p.details[1]), "Rated 5.0 of 5 by 2, 10 downloads");
     }
 
     #[test]
@@ -870,6 +1061,9 @@ pub mod tests {
             p.handle(ev, &mut m);
         }
         assert_eq!(rows(&p), ["YouTube 1.0.0"]);
+        let ev = p.form.key(crate::widgets::Key::Char('z'));
+        p.handle(ev, &mut m);
+        assert!(matches!(p.form.widget(p.preview), Widget::Image { note, .. } if note == "Nothing found"));
     }
 
     #[test]
