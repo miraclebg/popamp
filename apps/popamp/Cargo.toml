@@ -27,6 +27,8 @@ parking_lot.workspace = true
 rustfft.workspace = true
 fastrand.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+zip.workspace = true
 log.workspace = true
 env_logger.workspace = true
 
@@ -51,5 +53,3 @@ visualizers = ["plugins", "dep:popamp-visual"]
 # Popamp Plus: every function above. Other mixes are for whoever builds them.
 plus = ["plugins", "visualizers"]
 
-[dev-dependencies]
-zip.workspace = true

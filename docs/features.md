@@ -18,6 +18,13 @@
   Skins > Skin Museum browses, searches and downloads skins from
   [skins.webamp.org](https://skins.webamp.org); Popamp contacts the
   museum only while that window is open.
+- **Gallery:** Skins > Gallery (also under Options) lists the skins and
+  plug-ins on [popamp.app](https://popamp.app) with a preview and what
+  each plug-in may do, and installs or updates one in a click. Each
+  download is checked against the catalog's size and SHA-256; what the
+  gallery did not install itself is left alone. The build without
+  plug-ins lists only the skins. Popamp contacts the site only while
+  that window is open.
 - **Playback:**
   - Formats: MP3, AAC/M4A, FLAC, Ogg Vorbis, WAV, AIFF, MKA (Matroska audio)
     and ALAC, decoded by [Symphonia](https://github.com/pdeljanov/Symphonia).

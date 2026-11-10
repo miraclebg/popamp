@@ -22,6 +22,7 @@ pub enum PanelKind {
     #[cfg(feature = "plugins")]
     Plugins,
     SkinMuseum,
+    Gallery,
 }
 
 /// What a button or check box in a panel stands for.
@@ -55,6 +56,7 @@ pub enum Panel {
     #[cfg(feature = "plugins")]
     Plugins(crate::plugins::PluginsPanel),
     Museum(SkinMuseum),
+    Gallery(crate::gallery::GalleryPanel),
 }
 
 impl Panel {
@@ -68,6 +70,7 @@ impl Panel {
             #[cfg(feature = "plugins")]
             PanelKind::Plugins => Panel::Plugins(crate::plugins::PluginsPanel::new(model)),
             PanelKind::SkinMuseum => Panel::Museum(SkinMuseum::new()),
+            PanelKind::Gallery => Panel::Gallery(crate::gallery::GalleryPanel::new(model)),
         }
     }
 
@@ -79,6 +82,7 @@ impl Panel {
             #[cfg(feature = "plugins")]
             Panel::Plugins(_) => PanelKind::Plugins,
             Panel::Museum(_) => PanelKind::SkinMuseum,
+            Panel::Gallery(_) => PanelKind::Gallery,
         }
     }
 
@@ -90,6 +94,7 @@ impl Panel {
             #[cfg(feature = "plugins")]
             Panel::Plugins(_) => "Plug-ins",
             Panel::Museum(_) => "Winamp Skin Museum",
+            Panel::Gallery(_) => "Popamp Gallery",
         }
     }
 
@@ -101,6 +106,7 @@ impl Panel {
             #[cfg(feature = "plugins")]
             Panel::Plugins(p) => &p.form,
             Panel::Museum(p) => &p.form,
+            Panel::Gallery(p) => &p.form,
         }
     }
 
@@ -112,6 +118,7 @@ impl Panel {
             #[cfg(feature = "plugins")]
             Panel::Plugins(p) => &mut p.form,
             Panel::Museum(p) => &mut p.form,
+            Panel::Gallery(p) => &mut p.form,
         }
     }
 
@@ -125,6 +132,7 @@ impl Panel {
             #[cfg(feature = "plugins")]
             Panel::Plugins(p) => p.handle(ev, model),
             Panel::Museum(p) => p.handle(ev, model),
+            Panel::Gallery(p) => p.handle(ev, model),
         }
     }
 
@@ -133,6 +141,21 @@ impl Panel {
         match self {
             Panel::Museum(p) => std::mem::take(&mut p.jobs),
             _ => Vec::new(),
+        }
+    }
+
+    /// Gallery work the panel asked for since the last call.
+    pub fn take_gallery_jobs(&mut self) -> Vec<crate::gallery::Job> {
+        match self {
+            Panel::Gallery(p) => std::mem::take(&mut p.jobs),
+            _ => Vec::new(),
+        }
+    }
+
+    /// A gallery job finished.
+    pub fn gallery_fetched(&mut self, f: crate::gallery::Fetched, model: &mut Model) {
+        if let Panel::Gallery(p) = self {
+            p.fetched(f, model);
         }
     }
 

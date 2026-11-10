@@ -54,6 +54,19 @@ The unit tests cover:
   with `POPAMP_BLESS=1 cargo test -p popamp golden` and look at them
   before committing.
 - Command-line parsing and control-socket round trips.
+- Gallery: the catalog, checksums, installing and updating skins and
+  plug-ins, archives that try to write outside their folder.
+  `cargo test -p popamp gallery_live -- --ignored` installs everything
+  popamp.app offers into a folder of its own.
+
+### Published packages
+
+`packaging/check-repos.sh` installs `popamp` and `popamp-plus` from the
+published repositories in fresh containers (openSUSE Tumbleweed and Leap
+16.0, Fedora 43 and 44, Debian 12 and 13, Ubuntu 22.04 and 24.04), with
+the commands of docs/building.md, and checks the version, the installed
+files, the libraries, the skin MIME type, a `/RENDER` of the windows and
+a clean removal. All eight passed for 0.7.0 on 2026-11-10.
 
 ### Manual checks performed
 

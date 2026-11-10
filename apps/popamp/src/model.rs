@@ -45,6 +45,7 @@ pub enum AppEvent {
     Dialog(DialogResult),
     Remote(crate::ipc::Request),
     Museum(crate::museum::Fetched),
+    Gallery(crate::gallery::Fetched),
     /// The plug-ins, loaded anew, and an instance of each dsp one for the
     /// engine; the number is that of the request.
     #[cfg(feature = "plugins")]
@@ -1154,6 +1155,7 @@ impl Model {
             }
             C::SkinBrowser => self.request_dialog(DialogKind::Skin),
             C::SkinMuseum => self.ui.push(UiReq::Panel(PanelKind::SkinMuseum)),
+            C::Gallery => self.ui.push(UiReq::Panel(PanelKind::Gallery)),
             #[cfg(feature = "plugins")]
             C::Plugins => self.ui.push(UiReq::Panel(PanelKind::Plugins)),
             #[cfg(not(feature = "plugins"))]
@@ -1479,6 +1481,7 @@ impl Model {
             MenuItem::cmd("Skin browser…", "Alt+S", C::SkinBrowser),
             #[cfg(feature = "plugins")]
             MenuItem::cmd("Plug-ins…", "", C::Plugins),
+            MenuItem::cmd("Gallery (popamp.app)…", "", C::Gallery),
             MenuItem::sep(),
             MenuItem::cmd("Time elapsed", "Ctrl+T", C::TimeElapsed).checked(!s.timeleftmode),
             MenuItem::cmd("Time remaining", "Ctrl+T", C::TimeRemaining).checked(s.timeleftmode),
@@ -1548,6 +1551,7 @@ impl Model {
     pub fn skins_menu(&self) -> Vec<MenuItem> {
         let mut items = vec![
             MenuItem::cmd("Skin browser…", "Alt+S", Command::SkinBrowser),
+            MenuItem::cmd("Gallery (popamp.app)…", "", Command::Gallery),
             MenuItem::cmd("Skin Museum (online)…", "", Command::SkinMuseum),
             MenuItem::sep(),
         ];

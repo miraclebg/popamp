@@ -617,6 +617,9 @@ impl App {
         for job in self.panels[i].panel.take_jobs() {
             crate::museum::start(job, self.model.settings().proxy.clone(), self.model.events().clone());
         }
+        for job in self.panels[i].panel.take_gallery_jobs() {
+            crate::gallery::start(job, self.model.settings().proxy.clone(), self.model.events().clone());
+        }
         self.render_panel(i);
     }
 
@@ -1491,6 +1494,12 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::Museum(f) => {
                 if let Some(i) = self.panels.iter().position(|p| p.panel.kind() == PanelKind::SkinMuseum) {
                     self.panels[i].panel.fetched(f, &mut self.model);
+                    self.panel_changed(i);
+                }
+            }
+            AppEvent::Gallery(f) => {
+                if let Some(i) = self.panels.iter().position(|p| p.panel.kind() == PanelKind::Gallery) {
+                    self.panels[i].panel.gallery_fetched(f, &mut self.model);
                     self.panel_changed(i);
                 }
             }

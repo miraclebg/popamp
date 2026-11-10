@@ -83,7 +83,12 @@ So plug-in support is a Cargo feature, off by default:
     plugin.wasm      the module
 ```
 
-A plug-in can be installed by cloning its repository there, like a skin
+The Gallery window (Options > Gallery) installs and updates the
+plug-ins listed on https://popamp.app: it shows what each may do first,
+checks the download against the catalog's size and SHA-256, and unpacks
+it into a folder named after its id, replacing an older version only
+once the new one is whole. On Windows, which has no packages, that is
+the way to install one. A plug-in can also be installed by cloning its repository there, like a skin
 (hidden files such as `.git` are ignored), or as a package
 (`apt install popamp-plugin-<id>`), which puts it in
 `/usr/share/popamp/plugins/<id>/`; your own folder of the same name wins.

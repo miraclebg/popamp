@@ -148,10 +148,10 @@ impl<A: Copy + PartialEq> Form<A> {
         self.controls[i].0
     }
 
-    /// Changes the text of label `i`.
+    /// Changes the text of label or button `i`.
     pub fn set_label(&mut self, i: usize, new: String) {
-        if let Widget::Label { text, .. } = &mut self.controls[i].1 {
-            *text = new;
+        if let Widget::Label { text: old, .. } | Widget::Button { label: old, .. } = &mut self.controls[i].1 {
+            *old = new;
         }
     }
 

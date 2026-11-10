@@ -13,6 +13,7 @@ mod dialogs;
 mod edition;
 mod filetypes;
 mod font;
+mod gallery;
 mod headless;
 mod ipc;
 #[cfg(feature = "visualizers")]
