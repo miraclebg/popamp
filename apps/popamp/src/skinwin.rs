@@ -489,7 +489,7 @@ impl SkinWin {
         if blink_off {
             return;
         }
-        let shown = self.seek_preview(model).map(|p| p.max(0) as u64).unwrap_or_else(|| sh.position_ms());
+        let shown = self.seek_preview(model).map(|p| p.max(0) as u64).unwrap_or_else(|| model.engine.position_ms());
         let (secs, neg) = match (model.settings().timeleftmode, sh.length_ms()) {
             (true, Some(l)) => (l.saturating_sub(shown) / 1000, true),
             _ => (shown / 1000, false),

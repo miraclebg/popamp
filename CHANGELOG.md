@@ -11,6 +11,11 @@ All notable changes to this project are documented here. The format follows
 - Golden-image tests: `cargo test` draws every window state of the
   built-in skin and compares it pixel by pixel with committed PNGs, on
   Linux and Windows, so a change to a window cannot go unnoticed.
+- Output device in Preferences: a list of the sound servers and card
+  outputs on ALSA, and of the playback devices on Windows. The choice is
+  kept by name (`output_device` in the settings); playback moves to it at
+  once, from where it was, and an unplugged device falls back to the
+  default one.
 
 ### Changed
 
@@ -29,6 +34,9 @@ All notable changes to this project are documented here. The format follows
 - A bigger window size shortens a playlist that would no longer fit, so
   its resize grip stays on the screen.
 - The options menu opens the Preferences; before, only Ctrl+P did.
+- A click on the position bar no longer makes the slider and the clock
+  jump back for a moment before they show the new place, and a second
+  seek while paused shows its own position.
 
 ## [0.7.0] - 2026-11-09
 

@@ -6,6 +6,7 @@
 use crate::model::{Model, UiReq};
 use crate::museum::{self, Fetched, Job};
 use crate::widgets::{Event, Form, Rect, Widget, BUTTON, ROW_H};
+use popamp_audio::output::Device;
 use popamp_core::config::Settings;
 use popamp_core::Command;
 use popamp_skin::Bitmap;
@@ -53,7 +54,7 @@ impl Panel {
         match kind {
             PanelKind::JumpToFile => Panel::Jump(JumpToFile::new(model)),
             PanelKind::FileInfo => Panel::Info(FileInfo::new(model)),
-            PanelKind::Preferences => Panel::Prefs(Preferences::new(model.settings())),
+            PanelKind::Preferences => Panel::Prefs(Preferences::new(model.settings(), popamp_audio::output::devices())),
             #[cfg(feature = "plugins")]
             PanelKind::Plugins => Panel::Plugins(crate::plugins::PluginsPanel::new(model)),
             PanelKind::SkinMuseum => Panel::Museum(SkinMuseum::new()),
@@ -394,11 +395,17 @@ impl Field {
 pub struct Preferences {
     form: Form<Act>,
     fields: Vec<(Field, usize)>,
+    /// The devices to play on, and the list that shows them.
+    devices: Vec<Device>,
+    device_list: usize,
     status: usize,
 }
 
+/// Rows the device list shows at once.
+const DEVICE_ROWS: i32 = 4;
+
 impl Preferences {
-    fn new(s: &Settings) -> Preferences {
+    fn new(s: &Settings, mut devices: Vec<Device>) -> Preferences {
         let w = 480;
         let mut form = Form::new(w, 0);
         let mut y = 10;
@@ -422,12 +429,22 @@ impl Preferences {
             fields.push((f, form.add(Rect::new(150, y, w - 160, 24), Widget::Input { text, cursor })));
             y += 30;
         }
+        if !devices.iter().any(|d| d.name == s.output_device) {
+            // Unplugged, or typed into the settings file: kept until changed.
+            devices.push(Device { label: format!("{} (not found)", s.output_device), name: s.output_device.clone() });
+        }
+        let current = devices.iter().position(|d| d.name == s.output_device);
+        form.add(Rect::new(14, y, 136, 24), Widget::Label { text: "Output device".into(), dim: false });
+        let device_list =
+            form.add(Rect::new(150, y, w - 160, DEVICE_ROWS * ROW_H + 4), Widget::List { rows: vec![], selected: None, scroll: 0 });
+        form.set_rows(device_list, devices.iter().map(|d| d.label.clone()).collect(), current);
+        y += DEVICE_ROWS * ROW_H + 10;
         y += 6;
         let status = form.add(Rect::new(10, y, w - 2 * BUTTON.0 - 36, BUTTON.1), Widget::Label { text: String::new(), dim: false });
         button(&mut form, w - 2 * BUTTON.0 - 16, y, "OK", Act::Ok, true);
         button(&mut form, w - BUTTON.0 - 10, y, "Cancel", Act::Close, false);
         form.h = y + BUTTON.1 + 10;
-        Preferences { form, fields, status }
+        Preferences { form, fields, devices, device_list, status }
     }
 
     fn handle(&mut self, ev: Event<Act>, model: &mut Model) -> bool {
@@ -454,6 +471,9 @@ impl Preferences {
         let proxy = model.settings().proxy.clone();
         for &(f, i) in &self.fields {
             f.apply(model, self.form.text(i));
+        }
+        if let Some(d) = self.form.selected(self.device_list).and_then(|i| self.devices.get(i)) {
+            model.settings_mut().output_device = d.name.clone();
         }
         model.settings_mut().sanitize();
         model.push_engine_settings();
@@ -796,6 +816,64 @@ pub(crate) mod tests {
         retype(&mut p, &mut m, Field::FontSize, "30");
         assert!(!press(&mut p, &mut m, Key::Escape));
         assert_eq!(m.settings().pe_fontsize, 10);
+    }
+
+    fn device(name: &str, label: &str) -> Device {
+        Device { name: name.into(), label: label.into() }
+    }
+
+    /// Preferences listing a default device and two cards.
+    fn prefs_with_devices(m: &Model) -> Panel {
+        let cards =
+            vec![device("default", "Default device"), device("hdmi:CARD=NVidia,DEV=0", "HDMI"), device("front:CARD=Audio,DEV=0", "USB")];
+        Panel::Prefs(Preferences::new(m.settings(), cards))
+    }
+
+    fn device_rows(p: &Panel) -> (Vec<String>, Option<usize>) {
+        let Panel::Prefs(pr) = p else { panic!("not preferences") };
+        match pr.form.widget(pr.device_list) {
+            Widget::List { rows, selected, .. } => (rows.clone(), *selected),
+            _ => unreachable!(),
+        }
+    }
+
+    /// Clicks the n-th row of the device list.
+    fn pick_device(p: &mut Panel, m: &mut Model, row: i32) {
+        let Panel::Prefs(pr) = &*p else { panic!("not preferences") };
+        let r = pr.form.rect(pr.device_list);
+        click(p, m, Rect::new(r.x, r.y + row * ROW_H, r.w, ROW_H));
+    }
+
+    #[test]
+    fn a_picked_device_is_kept_on_ok() {
+        let mut m = songs(&[]);
+        let mut p = prefs_with_devices(&m);
+        assert_eq!(device_rows(&p), (vec!["Default device".into(), "HDMI".into(), "USB".into()], Some(0)));
+        pick_device(&mut p, &mut m, 2);
+        assert_eq!(m.settings().output_device, "default", "not before OK");
+        assert!(!press(&mut p, &mut m, Key::Enter));
+        assert_eq!(m.settings().output_device, "front:CARD=Audio,DEV=0");
+        assert_eq!(device_rows(&prefs_with_devices(&m)).1, Some(2), "shown as chosen next time");
+    }
+
+    #[test]
+    fn cancel_keeps_the_device() {
+        let mut m = songs(&[]);
+        let mut p = prefs_with_devices(&m);
+        pick_device(&mut p, &mut m, 1);
+        assert!(!press(&mut p, &mut m, Key::Escape));
+        assert_eq!(m.settings().output_device, "default");
+    }
+
+    #[test]
+    fn a_missing_device_stays_chosen_until_changed() {
+        let mut m = songs(&[]);
+        m.settings_mut().output_device = "usb-dac".into();
+        let mut p = prefs_with_devices(&m);
+        let (rows, selected) = device_rows(&p);
+        assert_eq!((rows.last().map(String::as_str), selected), (Some("usb-dac (not found)"), Some(3)));
+        assert!(!press(&mut p, &mut m, Key::Enter));
+        assert_eq!(m.settings().output_device, "usb-dac");
     }
 
     #[test]

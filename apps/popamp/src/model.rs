@@ -174,7 +174,7 @@ impl Model {
         // With plug-ins, tracks given at startup wait for them to load;
         // headless models have no event loop to load them through.
         let sources = Arc::new(if cfg!(feature = "plugins") { Sources::waiting() } else { Sources::default() });
-        let engine = Engine::spawn("default".into(), sources.clone(), move |ev| {
+        let engine = Engine::spawn(config.settings.output_device.clone(), sources.clone(), move |ev| {
             let _ = engine_proxy.send_event(AppEvent::Engine(ev));
         });
         Self::with_engine(paths, config, engine, sources, Events(Some(proxy)))
@@ -278,7 +278,12 @@ impl Model {
         let s = self.settings().clone();
         self.engine.send(EngineCmd::Volume(s.volume as u8));
         self.engine.send(EngineCmd::Balance(s.balance as i8));
-        self.engine.send(EngineCmd::Config { buffer_ms: s.buffer_ms, fade_ms: s.fade_ms, proxy: s.proxy.clone() });
+        self.engine.send(EngineCmd::Config {
+            device: s.output_device.clone(),
+            buffer_ms: s.buffer_ms,
+            fade_ms: s.fade_ms,
+            proxy: s.proxy.clone(),
+        });
         self.engine.send(EngineCmd::ReplayGain(ReplayGainSettings {
             enabled: s.replaygain,
             album: s.replaygain_mode == 1,
@@ -522,7 +527,7 @@ impl Model {
         if self.state() == PlayState::Stopped {
             return;
         }
-        let pos = self.engine.shared().position_ms() as i64;
+        let pos = self.engine.position_ms() as i64;
         let len = self.engine.shared().length_ms().map(|l| l as i64).unwrap_or(i64::MAX);
         self.engine.send(EngineCmd::Seek((pos + delta_ms).clamp(0, len.saturating_sub(500).max(0)) as u64));
     }
@@ -1715,7 +1720,7 @@ impl Model {
         let cur = self.playlist.current_entry();
         format!(
             "{{\"state\":\"{state}\",\"position_ms\":{},\"length_ms\":{},\"volume\":{},\"balance\":{},\"shuffle\":{},\"repeat\":{},\"index\":{},\"count\":{},\"title\":\"{}\",\"location\":\"{}\"}}",
-            sh.position_ms(),
+            self.engine.position_ms(),
             sh.length_ms().map(|l| l.to_string()).unwrap_or_else(|| "null".into()),
             s.volume,
             s.balance,
