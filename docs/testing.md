@@ -47,6 +47,12 @@ The unit tests cover:
   rasterization, glyph mapping.
 - ICY metadata parsing; a web page is not taken for a stream.
 - Plug-ins: manifests, permissions and calls through a test plug-in.
+- Window images: every `/RENDER` state of the built-in skin is compared
+  pixel by pixel with the PNGs in `apps/popamp/tests/golden/`, on Linux
+  and Windows. The states show no playlist text, so system fonts do not
+  change them. After a change that is meant to show, rewrite the images
+  with `POPAMP_BLESS=1 cargo test -p popamp golden` and look at them
+  before committing.
 - Command-line parsing and control-socket round trips.
 
 ### Manual checks performed
