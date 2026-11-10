@@ -1470,6 +1470,7 @@ impl Model {
         let s = self.settings();
         let fmt = |label: &str, f: &str| MenuItem::action(label, "", MenuAction::TitleFormat(f.to_string())).checked(s.titlefmt == f);
         vec![
+            MenuItem::cmd("Preferences…", "Ctrl+P", C::Preferences),
             MenuItem::cmd("Skin browser…", "Alt+S", C::SkinBrowser),
             #[cfg(feature = "plugins")]
             MenuItem::cmd("Plug-ins…", "", C::Plugins),
@@ -1758,6 +1759,14 @@ mod tests {
         let m = Model::for_tests();
         let offered = m.options_menu().iter().any(|i| i.label == "Plug-ins…");
         assert_eq!(offered, cfg!(feature = "plugins"));
+    }
+
+    #[test]
+    fn the_options_menu_opens_the_preferences() {
+        let mut m = Model::for_tests();
+        let item = m.options_menu().into_iter().find(|i| i.label == "Preferences…").expect("in the menu");
+        m.on_menu(item.action.expect("does something"));
+        assert!(m.ui.iter().any(|r| matches!(r, UiReq::Panel(PanelKind::Preferences))));
     }
 
     #[test]

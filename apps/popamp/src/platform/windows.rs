@@ -129,6 +129,11 @@ impl Platform {
         }
     }
 
+    /// Nothing to do: only the X11 window managers need telling.
+    pub fn attach(&self, _window: &Window, _owner: Option<&Window>) -> Result<(), String> {
+        Ok(())
+    }
+
     /// Each monitor's work area: the monitor less the taskbar and other
     /// docked bars.
     pub fn work_areas(&self) -> Vec<Screen> {
