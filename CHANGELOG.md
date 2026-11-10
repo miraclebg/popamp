@@ -22,6 +22,7 @@ All notable changes to this project are documented here. The format follows
   when resized, which made the window manager push it over the equalizer.
 - A bigger window size shortens a playlist that would no longer fit, so
   its resize grip stays on the screen.
+- The options menu opens the Preferences; before, only Ctrl+P did.
 
 ## [0.7.0] - 2026-11-09
 
