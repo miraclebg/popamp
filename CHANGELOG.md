@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Golden-image tests: `cargo test` draws every window state of the
+  built-in skin and compares it pixel by pixel with committed PNGs, on
+  Linux and Windows, so a change to a window cannot go unnoticed.
+
 ### Changed
 
 - The default skin has a repository of its own,

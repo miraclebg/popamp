@@ -40,6 +40,11 @@ state (stopped, playing with spectrum or oscilloscope, toggles, equalizer
 values and a preset, windowshade, small and wide playlist) using the
 settings in `out/popamp.ini` if that file exists.
 
+`cargo test` compares those states with the images in
+`apps/popamp/tests/golden/`. When a window is meant to look different,
+run `POPAMP_BLESS=1 cargo test -p popamp golden`, check the new images and
+commit them with the change.
+
 ## Code layout
 
 | Crate | Contents |

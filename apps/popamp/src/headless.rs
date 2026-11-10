@@ -3,7 +3,8 @@
 //!
 //! Each scenario starts from the settings in `<dir>/popamp.ini` (defaults
 //! if there is none) and changes only what it shows. The set of states
-//! follows Ferramp's `--render` (see THIRD_PARTY.md).
+//! follows Ferramp's `--render` (see THIRD_PARTY.md). With no files the
+//! title display reads POPAMP, without the version.
 
 use crate::canvas::Canvas;
 use crate::font::Fonts;
@@ -16,6 +17,7 @@ use popamp_core::config::{Config, Paths, Settings};
 use popamp_skin::layout::WindowKey;
 use popamp_skin::{Bitmap, Skin};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 /// What the "playing" scenarios pretend to play.
 const PLAY_POS_MS: u64 = 83_000;
@@ -64,6 +66,10 @@ impl Renderer {
             m.skin = Skin::load(p)?;
         }
         m.add_now(self.files.clone(), AddMode::Append);
+        if m.playlist.is_empty() {
+            // Not the version or edition, so images compare between builds.
+            m.transient = Some(("POPAMP".into(), Instant::now() + Duration::from_secs(3600)));
+        }
         Ok(m)
     }
 
@@ -204,6 +210,50 @@ mod tests {
         assert_ne!(read("main-scope.png"), read("main-playing.png"), "oscilloscope differs from spectrum");
         assert_ne!(read("eq-values.png"), read("eq-default.png"));
         assert_ne!(read("main-toggles.png"), read("main-stopped.png"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Where the committed images live; `POPAMP_BLESS=1 cargo test golden`
+    /// rewrites them after a change that is meant to show.
+    fn golden_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
+    }
+
+    fn names(dir: &Path) -> Vec<String> {
+        let mut v: Vec<String> = std::fs::read_dir(dir)
+            .map(|rd| rd.filter_map(|e| e.ok()?.file_name().into_string().ok()).filter(|n| n.ends_with(".png")).collect())
+            .unwrap_or_default();
+        v.sort();
+        v
+    }
+
+    /// What differs between two images, if anything.
+    fn difference(want: &Path, got: &Path) -> Option<String> {
+        let (want, got) = (image::open(want).unwrap().to_rgba8(), image::open(got).unwrap().to_rgba8());
+        if want.dimensions() != got.dimensions() {
+            return Some(format!("size {:?}, want {:?}", got.dimensions(), want.dimensions()));
+        }
+        let mut off = want.enumerate_pixels().zip(got.pixels()).filter(|((_, _, a), b)| a != b);
+        let ((x, y, _), _) = off.next()?;
+        Some(format!("{} pixels differ, the first at ({x}, {y})", off.count() + 1))
+    }
+
+    #[test]
+    fn golden_images_match() {
+        let dir = std::env::temp_dir().join(format!("popamp-golden-{}", std::process::id()));
+        render_all(&dir, None, Vec::new()).unwrap();
+        let golden = golden_dir();
+        if std::env::var_os("POPAMP_BLESS").is_some() {
+            let _ = std::fs::remove_dir_all(&golden);
+            std::fs::create_dir_all(&golden).unwrap();
+            for n in names(&dir) {
+                std::fs::copy(dir.join(&n), golden.join(&n)).unwrap();
+            }
+        }
+        assert_eq!(names(&dir), names(&golden), "rendered vs committed in {}", golden.display());
+        let wrong: Vec<String> =
+            names(&dir).into_iter().filter_map(|n| Some(format!("{n}: {}", difference(&golden.join(&n), &dir.join(&n))?))).collect();
+        assert!(wrong.is_empty(), "the windows changed (see {}):\n{}", dir.display(), wrong.join("\n"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

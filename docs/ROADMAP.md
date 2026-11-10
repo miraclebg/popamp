@@ -19,9 +19,6 @@ Contributions are welcome. Please open an issue first for larger items.
   size, playlist font and title format, exists).
 - **Tags and art:** tag editor, and album art in the windows (the media
   controls already show it).
-- **Golden-image tests in CI:** render windows with `POPAMP_SNAPSHOT` under
-  Xvfb and compare against committed PNGs, so the work below cannot
-  change a window unnoticed.
 - **Skins and plug-ins as rpms** in the openSUSE Build Service, as they
   already are debs in https://apt.popamp.app.
 - **Packages checked by hand:** install the rpms from the repository on
