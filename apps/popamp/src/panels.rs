@@ -3,6 +3,8 @@
 //! Each is a [`Form`] plus the logic that turns its events into changes to
 //! the [`Model`]; the windows themselves live in `app.rs`.
 
+#[cfg(unix)]
+use crate::filetypes::Group;
 use crate::model::{Model, UiReq};
 use crate::museum::{self, Fetched, Job};
 use crate::widgets::{Event, Form, Rect, Widget, BUTTON, ROW_H};
@@ -28,6 +30,12 @@ pub enum Act {
     Ok,
     Close,
     Flag(Flag),
+    /// A file type check box, read on OK.
+    #[cfg(unix)]
+    FileType,
+    /// Opens the system's default apps.
+    #[cfg(windows)]
+    DefaultApps,
     Search,
     More,
     /// The check box of the n-th plug-in.
@@ -54,7 +62,9 @@ impl Panel {
         match kind {
             PanelKind::JumpToFile => Panel::Jump(JumpToFile::new(model)),
             PanelKind::FileInfo => Panel::Info(FileInfo::new(model)),
-            PanelKind::Preferences => Panel::Prefs(Preferences::new(model.settings(), popamp_audio::output::devices())),
+            PanelKind::Preferences => {
+                Panel::Prefs(Preferences::new(model.settings(), popamp_audio::output::devices(), FileTypes::from_env()))
+            }
             #[cfg(feature = "plugins")]
             PanelKind::Plugins => Panel::Plugins(crate::plugins::PluginsPanel::new(model)),
             PanelKind::SkinMuseum => Panel::Museum(SkinMuseum::new()),
@@ -392,8 +402,26 @@ impl Field {
     }
 }
 
+#[cfg(unix)]
+type FileTypes = crate::filetypes::Desktop;
+/// Windows keeps the choice to itself.
+#[cfg(windows)]
+struct FileTypes;
+#[cfg(windows)]
+impl FileTypes {
+    fn from_env() -> FileTypes {
+        FileTypes
+    }
+}
+
 pub struct Preferences {
     form: Form<Act>,
+    /// Where the default players are chosen, and the check box of each
+    /// group in [`Group::ALL`] order.
+    #[cfg_attr(windows, allow(dead_code))]
+    file_types: FileTypes,
+    #[cfg(unix)]
+    type_checks: [usize; 3],
     fields: Vec<(Field, usize)>,
     /// The devices to play on, and the list that shows them.
     devices: Vec<Device>,
@@ -405,7 +433,7 @@ pub struct Preferences {
 const DEVICE_ROWS: i32 = 4;
 
 impl Preferences {
-    fn new(s: &Settings, mut devices: Vec<Device>) -> Preferences {
+    fn new(s: &Settings, mut devices: Vec<Device>, file_types: FileTypes) -> Preferences {
         let w = 480;
         let mut form = Form::new(w, 0);
         let mut y = 10;
@@ -421,6 +449,26 @@ impl Preferences {
             }
             y += 30 + rows * 22;
         }
+        form.add(Rect::new(10, y, w - 20, 44), Widget::Group { label: "Open with Popamp".into() });
+        #[cfg(unix)]
+        let type_checks = {
+            let on = file_types.defaults();
+            let third = (w - 44) / 3;
+            std::array::from_fn(|n| {
+                let label = Group::ALL[n].label().into();
+                form.add(
+                    Rect::new(22 + n as i32 * third, y + 20, third - 8, 20),
+                    Widget::Check { label, checked: on[n], action: Act::FileType },
+                )
+            })
+        };
+        #[cfg(windows)]
+        {
+            let note = "Windows lets you choose the default player in its Settings.".into();
+            form.add(Rect::new(22, y + 18, w - BUTTON.0 - 54, 24), Widget::Label { text: note, dim: false });
+            button(&mut form, w - BUTTON.0 - 22, y + 16, "Default apps", Act::DefaultApps, false);
+        }
+        y += 52;
         let mut fields = Vec::new();
         for f in Field::ALL {
             form.add(Rect::new(14, y, 136, 24), Widget::Label { text: f.label().into(), dim: false });
@@ -444,7 +492,16 @@ impl Preferences {
         button(&mut form, w - 2 * BUTTON.0 - 16, y, "OK", Act::Ok, true);
         button(&mut form, w - BUTTON.0 - 10, y, "Cancel", Act::Close, false);
         form.h = y + BUTTON.1 + 10;
-        Preferences { form, fields, devices, device_list, status }
+        Preferences {
+            form,
+            file_types,
+            #[cfg(unix)]
+            type_checks,
+            fields,
+            devices,
+            device_list,
+            status,
+        }
     }
 
     fn handle(&mut self, ev: Event<Act>, model: &mut Model) -> bool {
@@ -454,6 +511,11 @@ impl Preferences {
                 true
             }
             Event::Clicked(Act::Ok) => self.apply(model),
+            #[cfg(windows)]
+            Event::Clicked(Act::DefaultApps) => {
+                crate::filetypes::open_default_apps();
+                true
+            }
             Event::Clicked(_) | Event::Cancel => false,
             _ => true,
         }
@@ -483,6 +545,12 @@ impl Preferences {
             model.load_plugins();
         }
         model.pl_dirty += 1;
+        // The rest is kept either way; a file that cannot be written says so.
+        #[cfg(unix)]
+        if let Err(e) = self.file_types.set(self.type_checks.map(|i| self.form.checked(i))) {
+            self.form.set_label(self.status, e);
+            return true;
+        }
         false
     }
 }
@@ -826,7 +894,63 @@ pub(crate) mod tests {
     fn prefs_with_devices(m: &Model) -> Panel {
         let cards =
             vec![device("default", "Default device"), device("hdmi:CARD=NVidia,DEV=0", "HDMI"), device("front:CARD=Audio,DEV=0", "USB")];
-        Panel::Prefs(Preferences::new(m.settings(), cards))
+        Panel::Prefs(Preferences::new(m.settings(), cards, test_types("devices")))
+    }
+
+    /// File types kept in a folder of the test's own.
+    #[cfg(unix)]
+    fn test_types(name: &str) -> FileTypes {
+        let root = std::env::temp_dir().join(format!("popamp-prefs-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        test_types_at(&root)
+    }
+
+    #[cfg(windows)]
+    fn test_types(_: &str) -> FileTypes {
+        FileTypes
+    }
+
+    #[cfg(unix)]
+    fn type_check(p: &Panel, g: Group) -> Rect {
+        let Panel::Prefs(pr) = p else { panic!("not preferences") };
+        pr.form.rect(pr.type_checks[Group::ALL.iter().position(|&x| x == g).unwrap()])
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ticked_file_types_open_with_popamp_after_ok() {
+        let mut m = songs(&[]);
+        let types = test_types("ok");
+        let root = types.config.parent().unwrap().to_path_buf();
+        let mut p = Panel::Prefs(Preferences::new(m.settings(), vec![], types));
+        let r = type_check(&p, Group::Playlists);
+        click(&mut p, &mut m, r);
+        assert!(!root.exists(), "nothing written before OK");
+        assert!(!press(&mut p, &mut m, Key::Enter));
+        let Panel::Prefs(pr) = &p else { unreachable!() };
+        assert_eq!(pr.file_types.defaults(), [false, true, false]);
+        let reopened = Panel::Prefs(Preferences::new(m.settings(), vec![], test_types_at(&root)));
+        let Panel::Prefs(pr) = &reopened else { unreachable!() };
+        assert!(pr.form.checked(pr.type_checks[1]) && !pr.form.checked(pr.type_checks[0]), "shown ticked next time");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    fn test_types_at(root: &std::path::Path) -> FileTypes {
+        FileTypes { config: root.join("config"), data: root.join("data"), dirs: vec![], exe: Some("/usr/bin/popamp".into()) }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cancel_leaves_the_file_types() {
+        let mut m = songs(&[]);
+        let types = test_types("cancel");
+        let root = types.config.parent().unwrap().to_path_buf();
+        let mut p = Panel::Prefs(Preferences::new(m.settings(), vec![], types));
+        let r = type_check(&p, Group::Audio);
+        click(&mut p, &mut m, r);
+        assert!(!press(&mut p, &mut m, Key::Escape));
+        assert!(!root.exists());
     }
 
     fn device_rows(p: &Panel) -> (Vec<String>, Option<usize>) {

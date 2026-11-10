@@ -16,6 +16,11 @@ All notable changes to this project are documented here. The format follows
   kept by name (`output_device` in the settings); playback moves to it at
   once, from where it was, and an unplugged device falls back to the
   default one.
+- "Open with Popamp" in Preferences: on Linux, check boxes that make it
+  the default player for audio files, playlists and skins (in
+  `~/.config/mimeapps.list`, with a desktop entry of its own for an
+  AppImage or a build from source); on Windows, a button that opens
+  Settings > Default apps at Popamp, where the installer now lists it.
 
 ### Changed
 

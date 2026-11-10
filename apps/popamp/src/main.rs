@@ -11,6 +11,7 @@ mod canvas;
 mod cli;
 mod dialogs;
 mod edition;
+mod filetypes;
 mod font;
 mod headless;
 mod ipc;

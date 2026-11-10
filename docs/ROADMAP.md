@@ -13,9 +13,6 @@ Contributions are welcome. Please open an issue first for larger items.
   against the catalog's checksum and offers updates. Windows has no
   packages, so there this is the way to install. The Skin Museum window,
   which does this for Winamp skins, shows the way.
-- **File-type registration** in the Preferences window, on Linux and
-  Windows (the window, with the output device, buffer size, playlist font
-  and title format, exists).
 - **Tags and art:** tag editor, and album art in the windows (the media
   controls already show it).
 - **Skins and plug-ins as rpms** in the openSUSE Build Service, as they

@@ -178,6 +178,12 @@ impl<A: Copy + PartialEq> Form<A> {
         }
     }
 
+    /// Whether check box `i` is ticked.
+    #[cfg(unix)]
+    pub fn checked(&self, i: usize) -> bool {
+        matches!(self.controls[i].1, Widget::Check { checked: true, .. })
+    }
+
     /// The selected row of list `i`.
     pub fn selected(&self, i: usize) -> Option<usize> {
         match &self.controls[i].1 {
