@@ -269,6 +269,7 @@ impl AlbumArt {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::panels::tests::click_button as click;
     use crate::panels::{Panel, PanelKind};
     use crate::widgets::Key;
     use popamp_core::plformats::Item;
@@ -310,14 +311,6 @@ mod tests {
 
     fn press(p: &mut Panel, m: &mut Model, key: Key) -> bool {
         let ev = p.form_mut().key(key);
-        p.handle(ev, m)
-    }
-
-    fn click(p: &mut Panel, m: &mut Model, act: Act) -> bool {
-        let i = (0..).find(|&i| matches!(p.form().widget(i), Widget::Button { action, .. } if *action == act)).unwrap();
-        let r = p.form().rect(i);
-        p.form_mut().mouse_down(r.x + 2, r.y + 2, false);
-        let ev = p.form_mut().mouse_up(r.x + 2, r.y + 2);
         p.handle(ev, m)
     }
 

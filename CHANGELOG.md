@@ -52,6 +52,9 @@ All notable changes to this project are documented here. The format follows
   info and the others) grow with the skin's windows at ×1.25 to ×3, with
   their text set at that size, so it stays sharp. Covers and previews are
   kept large enough for ×3.
+- The Skin browser (`Alt+S`, Options) is a window of Popamp's own instead
+  of a zenity or kdialog list: a click puts a skin on at once, and its
+  buttons install a skin from a file or open the Gallery.
 
 ### Fixed
 
