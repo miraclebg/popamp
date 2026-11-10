@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-10
+
 ### Added
 
 - Golden-image tests: `cargo test` draws every window state of the
@@ -299,7 +301,8 @@ First release.
 - **Packaging:** desktop entry, `.wsz` MIME type, icons and a per-user
   install script.
 
-[Unreleased]: https://github.com/popamp/popamp/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/popamp/popamp/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/popamp/popamp/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/popamp/popamp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/popamp/popamp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/popamp/popamp/releases/tag/v0.5.0
