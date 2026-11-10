@@ -2,8 +2,9 @@
 
 A vector skin is drawn in SVG, so it stays sharp at every window size,
 including fractional ones such as x1.25 or x1.5. Popamp's own default skin
-is a vector skin: `skins/default/` in Popamp's source is a complete example
-that draws every classic sheet. Skins that describe their own windows
+is a vector skin:
+[popamp-skin-default](https://github.com/popamp/popamp-skin-default) is a
+complete example that draws every classic sheet. Skins that describe their own windows
 live in repositories of their own:
 [Popamp Modern](https://github.com/popamp/skin-modern) (round buttons,
 rounded windows), [Popamp Steel](https://github.com/popamp/skin-steel)

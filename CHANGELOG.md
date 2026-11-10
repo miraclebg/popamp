@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The default skin has a repository of its own,
+  [popamp-skin-default](https://github.com/popamp/popamp-skin-default), and
+  is still built into the program. It can be forked without the player.
+
 ## [0.7.0] - 2026-11-09
 
 ### Added

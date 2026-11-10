@@ -47,33 +47,12 @@ pub struct Skin {
     pub pl_font: Option<Vec<u8>>,
 }
 
-/// Popamp's own skin: the vector skin in `skins/default/`, built in.
-macro_rules! builtin_files {
-    ($($f:literal),*) => { [$(($f, include_bytes!(concat!("../../../skins/default/", $f)) as &[u8])),*] };
-}
-const BUILTIN: [(&str, &[u8]); 15] = builtin_files!(
-    "skin.toml",
-    "main.svg",
-    "cbuttons.svg",
-    "titlebar.svg",
-    "shufrep.svg",
-    "text.svg",
-    "volume.svg",
-    "balance.svg",
-    "monoster.svg",
-    "playpaus.svg",
-    "numbers.svg",
-    "posbar.svg",
-    "eqmain.svg",
-    "eq_ex.svg",
-    "pledit.svg"
-);
-
 impl Skin {
     /// Popamp's own skin, sharp at any scale. The player's default skin,
     /// and where every other skin takes what it leaves out.
     pub fn builtin_vector() -> Skin {
-        let files = BUILTIN.iter().map(|(name, data)| (name.to_string(), data.to_vec())).collect();
+        // The vector skin of the popamp-skin-default repository, built in.
+        let files = popamp_skin_default::FILES.iter().map(|(name, data)| (name.to_string(), data.to_vec())).collect();
         // The files are part of the program; a test loads them.
         vector::load_onto(Skin::bare(), &files).expect("the built-in skin loads")
     }
