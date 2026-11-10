@@ -410,7 +410,10 @@ mod tests {
         assert!(texts(&p).contains(&"Popamp can change the tags of MP3, FLAC, Ogg Vorbis and MP4 files.".to_string()));
         assert!(!press(&mut p, &mut m, Key::Enter), "Enter closes");
         let mut m = Model::for_tests();
-        m.on_expanded(vec![Item { location: "http://radio.example/live".into(), title: None, length_ms: None }], crate::model::AddMode::Append);
+        m.on_expanded(
+            vec![Item { location: "http://radio.example/live".into(), title: None, length_ms: None }],
+            crate::model::AddMode::Append,
+        );
         m.playlist.select_only(0);
         let p = Panel::open(PanelKind::FileInfo, &m);
         assert!(texts(&p).contains(&"A stream's tags cannot be changed.".to_string()));

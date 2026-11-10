@@ -717,5 +717,4 @@ mod tests {
         assert_eq!(small.px, [0xff00_007f, 0xffff_ffff]);
         assert_eq!(fit(&img, 10, 10).w, 4, "small ones stay as they are");
     }
-
 }

@@ -350,7 +350,6 @@ fn unzip(data: &[u8], to: &Path) -> Result<(), String> {
 /// The size previews are shown at.
 pub const PREVIEW: (i32, i32) = (275, 406);
 
-
 /// What the gallery installed, kept in `gallery.json` in the data folder:
 /// id to version and where it went, to offer updates.
 #[derive(Debug, Default, Clone, PartialEq)]

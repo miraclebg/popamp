@@ -1755,7 +1755,6 @@ fn zooms(current: i32, action: fn(i32) -> MenuAction) -> Vec<MenuItem> {
         .collect()
 }
 
-
 /// The tags and format of a track as File info lists them.
 pub fn meta_rows(m: &TrackMeta) -> Vec<(String, String)> {
     let mut rows = Vec::new();

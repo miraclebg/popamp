@@ -4,9 +4,9 @@
 //! Each is a [`Form`] plus the logic that turns its events into changes to
 //! the [`Model`]; the windows themselves live in `app.rs`.
 
+use crate::fileinfo::{AlbumArt, FileInfo};
 #[cfg(unix)]
 use crate::filetypes::Group;
-use crate::fileinfo::{AlbumArt, FileInfo};
 use crate::model::{Model, UiReq};
 use crate::museum::{self, Fetched, Job};
 use crate::widgets::{Event, Form, Rect, Widget, BUTTON, ROW_H};

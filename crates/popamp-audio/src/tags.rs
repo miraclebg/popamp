@@ -285,7 +285,10 @@ fn save(file: &impl AudioFile, io: &mut std::fs::File) -> Result<(), String> {
 
 /// `p` as lofty's front cover.
 fn front(p: &Picture) -> lofty::picture::Picture {
-    lofty::picture::Picture::unchecked(p.data.to_vec()).pic_type(PictureType::CoverFront).mime_type(MimeType::from_str(&p.media_type)).build()
+    lofty::picture::Picture::unchecked(p.data.to_vec())
+        .pic_type(PictureType::CoverFront)
+        .mime_type(MimeType::from_str(&p.media_type))
+        .build()
 }
 
 fn apply(tag: &mut Tag, changes: &Changes) {
