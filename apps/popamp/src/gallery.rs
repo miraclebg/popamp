@@ -305,6 +305,10 @@ fn place_plugin(item: &Item, dir: &Path, work: &Path, data: &[u8]) -> Result<Pat
     if id.as_deref() != Some(item.id.as_str()) {
         return Err(format!("the plug-in calls itself {:?}, not {:?}", id.unwrap_or_default(), item.id));
     }
+    // Before the copy in place is replaced: a newer Popamp's plug-in would not start.
+    if let Some(min) = toml_value(&manifest, "min_popamp") {
+        popamp_core::version::check_min(&min)?;
+    }
     let dest = dir.join(&item.id);
     let old = work.join("old");
     if dest.exists() {
@@ -869,6 +873,18 @@ pub mod tests {
         let broken = zip_of(&[("plugin.toml", b"id = \"other\"\n")]);
         let e = install(&item(Kind::Plugin("dsp".into()), "echo", &broken), &dir, &broken).unwrap_err();
         assert!(e.contains("\"other\""), "{e}");
+        assert_eq!(std::fs::read(path.join("plugin.wasm")).unwrap(), b"two", "the old one stays");
+        let newer = zip_of(&[
+            (
+                "plugin.toml",
+                b"id = \"echo\"
+min_popamp = \"99.0.0\"
+",
+            ),
+            ("plugin.wasm", b"three"),
+        ]);
+        let e = install(&item(Kind::Plugin("dsp".into()), "echo", &newer), &dir, &newer).unwrap_err();
+        assert!(e.starts_with("needs Popamp 99.0.0 or newer"), "{e}");
         assert_eq!(std::fs::read(path.join("plugin.wasm")).unwrap(), b"two", "the old one stays");
         let _ = std::fs::remove_dir_all(dir);
     }

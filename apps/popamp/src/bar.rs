@@ -26,8 +26,8 @@ pub fn edge(model: &Model) -> Option<BarEdge> {
 
 /// The part of `monitor` a bar spans: what the desktop's own panels leave
 /// of it, from the work areas the window manager publishes. Those count
-/// the bar's own strip too, so where `bar` (on the screen now) sits just
-/// outside the work area, its strip is given back.
+/// the bar's own strip too, so where `bar` (the strip reserved for it)
+/// sits just outside the work area, it is given back.
 pub fn usable(monitor: Screen, work_areas: &[Screen], bar: Option<Screen>) -> Screen {
     let overlap = |a: &Screen| {
         let (x0, y0) = (a.x.max(monitor.x), a.y.max(monitor.y));

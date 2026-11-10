@@ -6,6 +6,44 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Skins: `align = "left" | "center" | "right"` on a `clock` element places
+  a font's play time across it, so it can keep against a line or a label
+  whatever the width of the font's digits. Left is the default.
+- `min_popamp = "0.8.0"` in a skin's `[meta]` or a `plugin.toml`: the
+  oldest Popamp it works with. Older ones say a newer Popamp is needed,
+  as the first thing they check, instead of failing on a key they do not
+  know; the gallery keeps the installed plug-in rather than replace it
+  with one that would not start.
+
+### Changed
+
+- Menus, tooltips and Popamp's own dialogs follow the display scaling
+  (Windows' scaling setting, `Xft.dpi` on X11) instead of growing with the
+  player's windows, so Double Size no longer makes them bigger.
+
+### Fixed
+
+- Windows: right-click menus closed as soon as they opened.
+- Windows: the equalizer and playlist did not come back after the main
+  window was minimized and restored from the taskbar; they are now owned
+  by the main window and minimize and restore with it.
+- Windows: visualizer plug-ins closed at once ("the underlying handle is
+  not available"): winit gives out a window's handle only on the event
+  loop's thread, and the GPU draws on a thread of its own. Why a plug-in
+  stopped is now also written to the log.
+- Windows: a bar crept up the screen, reserving one strip above another:
+  Windows moves the bar out of the strip just reserved for it, and the
+  strip was told apart from the desktop's panels by where the bar was.
+  It is now known by what was reserved, and the bar goes back into it.
+- Vector skins at x1.5 and other sizes between whole pixels: text came out
+  longer than its place, and the play time lost its last digit (Steel).
+  Glyphs are still drawn at a whole size, but spaced at the exact one.
+- The play time of a vector skin sits in the middle of its place by the
+  digits themselves, not by the room a font leaves above them: with the
+  system font (Modern) it sat low on Windows, over the visualization.
+
 ## [0.8.0] - 2026-11-10
 
 ### Added

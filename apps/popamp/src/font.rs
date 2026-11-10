@@ -122,11 +122,34 @@ impl Font {
     }
 
     pub fn ascent(&self, px: u32) -> i32 {
-        self.faces.first().and_then(|f| f.horizontal_line_metrics(px as f32)).map(|m| m.ascent.round() as i32).unwrap_or(px as i32)
+        self.ascent_at(px as f32)
+    }
+
+    fn ascent_at(&self, size: f32) -> i32 {
+        self.faces.first().and_then(|f| f.horizontal_line_metrics(size)).map(|m| m.ascent.round() as i32).unwrap_or(size.round() as i32)
     }
 
     pub fn width(&mut self, text: &str, px: u32) -> i32 {
-        text.chars().map(|c| self.glyph(c, px).map(|g| g.0.advance_width).unwrap_or(0.0)).sum::<f32>().round() as i32
+        self.width_at(text, px as f32)
+    }
+
+    /// The width of `text` `size` pixels tall, which need not be whole.
+    pub fn width_at(&mut self, text: &str, size: f32) -> i32 {
+        let (px, step) = raster(size);
+        (text.chars().map(|c| self.glyph(c, px).map(|g| g.0.advance_width).unwrap_or(0.0)).sum::<f32>() * step).round() as i32
+    }
+
+    /// How far the ink of `text` reaches above the baseline and below it
+    /// (negative), drawn `size` pixels tall; `None` for no ink.
+    pub fn ink(&mut self, text: &str, size: f32) -> Option<(i32, i32)> {
+        let (px, _) = raster(size);
+        let boxes: Vec<(i32, i32)> = text
+            .chars()
+            .filter_map(|c| self.glyph(c, px).map(|g| g.0))
+            .filter(|m| m.height > 0)
+            .map(|m| (m.ymin + m.height as i32, m.ymin))
+            .collect();
+        Some((boxes.iter().map(|b| b.0).max()?, boxes.iter().map(|b| b.1).min()?))
     }
 
     /// Draws `text` with its top at `y`, clipped to `clip_x..clip_x+clip_w`.
@@ -134,6 +157,16 @@ impl Font {
     #[allow(clippy::too_many_arguments)]
     pub fn draw(&mut self, b: &mut Bitmap, x: i32, y: i32, text: &str, px: u32, color: u32, clip_x: i32, clip_w: i32) -> i32 {
         let baseline = y + self.ascent(px);
+        self.draw_at(b, x, baseline, text, px as f32, color, clip_x, clip_w)
+    }
+
+    /// Draws `text` `size` pixels tall on `baseline`. A size that is not
+    /// whole, as a skin's at x1.5, is drawn with the glyphs of the nearest
+    /// whole size, which keeps pixel fonts sharp, spaced as at `size`, so
+    /// that the text keeps its length against the rest of the window.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_at(&mut self, b: &mut Bitmap, x: i32, baseline: i32, text: &str, size: f32, color: u32, clip_x: i32, clip_w: i32) -> i32 {
+        let (px, step) = raster(size);
         let mut pen = x as f32;
         for c in text.chars() {
             let Some((m, coverage)) = self.glyph(c, px).map(|(m, c)| (*m, c.clone())) else { continue };
@@ -151,7 +184,7 @@ impl Font {
                     }
                 }
             }
-            pen += m.advance_width;
+            pen += m.advance_width * step;
             if pen as i32 > clip_x + clip_w {
                 break;
             }
@@ -180,9 +213,33 @@ impl Font {
     }
 }
 
+/// The whole pixel size the glyphs of a text `size` pixels tall are drawn
+/// at, and how far apart they go per pixel of their own advance.
+fn raster(size: f32) -> (u32, f32) {
+    let px = size.round().max(1.0);
+    (px as u32, size / px)
+}
+
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn text_at_a_size_between_whole_pixels_keeps_its_length() {
+        let mut font = Font::new(parse(CLOCK.to_vec(), "clock"));
+        let at_13 = font.width_at("01:23", 13.0);
+        // 19.5 is drawn with 20-pixel glyphs, spaced as at 19.5.
+        assert_eq!(font.width_at("01:23", 19.5), (at_13 as f32 * 1.5).round() as i32);
+        assert!(font.width_at("01:23", 20.0) > font.width_at("01:23", 19.5));
+        let (top, bottom) = font.ink("0123456789", 13.0).unwrap();
+        assert!(top > 0 && bottom <= 0 && top - bottom <= 13, "{top} {bottom}");
+        assert_eq!(font.ink(" ", 13.0), None);
+    }
+
+    /// The digits font of the test skins.
+    pub(crate) fn clock_font() -> Font {
+        Font::new(parse(CLOCK.to_vec(), "clock"))
+    }
 
     const CLOCK: &[u8] = include_bytes!("../../../crates/popamp-skin/tests/fixtures/fonts-shade/fonts/clock.ttf");
 

@@ -23,7 +23,8 @@ repeat and cover in the media overlay.
 - Plain X11 (non-Wayland) sessions.
 - PulseAudio-only or pure-ALSA systems.
 - Non-x86_64 CPUs.
-- HiDPI scaling.
+- HiDPI scaling, and dialogs and menus at a display scaling above 100%
+  on Linux.
 
 ## Test procedure
 

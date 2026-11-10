@@ -2,6 +2,7 @@
 
 use crate::canvas::Canvas;
 use crate::font::Fonts;
+use popamp_skin::layout::Align;
 use popamp_skin::sprites::{main, Rect};
 use popamp_skin::textcfg::{glyph_cell, GLYPH_H, GLYPH_W};
 use popamp_skin::{Picture, Sheet, Skin};
@@ -86,13 +87,11 @@ fn clock_text(secs: u64, negative: bool) -> String {
 }
 
 /// The big play time in `r` (the clock element), from a vector skin's
-/// font or the classic digit bitmaps.
-pub fn clock(b: &mut Canvas, skin: &Skin, fonts: &mut Fonts, r: Rect, secs: u64, negative: bool) {
+/// font, placed across `r` by `align`, or the classic digit bitmaps.
+pub fn clock(b: &mut Canvas, skin: &Skin, fonts: &mut Fonts, r: Rect, secs: u64, negative: bool, align: Align) {
     match (&skin.clock, fonts.clock.as_mut()) {
-        (Some(st), Some(font)) => {
-            let y = r.y + (r.h - st.size) / 2;
-            b.text(font, r.x, y, &clock_text(secs, negative), st.size as u32, st.color, r);
-        }
+        // Centred on its digits: fonts leave different room above them.
+        (Some(st), Some(font)) => b.text_centred(font, r, &clock_text(secs, negative), "0123456789", st.size as u32, st.color, align),
         _ => time_digits(b, skin, Some(secs), negative, r.x - main::TIME_AREA.x, r.y - main::TIME_AREA.y),
     }
 }

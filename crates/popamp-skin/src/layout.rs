@@ -188,7 +188,7 @@ impl Element {
 
     /// Takes part in mouse handling (the rest only draw).
     pub fn interactive(&self) -> bool {
-        !matches!(self.kind, Kind::Image { .. } | Kind::Text { .. } | Kind::Clock | Kind::Vis | Kind::EqGraph)
+        !matches!(self.kind, Kind::Image { .. } | Kind::Text { .. } | Kind::Clock { .. } | Kind::Vis | Kind::EqGraph)
     }
 }
 
@@ -304,6 +304,15 @@ pub enum Fill {
     Tile,
 }
 
+/// Where a text sits across its element.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Align {
+    #[default]
+    Left,
+    Center,
+    Right,
+}
+
 #[derive(Debug, Clone)]
 pub enum Kind {
     /// Decoration; `lit` switches to the `on` paint.
@@ -335,8 +344,11 @@ pub enum Kind {
         area: Option<Rect>,
         double: Option<Command>,
     },
-    /// The big `m:ss` play time in the skin's digits.
-    Clock,
+    /// The big `m:ss` play time in the skin's digits; `align` places a
+    /// font's time across the element (the classic digits have fixed places).
+    Clock {
+        align: Align,
+    },
     Vis,
     /// The equalizer curve.
     EqGraph,

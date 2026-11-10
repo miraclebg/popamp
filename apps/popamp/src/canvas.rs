@@ -4,6 +4,7 @@
 
 use crate::font::Font;
 use crate::scale::Scale;
+use popamp_skin::layout::Align;
 use popamp_skin::{Bitmap, Rect, Rgba};
 
 pub struct Canvas<'a> {
@@ -71,13 +72,33 @@ impl<'a> Canvas<'a> {
     pub fn text(&mut self, font: &mut Font, x: i32, y: i32, text: &str, size: u32, color: u32, clip: Rect) {
         let s = self.scale;
         let (cx, _, cw, _) = self.screen(clip.x, clip.y, clip.w, clip.h);
-        font.draw(self.bitmap, s.px(x), s.px(y), text, s.px(size as i32) as u32, color, cx, cw);
+        let px = s.px(size as i32) as u32;
+        let baseline = s.px(y) + font.ascent(px);
+        font.draw_at(self.bitmap, s.px(x), baseline, text, size as f32 * s.factor(), color, cx, cw);
+    }
+
+    /// Draws `text` in `r`, `size` skin pixels tall, placed across it by
+    /// `align`, with the ink of the characters in `sample` centred from top
+    /// to bottom: where the text sits does not hang on how much room a font
+    /// leaves above it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn text_centred(&mut self, font: &mut Font, r: Rect, text: &str, sample: &str, size: u32, color: u32, align: Align) {
+        let size = size as f32 * self.scale.factor();
+        let (x, y, w, h) = self.screen(r.x, r.y, r.w, r.h);
+        let Some((top, bottom)) = font.ink(sample, size) else { return };
+        let baseline = y + (h - (top - bottom)) / 2 + top;
+        let left = match align {
+            Align::Left => x,
+            Align::Center => x + (w - font.width_at(text, size)) / 2,
+            Align::Right => x + w - font.width_at(text, size),
+        };
+        font.draw_at(self.bitmap, left, baseline, text, size, color, x, w);
     }
 
     /// The width of `text` in skin pixels, rounded up.
     pub fn text_width(&self, font: &mut Font, text: &str, size: u32) -> i32 {
         let s = self.scale;
-        s.skin_up(font.width(text, s.px(size as i32) as u32))
+        s.skin_up(font.width_at(text, size as f32 * s.factor()))
     }
 }
 
@@ -103,5 +124,25 @@ mod tests {
         let mut b = Bitmap::new(5, 2, 0);
         Canvas::new(&mut b, Scale::new(200, Scaling::Sharp)).blit(&src, 0, 0, 2, 1, 0, 0);
         assert_eq!(b.px, [7, 7, 9, 9, 0, 7, 7, 9, 9, 0]);
+    }
+
+    #[test]
+    fn aligned_text_starts_left_ends_right_or_sits_in_the_middle() {
+        let mut font = crate::font::tests::clock_font();
+        let r = Rect { x: 0, y: 0, w: 80, h: 16 };
+        // The columns the ink covers.
+        let mut ink = |align| {
+            let mut b = Bitmap::new(80, 16, 0);
+            Canvas::new(&mut b, Scale::new(100, Scaling::Sharp)).text_centred(&mut font, r, "00:00", "0123456789", 13, 0xffffff, align);
+            let cols: Vec<usize> = (0..80).filter(|&x| (0..16).any(|y| b.px[y * 80 + x] != 0)).collect();
+            (cols[0], *cols.last().unwrap())
+        };
+        let (left, right, middle) = (ink(Align::Left), ink(Align::Right), ink(Align::Center));
+        assert!(left.0 <= 2, "{left:?}");
+        // The pen ends at the edge; the last digit's own margin is left.
+        assert!((72..80).contains(&right.1), "{right:?}");
+        assert_eq!(right.1 - right.0, left.1 - left.0, "the same text, moved");
+        let (to_right, to_middle) = ((right.0 - left.0) as i32, (middle.0 - left.0) as i32);
+        assert!((to_middle - to_right / 2).abs() <= 1, "{left:?} {middle:?} {right:?}");
     }
 }

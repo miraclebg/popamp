@@ -69,6 +69,7 @@ impl Model {
 
     pub fn on_plugin_stopped(&mut self, id: &str, why: &str) {
         let name = self.plugins.list.iter().filter_map(Installed::manifest).find(|m| m.id == id).map_or(id, |m| m.name.as_str());
+        log::warn!("plug-in {id} stopped: {why}");
         self.flash(format!("PLUG-IN {} STOPPED: {why}", name.to_uppercase()));
     }
 }

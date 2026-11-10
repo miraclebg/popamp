@@ -12,6 +12,9 @@ use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::raw_window_handle::{
+    DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle, WindowHandle,
+};
 use winit::window::{Fullscreen, Window};
 
 const FLOOR_DB: f32 = -70.0;
@@ -32,7 +35,7 @@ impl VisualizerWindow {
         let full = Arc::new(AtomicBool::new(false));
         keep_screen_on_while_watched(&control, &full, shared.clone());
         let feed = Box::new(Player { visual, shared, sound: Sound::new() });
-        let (for_thread, control_there) = (window.clone(), control.clone());
+        let (for_thread, control_there) = (Arc::new(Handles::of(&window)?), control.clone());
         std::thread::Builder::new()
             .name("popamp-visualizer".into())
             .spawn(move || {
@@ -89,6 +92,48 @@ fn keep_screen_on_while_watched(control: &Arc<Control>, full: &Arc<AtomicBool>, 
         move || full.load(Ordering::Relaxed) && shared.state() == PlayState::Playing,
         move || control.stop.load(Ordering::Relaxed),
     );
+}
+
+/// The window for the drawing thread: its handles, taken on the UI thread.
+/// winit gives out a window's handle on Windows only on the thread of the
+/// event loop, while the GPU may draw on the window from any thread.
+#[derive(Debug)]
+struct Handles {
+    /// Keeps the window, and so the handles, alive while the thread draws.
+    _window: Arc<Window>,
+    window: RawWindowHandle,
+    display: RawDisplayHandle,
+}
+
+impl Handles {
+    fn of(window: &Arc<Window>) -> Result<Handles, String> {
+        let err = |e: HandleError| format!("no window to draw on: {e}");
+        Ok(Handles {
+            _window: window.clone(),
+            window: window.window_handle().map_err(err)?.as_raw(),
+            display: window.display_handle().map_err(err)?.as_raw(),
+        })
+    }
+}
+
+// SAFETY: the handles are plain identifiers of a window (an HWND, an X11
+// window id) that `_window` keeps open; Win32, X11 and Wayland let a swap
+// chain or surface be made for them on any thread.
+unsafe impl Send for Handles {}
+unsafe impl Sync for Handles {}
+
+impl HasWindowHandle for Handles {
+    fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
+        // SAFETY: the window lives as long as `self` (see above).
+        Ok(unsafe { WindowHandle::borrow_raw(self.window) })
+    }
+}
+
+impl HasDisplayHandle for Handles {
+    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
+        // SAFETY: the display connection lives as long as the window.
+        Ok(unsafe { DisplayHandle::borrow_raw(self.display) })
+    }
 }
 
 fn pixels(size: PhysicalSize<u32>) -> (u32, u32) {

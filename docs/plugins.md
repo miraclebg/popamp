@@ -104,6 +104,7 @@ id = "youtube"                 # folder name, [a-z0-9-]
 name = "YouTube"
 version = "1.0.0"
 api = "1.0"                    # the API version it was built for
+min_popamp = "0.8.0"           # optional: the oldest Popamp it works with
 kind = "source"
 description = "Plays YouTube videos and playlists through yt-dlp."
 

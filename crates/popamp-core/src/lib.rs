@@ -9,6 +9,7 @@ pub mod meta;
 pub mod playlist;
 pub mod plformats;
 pub mod text;
+pub mod version;
 
 pub use command::Command;
 
