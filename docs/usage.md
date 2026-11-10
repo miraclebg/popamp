@@ -11,6 +11,7 @@
 | Main menu | click the top-left button, right-click, or `Alt+F` |
 | Skins | `Alt+S`, or put `.wsz`/`.psz` files in the skins folder (below) |
 | Equalizer keys | `1`–`0` / `Q`–`P` raise/lower bands, `N` on/off, `S` presets |
+| Tags and cover / album art | `Alt+3` (File info) / `Alt+A` |
 | Double size / shade | `Ctrl+D` / `Ctrl+W` (or double-click the title bar) |
 
 ## Remote control

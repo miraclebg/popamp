@@ -5,7 +5,7 @@
 
 use crate::model::{AppEvent, Events, Model};
 use crate::panels::{button, Act};
-use crate::widgets::{Event, Form, Rect, Widget, BUTTON, ROW_H};
+use crate::widgets::{fit, Event, Form, Rect, Widget, BUTTON, ROW_H};
 use popamp_audio::stream::fetch_bytes;
 use popamp_skin::Bitmap;
 use sha2::{Digest, Sha256};
@@ -350,33 +350,6 @@ fn unzip(data: &[u8], to: &Path) -> Result<(), String> {
 /// The size previews are shown at.
 pub const PREVIEW: (i32, i32) = (275, 406);
 
-/// `img` shrunk to fit `w`×`h`, each pixel the average of those it covers.
-fn fit(img: &Bitmap, w: i32, h: i32) -> Bitmap {
-    if img.w <= w && img.h <= h || img.w <= 0 || img.h <= 0 {
-        return img.clone();
-    }
-    let k = (w as f64 / img.w as f64).min(h as f64 / img.h as f64);
-    let (ow, oh) = (((img.w as f64 * k) as i32).max(1), ((img.h as f64 * k) as i32).max(1));
-    let mut out = Bitmap::new(ow, oh, 0);
-    for y in 0..oh {
-        let (y0, y1) = (y * img.h / oh, ((y + 1) * img.h / oh).max(y * img.h / oh + 1));
-        for x in 0..ow {
-            let (x0, x1) = (x * img.w / ow, ((x + 1) * img.w / ow).max(x * img.w / ow + 1));
-            let mut sum = [0u64; 4];
-            for sy in y0..y1 {
-                for sx in x0..x1 {
-                    let p = img.px[(sy * img.w + sx) as usize];
-                    for (c, s) in sum.iter_mut().enumerate() {
-                        *s += ((p >> (c * 8)) & 0xff) as u64;
-                    }
-                }
-            }
-            let n = ((y1 - y0) * (x1 - x0)) as u64;
-            out.px[(y * ow + x) as usize] = sum.iter().enumerate().map(|(c, s)| ((s / n) as u32) << (c * 8)).sum();
-        }
-    }
-    out
-}
 
 /// What the gallery installed, kept in `gallery.json` in the data folder:
 /// id to version and where it went, to offer updates.
@@ -906,16 +879,6 @@ pub mod tests {
         assert!(e.contains("outside"), "{e}");
         assert!(!dir.join("escaped").exists() && !dir.join("plugins/x").exists());
         let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn previews_shrink_to_fit_averaging_pixels() {
-        let mut img = Bitmap::new(4, 2, 0);
-        img.px = vec![0xff00_0000, 0xff00_00ff, 0xffff_ffff, 0xffff_ffff, 0xff00_0000, 0xff00_00ff, 0xffff_ffff, 0xffff_ffff];
-        let small = fit(&img, 2, 2);
-        assert_eq!((small.w, small.h), (2, 1));
-        assert_eq!(small.px, [0xff00_007f, 0xffff_ffff]);
-        assert_eq!(fit(&img, 10, 10).w, 4, "small ones stay as they are");
     }
 
     #[test]

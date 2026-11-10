@@ -29,6 +29,14 @@ All notable changes to this project are documented here. The format follows
   older version only once the new one is whole, and stay off until
   turned on in Plug-ins. In the build without plug-ins only the Skins
   tab lists anything.
+- Tag editor: File info (`Alt+3`) changes the tags and the cover of MP3,
+  FLAC, Ogg Vorbis and MP4/M4A files, keeping the tags it does not show.
+  A save goes into a copy that then replaces the file. Years must be
+  dates and track or disc numbers numbers; WAV, AIFF and streams are
+  shown only.
+- Album art window (`Alt+A`, main menu): the cover of the current track,
+  from its tags or a cover picture beside it, updated as the track or its
+  tags change.
 
 ### Changed
 

@@ -47,6 +47,10 @@ pub enum DialogKind {
     Skin,
     InstallSkin,
     Info,
+    /// A picture for the cover in File info, from `dir` on.
+    PickCover {
+        dir: Option<std::path::PathBuf>,
+    },
     ConfirmPhysicalRemove {
         paths: Vec<String>,
     },

@@ -1,10 +1,12 @@
-//! Popamp's own dialog windows: Jump to file, File info, Preferences
-//! and the Skin Museum (the Plug-ins window is in `plugins.rs`).
+//! Popamp's own dialog windows: Jump to file, Preferences and the Skin
+//! Museum (File info and Album art are in `fileinfo.rs`, the Plug-ins
+//! window in `plugins.rs`).
 //! Each is a [`Form`] plus the logic that turns its events into changes to
 //! the [`Model`]; the windows themselves live in `app.rs`.
 
 #[cfg(unix)]
 use crate::filetypes::Group;
+use crate::fileinfo::{AlbumArt, FileInfo};
 use crate::model::{Model, UiReq};
 use crate::museum::{self, Fetched, Job};
 use crate::widgets::{Event, Form, Rect, Widget, BUTTON, ROW_H};
@@ -23,6 +25,7 @@ pub enum PanelKind {
     Plugins,
     SkinMuseum,
     Gallery,
+    AlbumArt,
 }
 
 /// What a button or check box in a panel stands for.
@@ -30,6 +33,9 @@ pub enum PanelKind {
 pub enum Act {
     Ok,
     Close,
+    /// Picks a picture for the cover in File info.
+    ChangeCover,
+    RemoveCover,
     Flag(Flag),
     /// A file type check box, read on OK.
     #[cfg(unix)]
@@ -57,6 +63,7 @@ pub enum Panel {
     Plugins(crate::plugins::PluginsPanel),
     Museum(SkinMuseum),
     Gallery(crate::gallery::GalleryPanel),
+    Art(AlbumArt),
 }
 
 impl Panel {
@@ -71,6 +78,7 @@ impl Panel {
             PanelKind::Plugins => Panel::Plugins(crate::plugins::PluginsPanel::new(model)),
             PanelKind::SkinMuseum => Panel::Museum(SkinMuseum::new()),
             PanelKind::Gallery => Panel::Gallery(crate::gallery::GalleryPanel::new(model)),
+            PanelKind::AlbumArt => Panel::Art(AlbumArt::new(model)),
         }
     }
 
@@ -83,6 +91,7 @@ impl Panel {
             Panel::Plugins(_) => PanelKind::Plugins,
             Panel::Museum(_) => PanelKind::SkinMuseum,
             Panel::Gallery(_) => PanelKind::Gallery,
+            Panel::Art(_) => PanelKind::AlbumArt,
         }
     }
 
@@ -95,6 +104,7 @@ impl Panel {
             Panel::Plugins(_) => "Plug-ins",
             Panel::Museum(_) => "Winamp Skin Museum",
             Panel::Gallery(_) => "Popamp Gallery",
+            Panel::Art(_) => "Album art",
         }
     }
 
@@ -107,6 +117,7 @@ impl Panel {
             Panel::Plugins(p) => &p.form,
             Panel::Museum(p) => &p.form,
             Panel::Gallery(p) => &p.form,
+            Panel::Art(p) => &p.form,
         }
     }
 
@@ -119,6 +130,7 @@ impl Panel {
             Panel::Plugins(p) => &mut p.form,
             Panel::Museum(p) => &mut p.form,
             Panel::Gallery(p) => &mut p.form,
+            Panel::Art(p) => &mut p.form,
         }
     }
 
@@ -127,12 +139,13 @@ impl Panel {
     pub fn handle(&mut self, ev: Event<Act>, model: &mut Model) -> bool {
         match self {
             Panel::Jump(p) => p.handle(ev, model),
-            Panel::Info(_) => !matches!(ev, Event::Clicked(_) | Event::Cancel),
+            Panel::Info(p) => p.handle(ev, model),
             Panel::Prefs(p) => p.handle(ev, model),
             #[cfg(feature = "plugins")]
             Panel::Plugins(p) => p.handle(ev, model),
             Panel::Museum(p) => p.handle(ev, model),
             Panel::Gallery(p) => p.handle(ev, model),
+            Panel::Art(p) => p.handle(ev),
         }
     }
 
@@ -170,6 +183,22 @@ impl Panel {
     pub fn playlist_changed(&mut self, model: &Model) {
         if let Panel::Jump(p) = self {
             p.refilter(model);
+        }
+    }
+
+    /// The model may have moved to another track or changed tags. Returns
+    /// whether the panel needs drawing again.
+    pub fn refresh(&mut self, model: &Model) -> bool {
+        match self {
+            Panel::Art(p) => p.refresh(model),
+            _ => false,
+        }
+    }
+
+    /// The picture the user chose for a cover.
+    pub fn cover_picked(&mut self, path: &std::path::Path) {
+        if let Panel::Info(p) = self {
+            p.cover_picked(path);
         }
     }
 }
@@ -247,29 +276,6 @@ impl JumpToFile {
             Event::Clicked(_) | Event::Cancel => false,
             _ => true,
         }
-    }
-}
-
-// --- File info ------------------------------------------------------------------
-
-/// Tags and format of the selected (or playing) entry.
-pub struct FileInfo {
-    form: Form<Act>,
-}
-
-impl FileInfo {
-    fn new(model: &Model) -> FileInfo {
-        let fields = model.file_info_fields();
-        let (w, key_w) = (520, 110);
-        let mut form = Form::new(w, 10 + fields.len() as i32 * ROW_H + 12 + BUTTON.1 + 10);
-        for (n, (k, v)) in fields.into_iter().enumerate() {
-            let y = 10 + n as i32 * ROW_H;
-            form.add(Rect::new(10, y, key_w - 10, ROW_H), Widget::Label { text: k, dim: true });
-            form.add(Rect::new(key_w, y, w - key_w - 10, ROW_H), Widget::Label { text: v, dim: false });
-        }
-        let by = form.h - BUTTON.1 - 10;
-        button(&mut form, w - BUTTON.0 - 10, by, "Close", Act::Close, true);
-        FileInfo { form }
     }
 }
 

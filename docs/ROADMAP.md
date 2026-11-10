@@ -5,8 +5,6 @@ Contributions are welcome. Please open an issue first for larger items.
 
 ## 0.8: Install and set up
 
-- **Tags and art:** tag editor, and album art in the windows (the media
-  controls already show it).
 - **Skins and plug-ins as rpms** in the openSUSE Build Service, as they
   already are debs in https://apt.popamp.app.
 - **Packages checked by hand:** on a real Windows machine, what Wine cannot show:

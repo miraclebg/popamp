@@ -109,6 +109,7 @@ commands! {
     SkinMuseum = 50027,
     Plugins = 50028,
     Gallery = 50029,
+    AlbumArt = 50030,
 }
 
 #[cfg(test)]

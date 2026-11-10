@@ -1172,6 +1172,7 @@ impl App {
             K::KeyS if alt => Some(C::SkinBrowser),
             K::KeyM if alt => Some(C::Minimize),
             K::Digit3 if alt => Some(C::FileInfo),
+            K::KeyA if alt => Some(C::AlbumArt),
             K::KeyI if ctrl && alt => Some(C::RemoveBookmark),
             K::KeyI if alt && k == WindowKey::Playlist => Some(C::BookmarkSelected),
             K::KeyI if alt => Some(C::AddBookmark),
@@ -1309,6 +1310,11 @@ impl App {
         }
         if let Some(m) = &mut self.media {
             m.update(self.model.media_snapshot());
+        }
+        for i in 0..self.panels.len() {
+            if self.panels[i].panel.refresh(&self.model) {
+                self.render_panel(i);
+            }
         }
         if self.model.pl_dirty != self.seen_pl_dirty {
             self.seen_pl_dirty = self.model.pl_dirty;
@@ -1481,6 +1487,12 @@ impl ApplicationHandler<AppEvent> for App {
             }
             AppEvent::Meta(id, m) => self.model.on_meta(id, m),
             AppEvent::Expanded { items, mode } => self.model.on_expanded(items, mode),
+            AppEvent::Dialog(r) if matches!(r.kind, crate::dialogs::DialogKind::PickCover { .. }) => {
+                if let (Some(i), Some(f)) = (self.panels.iter().position(|p| p.panel.kind() == PanelKind::FileInfo), r.values.first()) {
+                    self.panels[i].panel.cover_picked(std::path::Path::new(f));
+                    self.render_panel(i);
+                }
+            }
             AppEvent::Dialog(r) => self.model.on_dialog(r),
             #[cfg(feature = "plugins")]
             AppEvent::Plugins(n, list, effects) => self.model.on_plugins(n, list, effects),

@@ -124,6 +124,23 @@ pub fn editable(path: &Path) -> bool {
     lofty::read_from_path(path).is_ok_and(|f| matches!(f.file_type(), T::Mpeg | T::Flac | T::Vorbis | T::Mp4))
 }
 
+/// The fields as lofty reads them from the file at `path`, which is what
+/// [`write`] changes: a track or disc as `3/12` when the total is there.
+pub fn read(path: &Path) -> Result<Vec<(Field, String)>, String> {
+    let file = lofty::read_from_path(path).map_err(|e| e.to_string())?;
+    let Some(tag) = file.primary_tag().or(file.first_tag()) else { return Ok(Field::ALL.iter().map(|&f| (f, String::new())).collect()) };
+    let value = |f: Field| {
+        let (key, second) = f.keys();
+        let main = tag.get_string(key).unwrap_or_default();
+        match (f, second.and_then(|k| tag.get_string(k))) {
+            (Field::Year, Some(year)) if main.is_empty() => year.to_string(),
+            (Field::Track | Field::Disc, Some(total)) if !main.is_empty() => format!("{main}/{total}"),
+            _ => main.to_string(),
+        }
+    };
+    Ok(Field::ALL.iter().map(|&f| (f, value(f))).collect())
+}
+
 /// The picture in `data` with its type, if it is a JPEG, PNG, GIF or BMP.
 pub fn picture(data: Vec<u8>) -> Option<Picture> {
     let media_type = match data.get(..4)? {
@@ -463,6 +480,23 @@ mod tests {
         write(&path, &changes).unwrap();
         let file = MpegFile::read_from(&mut std::fs::File::open(&path).unwrap(), ParseOptions::new()).unwrap();
         assert_eq!(file.id3v2().unwrap().get_user_text("custom thing"), Some("keep me"));
+    }
+
+    #[test]
+    fn what_is_written_reads_back_with_the_totals() {
+        for ext in FORMATS {
+            let path = fixture(ext, "read");
+            assert!(read(&path).unwrap().iter().all(|(_, v)| v.is_empty()), "{ext}: nothing yet");
+            let mut changes = all("y");
+            changes.fields.retain(|(f, _)| !matches!(f, Field::Track | Field::Disc));
+            changes.fields.extend([(Field::Track, "4/11".into()), (Field::Disc, "2".into())]);
+            write(&path, &changes).unwrap();
+            let back = read(&path).unwrap();
+            for (f, v) in &changes.fields {
+                assert!(back.contains(&(*f, v.clone())), "{ext}: {f:?} {back:?}");
+            }
+        }
+        assert!(read(Path::new("/nonexistent/x.mp3")).is_err());
     }
 
     #[test]
