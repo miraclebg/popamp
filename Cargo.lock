@@ -2815,11 +2815,17 @@ dependencies = [
  "image",
  "log",
  "popamp-core",
+ "popamp-skin-default",
  "resvg",
  "serde",
  "toml 1.1.8+spec-1.1.0",
  "zip",
 ]
+
+[[package]]
+name = "popamp-skin-default"
+version = "1.0.0"
+source = "git+https://github.com/popamp/popamp-skin-default?branch=main#31bd9fb7e39afedb6a01cc00c7e0fc258f61d76e"
 
 [[package]]
 name = "popamp-visual"

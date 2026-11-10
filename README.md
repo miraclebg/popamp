@@ -41,7 +41,7 @@ Linux and Windows.
 
 ### Skins
 
-| [Default](skins/default) (built in) | [Steel](https://github.com/popamp/skin-steel) | [Modern](https://github.com/popamp/skin-modern) |
+| [Default](https://github.com/popamp/popamp-skin-default) (built in) | [Steel](https://github.com/popamp/skin-steel) | [Modern](https://github.com/popamp/skin-modern) |
 |:---:|:---:|:---:|
 | <img src="assets/screenshots/default.png" width="250" alt="Popamp's default skin"> | <img src="assets/screenshots/steel.png" width="250" alt="The Steel skin"> | <img src="assets/screenshots/modern.png" width="250" alt="The Modern skin"> |
 

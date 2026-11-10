@@ -11,6 +11,7 @@ homepage.workspace = true
 
 [dependencies]
 popamp-core.workspace = true
+popamp-skin-default.workspace = true
 image.workspace = true
 zip.workspace = true
 log.workspace = true
