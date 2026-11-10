@@ -24,6 +24,7 @@ mod menu;
 mod model;
 mod museum;
 mod panels;
+mod pen;
 mod platform;
 #[cfg(feature = "plugins")]
 mod plugins;

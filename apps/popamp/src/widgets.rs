@@ -1,10 +1,11 @@
 //! A tiny set of controls for Popamp's own dialogs: labels, text fields,
 //! lists, buttons, check boxes and group frames. A [`Form`] holds them,
 //! turns mouse and keys into [`Event`]s and draws itself in the colours of
-//! the pop-up menus. Coordinates are window pixels.
+//! the pop-up menus. Coordinates are dialog pixels, as at ×1; a [`Pen`]
+//! draws them at the size of the skin's windows.
 
-use crate::font::Font;
 use crate::menu::{BG, BORDER, DIM, FONT_PX, HILITE, TEXT};
+use crate::pen::Pen;
 use popamp_skin::bitmap::mix;
 use popamp_skin::Bitmap;
 
@@ -367,22 +368,22 @@ impl<A: Copy + PartialEq> Form<A> {
         Event::Selected
     }
 
-    pub fn draw(&self, b: &mut Bitmap, font: &mut Font) {
-        b.fill(0, 0, b.w, b.h, BG);
+    pub fn draw(&self, pen: &mut Pen) {
+        pen.fill(0, 0, self.w, self.h, BG);
         for (i, (r, w)) in self.controls.iter().enumerate() {
             let focused = self.focus == Some(i);
             match w {
                 Widget::Label { text, dim } => {
-                    let t = font.fit(text, FONT_PX, r.w);
-                    font.draw(b, r.x, r.y + (r.h - FONT_PX as i32) / 2 - 1, &t, FONT_PX, if *dim { DIM } else { TEXT }, r.x, r.w);
+                    let t = pen.fit(text, r.w);
+                    pen.text(r.x, r.y + (r.h - FONT_PX as i32) / 2 - 1, &t, if *dim { DIM } else { TEXT }, r.x, r.w);
                 }
-                Widget::Input { text, cursor } => draw_input(b, font, *r, text, *cursor, focused),
-                Widget::List { rows, selected, scroll } => draw_list(b, font, *r, rows, *selected, *scroll, focused),
-                Widget::Button { label, default, .. } => draw_button(b, font, *r, label, self.pressed == Some(i), *default),
-                Widget::Check { label, checked, .. } => draw_check(b, font, *r, label, *checked),
-                Widget::Group { label } => draw_group(b, font, *r, label),
-                Widget::Image { image, note } => draw_image(b, font, *r, image.as_ref(), note),
-                Widget::Tabs { labels, selected, .. } => draw_tabs(b, font, *r, labels, *selected),
+                Widget::Input { text, cursor } => draw_input(pen, *r, text, *cursor, focused),
+                Widget::List { rows, selected, scroll } => draw_list(pen, *r, rows, *selected, *scroll, focused),
+                Widget::Button { label, default, .. } => draw_button(pen, *r, label, self.pressed == Some(i), *default),
+                Widget::Check { label, checked, .. } => draw_check(pen, *r, label, *checked),
+                Widget::Group { label } => draw_group(pen, *r, label),
+                Widget::Image { image, note } => draw_image(pen, *r, image.as_ref(), note),
+                Widget::Tabs { labels, selected, .. } => draw_tabs(pen, *r, labels, *selected),
             }
         }
     }
@@ -445,105 +446,105 @@ fn edit(text: &mut String, cursor: &mut usize, key: Key) -> bool {
     changed
 }
 
-fn sunken(b: &mut Bitmap, r: Rect, focused: bool) {
-    b.fill(r.x, r.y, r.w, r.h, FIELD_BG);
+fn sunken(pen: &mut Pen, r: Rect, focused: bool) {
+    pen.fill(r.x, r.y, r.w, r.h, FIELD_BG);
     let edge = if focused { HILITE } else { BORDER };
-    b.bevel(r.x, r.y, r.w, r.h, edge, edge);
+    pen.bevel(r.x, r.y, r.w, r.h, edge, edge);
 }
 
 fn text_y(r: Rect) -> i32 {
     r.y + (r.h - FONT_PX as i32) / 2 - 1
 }
 
-fn draw_input(b: &mut Bitmap, font: &mut Font, r: Rect, text: &str, cursor: usize, focused: bool) {
-    sunken(b, r, focused);
+fn draw_input(pen: &mut Pen, r: Rect, text: &str, cursor: usize, focused: bool) {
+    sunken(pen, r, focused);
     let (clip_x, clip_w) = (r.x + 2, r.w - 4);
     // Scroll the text left when the caret would leave the field.
     let before: String = text.chars().take(cursor).collect();
-    let caret = font.width(&before, FONT_PX);
+    let caret = pen.width(&before);
     let shift = (caret - (clip_w - 8)).max(0);
     let x = r.x + 4 - shift;
-    font.draw(b, x, text_y(r), text, FONT_PX, TEXT, clip_x, clip_w);
+    pen.text(x, text_y(r), text, TEXT, clip_x, clip_w);
     if focused {
-        b.vline(x + caret, r.y + 4, r.h - 8, TEXT);
+        pen.vline(x + caret, r.y + 4, r.h - 8, TEXT);
     }
 }
 
-fn draw_list(b: &mut Bitmap, font: &mut Font, r: Rect, rows: &[String], selected: Option<usize>, scroll: usize, focused: bool) {
-    sunken(b, r, focused);
+fn draw_list(pen: &mut Pen, r: Rect, rows: &[String], selected: Option<usize>, scroll: usize, focused: bool) {
+    sunken(pen, r, focused);
     let page = ((r.h - 4) / ROW_H) as usize;
     for (n, row) in rows.iter().enumerate().skip(scroll).take(page) {
         let y = r.y + 2 + (n - scroll) as i32 * ROW_H;
         let sel = selected == Some(n);
         if sel {
-            b.fill(r.x + 2, y, r.w - 4, ROW_H, if focused { HILITE } else { mix(HILITE, FIELD_BG, 0.5) });
+            pen.fill(r.x + 2, y, r.w - 4, ROW_H, if focused { HILITE } else { mix(HILITE, FIELD_BG, 0.5) });
         }
-        let t = font.fit(row, FONT_PX, r.w - 12);
-        font.draw(b, r.x + 5, y + (ROW_H - FONT_PX as i32) / 2 - 1, &t, FONT_PX, TEXT, r.x + 2, r.w - 4);
+        let t = pen.fit(row, r.w - 12);
+        pen.text(r.x + 5, y + (ROW_H - FONT_PX as i32) / 2 - 1, &t, TEXT, r.x + 2, r.w - 4);
     }
     // A thin bar on the right shows where the visible rows are.
     if rows.len() > page && page > 0 {
         let track = r.h - 4;
         let bar_h = (track * page as i32 / rows.len() as i32).max(10);
         let bar_y = r.y + 2 + (track - bar_h) * scroll as i32 / (rows.len() - page) as i32;
-        b.fill(r.x + r.w - 5, bar_y, 3, bar_h, BORDER);
+        pen.fill(r.x + r.w - 5, bar_y, 3, bar_h, BORDER);
     }
 }
 
-fn draw_button(b: &mut Bitmap, font: &mut Font, r: Rect, label: &str, down: bool, default: bool) {
+fn draw_button(pen: &mut Pen, r: Rect, label: &str, down: bool, default: bool) {
     let face = if down { HILITE } else { mix(BG, BORDER, 0.35) };
-    b.fill(r.x, r.y, r.w, r.h, face);
+    pen.fill(r.x, r.y, r.w, r.h, face);
     let edge = if default { mix(HILITE, TEXT, 0.3) } else { BORDER };
-    b.bevel(r.x, r.y, r.w, r.h, edge, edge);
-    let tw = font.width(label, FONT_PX);
-    font.draw(b, r.x + (r.w - tw) / 2, text_y(r), label, FONT_PX, TEXT, r.x + 2, r.w - 4);
+    pen.bevel(r.x, r.y, r.w, r.h, edge, edge);
+    let tw = pen.width(label);
+    pen.text(r.x + (r.w - tw) / 2, text_y(r), label, TEXT, r.x + 2, r.w - 4);
 }
 
-fn draw_tabs(b: &mut Bitmap, font: &mut Font, r: Rect, labels: &[String], selected: usize) {
+fn draw_tabs(pen: &mut Pen, r: Rect, labels: &[String], selected: usize) {
     let n = labels.len().max(1) as i32;
     for (k, label) in labels.iter().enumerate() {
         let (x0, x1) = (r.x + r.w * k as i32 / n, r.x + r.w * (k as i32 + 1) / n);
         let seg = Rect::new(x0, r.y, x1 - x0 + 1, r.h);
         let face = if k == selected { HILITE } else { mix(BG, BORDER, 0.35) };
-        b.fill(seg.x, seg.y, seg.w, seg.h, face);
-        b.bevel(seg.x, seg.y, seg.w, seg.h, BORDER, BORDER);
-        let t = font.fit(label, FONT_PX, seg.w - 6);
-        let tw = font.width(&t, FONT_PX);
-        font.draw(b, seg.x + (seg.w - tw) / 2, text_y(seg), &t, FONT_PX, TEXT, seg.x + 2, seg.w - 4);
+        pen.fill(seg.x, seg.y, seg.w, seg.h, face);
+        pen.bevel(seg.x, seg.y, seg.w, seg.h, BORDER, BORDER);
+        let t = pen.fit(label, seg.w - 6);
+        let tw = pen.width(&t);
+        pen.text(seg.x + (seg.w - tw) / 2, text_y(seg), &t, TEXT, seg.x + 2, seg.w - 4);
     }
 }
 
-fn draw_check(b: &mut Bitmap, font: &mut Font, r: Rect, label: &str, checked: bool) {
+fn draw_check(pen: &mut Pen, r: Rect, label: &str, checked: bool) {
     let (bx, by) = (r.x, r.y + (r.h - 13) / 2);
-    sunken(b, Rect::new(bx, by, 13, 13), false);
+    sunken(pen, Rect::new(bx, by, 13, 13), false);
     if checked {
         for k in 0..3 {
-            b.vline(bx + 3 + k, by + 5 + k, 2, TEXT);
+            pen.vline(bx + 3 + k, by + 5 + k, 2, TEXT);
         }
         for k in 0..4 {
-            b.vline(bx + 6 + k, by + 6 - k, 2, TEXT);
+            pen.vline(bx + 6 + k, by + 6 - k, 2, TEXT);
         }
     }
-    font.draw(b, r.x + 20, text_y(r), label, FONT_PX, TEXT, r.x, r.w);
+    pen.text(r.x + 20, text_y(r), label, TEXT, r.x, r.w);
 }
 
-fn draw_group(b: &mut Bitmap, font: &mut Font, r: Rect, label: &str) {
+fn draw_group(pen: &mut Pen, r: Rect, label: &str) {
     let line = mix(BORDER, BG, 0.3);
     let top = r.y + FONT_PX as i32 / 2;
-    b.bevel(r.x, top, r.w, r.h - (top - r.y), line, line);
-    let tw = font.width(label, FONT_PX);
-    b.fill(r.x + 8, r.y, tw + 6, FONT_PX as i32 + 2, BG);
-    font.draw(b, r.x + 11, r.y - 1, label, FONT_PX, DIM, r.x, r.w);
+    pen.bevel(r.x, top, r.w, r.h - (top - r.y), line, line);
+    let tw = pen.width(label);
+    pen.fill(r.x + 8, r.y, tw + 6, FONT_PX as i32 + 2, BG);
+    pen.text(r.x + 11, r.y - 1, label, DIM, r.x, r.w);
 }
 
-fn draw_image(b: &mut Bitmap, font: &mut Font, r: Rect, image: Option<&Bitmap>, note: &str) {
+fn draw_image(pen: &mut Pen, r: Rect, image: Option<&Bitmap>, note: &str) {
     match image {
-        Some(img) => b.blit(img, 0, 0, img.w.min(r.w), img.h.min(r.h), r.x + (r.w - img.w).max(0) / 2, r.y + (r.h - img.h).max(0) / 2),
+        Some(img) => pen.image(img, r),
         None => {
-            sunken(b, r, false);
-            let t = font.fit(note, FONT_PX, r.w - 8);
-            let tw = font.width(&t, FONT_PX);
-            font.draw(b, r.x + (r.w - tw) / 2, r.y + r.h / 2 - FONT_PX as i32 / 2, &t, FONT_PX, DIM, r.x, r.w);
+            sunken(pen, r, false);
+            let t = pen.fit(note, r.w - 8);
+            let tw = pen.width(&t);
+            pen.text(r.x + (r.w - tw) / 2, r.y + r.h / 2 - FONT_PX as i32 / 2, &t, DIM, r.x, r.w);
         }
     }
 }
