@@ -2,7 +2,8 @@
 # Installs Popamp from its published repositories in fresh containers,
 # the way docs/building.md tells users to, and checks what the packages
 # put on the system: the version, the files, the libraries, the skin MIME
-# type, a headless render of the windows, and a clean removal.
+# type, a headless render of the windows, the skins and plug-ins, and a
+# clean removal.
 # Usage: packaging/check-repos.sh [distro ...]   (default: all of them)
 #   distros: tumbleweed leap16 fedora43 fedora44 debian12 debian13
 #            ubuntu2204 ubuntu2404
@@ -37,7 +38,7 @@ setup() {
 zypper -n install shared-mime-info >/dev/null
 zypper -n addrepo $obs/$repo/home:GoodZon:popamp.repo
 zypper -n --gpg-auto-import-keys refresh >/dev/null
-pkg_install() { zypper -n install "\$1"; }
+pkg_install() { zypper -n install "\$@"; }
 pkg_remove() { zypper -n remove "\$1"; }
 EOF
             ;;
@@ -45,7 +46,7 @@ EOF
             cat <<EOF
 dnf -y install shared-mime-info >/dev/null
 dnf config-manager addrepo --from-repofile=$obs/Fedora_${1#fedora}/home:GoodZon:popamp.repo
-pkg_install() { dnf -y install "\$1"; }
+pkg_install() { dnf -y install "\$@"; }
 pkg_remove() { dnf -y remove "\$1"; }
 EOF
             ;;
@@ -57,7 +58,7 @@ mkdir -p /etc/apt/keyrings
 curl -fsSLo /etc/apt/keyrings/popamp.gpg https://apt.popamp.app/popamp.gpg
 curl -fsSLo /etc/apt/sources.list.d/popamp.sources https://apt.popamp.app/popamp.sources
 apt-get update -q >/dev/null
-pkg_install() { apt-get install -yq "$1"; }
+pkg_install() { apt-get install -yq "$@"; }
 pkg_remove() { apt-get purge -yq "$1"; }
 EOF
             ;;
@@ -91,8 +92,23 @@ for pkg in popamp popamp-plus; do
     pngs=0
     for f in /tmp/render/*.png; do [ -s "$f" ] && pngs=$((pngs + 1)); done
     [ "$pngs" -ge 16 ] || fail "rendered $pngs windows, not 16 or more"
+    # The skins, and with popamp-plus the plug-ins, from the same
+    # repository; removing the player takes them with it.
+    addons="popamp-skin-bar popamp-skin-modern popamp-skin-steel"
+    [ $pkg = popamp-plus ] && addons="$addons popamp-plugin-crossfeed popamp-plugin-spectrum popamp-plugin-youtube"
+    if pkg_install $addons >/tmp/addons.log 2>&1; then
+        for a in $addons; do
+            case $a in
+                popamp-skin-*) f=/usr/share/popamp/skins/${a#popamp-skin-}/skin.toml ;;
+                *) f=/usr/share/popamp/plugins/${a#popamp-plugin-}/plugin.wasm ;;
+            esac
+            [ -s "$f" ] || fail "$a: missing $f"
+        done
+    else
+        tail -20 /tmp/addons.log; fail "the add-ons do not install"
+    fi
     pkg_remove $pkg >/tmp/remove.log 2>&1 || { tail -5 /tmp/remove.log; fail "does not remove"; }
-    left=$(ls /usr/bin/popamp /usr/share/applications/popamp.desktop 2>/dev/null || true)
+    left=$(ls -d /usr/bin/popamp /usr/share/applications/popamp.desktop /usr/share/popamp 2>/dev/null || true)
     [ -z "$left" ] || fail "left after removal: $left"
     grep -q "application/x-popamp-skin" /usr/share/mime/globs2 && fail "the skin type stays in the MIME database"
     [ $bad = 1 ] || echo "ok $pkg: $version"

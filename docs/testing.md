@@ -71,8 +71,9 @@ The unit tests cover:
 published repositories in fresh containers (openSUSE Tumbleweed and Leap
 16.0, Fedora 43 and 44, Debian 12 and 13, Ubuntu 22.04 and 24.04), with
 the commands of docs/building.md, and checks the version, the installed
-files, the libraries, the skin MIME type, a `/RENDER` of the windows and
-a clean removal. All eight passed for 0.7.0 on 2026-11-10.
+files, the libraries, the skin MIME type, a `/RENDER` of the windows,
+the skins (and with popamp-plus the plug-ins) from the same repository,
+and a clean removal. All eight passed for 0.7.0 on 2026-11-10.
 
 ### Manual checks performed
 

@@ -41,7 +41,8 @@ playlist is saved to `popamp.m3u8`. A `popamp.ini` next to the program
 keeps everything in the program's folder (portable mode), and
 `/INIDIR=<dir>` uses another folder for one run.
 
-Skins and plug-ins installed as packages (`apt install popamp-skin-<name>`)
+Skins and plug-ins installed as packages (`popamp-skin-<name>` with apt,
+zypper or dnf)
 are read from the system folders and removed with the package manager.
 A skin or plug-in folder of the same name in your own folder wins over
 the packaged one. Portable mode and `/INIDIR=` read your folder only.

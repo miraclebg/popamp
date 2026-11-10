@@ -90,7 +90,7 @@ it into a folder named after its id, replacing an older version only
 once the new one is whole. On Windows, which has no packages, that is
 the way to install one. A plug-in can also be installed by cloning its repository there, like a skin
 (hidden files such as `.git` are ignored), or as a package
-(`apt install popamp-plugin-<id>`), which puts it in
+(`popamp-plugin-<id>` with apt, zypper or dnf), which puts it in
 `/usr/share/popamp/plugins/<id>/`; your own folder of the same name wins.
 A packaged plug-in, too, stays off until you allow what it asks for.
 The core ships no plug-ins.

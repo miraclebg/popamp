@@ -5,8 +5,6 @@ Contributions are welcome. Please open an issue first for larger items.
 
 ## 0.8: Install and set up
 
-- **Skins and plug-ins as rpms** in the openSUSE Build Service, as they
-  already are debs in https://apt.popamp.app.
 - **Packages checked by hand:** on a real Windows machine, what Wine cannot show:
   the bar's strip shrinking the work area, the media keys, and the
   timeline, shuffle, repeat and cover in the media overlay. The Windows

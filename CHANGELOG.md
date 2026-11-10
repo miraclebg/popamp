@@ -37,6 +37,9 @@ All notable changes to this project are documented here. The format follows
 - Album art window (`Alt+A`, main menu): the cover of the current track,
   from its tags or a cover picture beside it, updated as the track or its
   tags change.
+- rpms of the skins and plug-ins, in the openSUSE and Fedora repositories
+  next to popamp: `popamp-skin-<name>` and `popamp-plugin-<id>`, the same
+  files as their debs (`packaging/obs/publish-addons.sh`).
 
 ### Changed
 

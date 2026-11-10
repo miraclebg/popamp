@@ -142,6 +142,10 @@ sudo dnf install popamp           # or popamp-plus
 
 The first install asks you to trust the repository's signing key.
 
+The skins and plug-ins with a release are in both repositories too, as
+`popamp-skin-<name>` and `popamp-plugin-<id>` (e.g. `popamp-skin-steel`,
+`popamp-plugin-youtube`); a plug-in needs popamp-plus.
+
 The AppImage uses the system's ALSA, X11 and xkbcommon libraries, which
 nearly every desktop has. To build the packages yourself after
 `cargo build --release` (or with `--features plus` for popamp-plus;
