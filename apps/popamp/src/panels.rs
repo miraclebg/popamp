@@ -1,5 +1,5 @@
-//! Popamp's own dialog windows: Jump to file, Preferences and the Skin
-//! Museum (File info and Album art are in `fileinfo.rs`, the Plug-ins
+//! Popamp's own dialog windows: Jump to file, Preferences, the Skin
+//! browser and the Skin Museum (File info and Album art are in `fileinfo.rs`, the Plug-ins
 //! window in `plugins.rs`).
 //! Each is a [`Form`] plus the logic that turns its events into changes to
 //! the [`Model`]; the windows themselves live in `app.rs`.

@@ -6,9 +6,11 @@
   size). Classic skins stay crisp at fractional sizes. Windows dock and snap together, and
   support windowshade mode, EasyMove, always-on-top and `region.txt` shapes.
   Tooltips explain the main window's buttons.
-- **Own dialogs:** Jump to file (search as you type), File info and a
-  Preferences window (`Ctrl+P`). Opening and saving files uses the desktop's
-  dialog: `zenity` or `kdialog` on Linux, the system's own on Windows.
+- **Own dialogs:** Jump to file (search as you type), File info, the Skin
+  browser (`Alt+S`) and a Preferences window (`Ctrl+P`). They and the menus
+  grow with the windows (×1.25 to ×3), with sharp text. Opening and saving
+  files uses the desktop's dialog: `zenity` or `kdialog` on Linux, the
+  system's own on Windows.
 - **Vector skins** (`.psz`): drawn in SVG, sharp at every size, with TrueType text
   and live reload while you edit them. Popamp's default skin is one. See
   [skin-format.md](skin-format.md).

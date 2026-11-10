@@ -96,7 +96,8 @@ All playback checks ran at volume 0 through the real ALSA/PipeWire output.
   playlist drag-reorder.
 - Keyboard shortcuts.
 - The `zenity`/`kdialog` dialogs, Popamp's own dialogs (Jump to file,
-  File info, Album art, Preferences) and drag & drop.
+  File info, Album art, Skin browser, Preferences) and the menus at each
+  size, and drag & drop.
 - Saving tags of the track that is playing, on Windows.
 - Double size.
 - A skin with a `region.txt` window shape.
