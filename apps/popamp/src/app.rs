@@ -8,6 +8,7 @@ use crate::font::Fonts;
 use crate::menu::{self, Layout, MenuItem};
 use crate::model::{AddMode, AppEvent, Model, UiReq};
 use crate::panels::{Panel, PanelKind};
+use crate::pen::Pen;
 use crate::platform::{self, Mask, Platform, WindowRole};
 use crate::scale::Scale;
 use crate::skinwin::{Nav, SkinWin};
@@ -85,6 +86,9 @@ struct PanelWindow {
     surface: Surface,
     panel: Panel,
     frame: Bitmap,
+    /// The size the form is drawn at, in percent.
+    pct: i32,
+    /// The mouse, in the form's dialog pixels.
     cursor: (i32, i32),
     last_click: Option<(Instant, (i32, i32))>,
 }
@@ -539,21 +543,23 @@ impl App {
         if items.is_empty() {
             return;
         }
-        let layout = menu::layout(&items, &mut self.fonts.list);
+        let pct = self.dialog_pct();
+        let layout = menu::layout(&items, &mut self.fonts.list, pct);
+        let (w, h) = layout.screen();
         let monitor = self.win(WindowKey::Main).and_then(|w| w.window.current_monitor()).map(|m| Screen {
             x: m.position().x,
             y: m.position().y,
             w: m.size().width as i32,
             h: m.size().height as i32,
         });
-        let (x, y) = monitor.map_or(at, |m| menu_origin(at, (layout.w, layout.h), m, !sub));
+        let (x, y) = monitor.map_or(at, |m| menu_origin(at, (w, h), m, !sub));
         let attrs = platform::attributes(WindowRole::Popup)
-            .with_inner_size(PhysicalSize::new(layout.w as u32, layout.h as u32))
+            .with_inner_size(PhysicalSize::new(w as u32, h as u32))
             .with_position(PhysicalPosition::new(x, y));
         let Ok(window) = el.create_window(attrs).map(Arc::new) else { return };
         let Ok(ctx) = softbuffer::Context::new(window.clone()) else { return };
         let Ok(surface) = Surface::new(&ctx, window.clone()) else { return };
-        let frame = Bitmap::new(layout.w, layout.h, 0);
+        let frame = Bitmap::new(w, h, 0);
         self.popups.push(Popup { window, surface, items, layout, hover: None, pos: (x, y), frame });
         let i = self.popups.len() - 1;
         self.render_popup(i);
@@ -594,7 +600,8 @@ impl App {
             return;
         }
         let panel = Panel::open(kind, &self.model);
-        let (w, h) = (panel.form().w, panel.form().h);
+        let pct = self.dialog_pct();
+        let (w, h) = (crate::pen::screen(pct, panel.form().w), crate::pen::screen(pct, panel.form().h));
         // Centred on the main window's monitor, so the title bar is on screen.
         let monitor = self.win(WindowKey::Main).and_then(|m| m.window.current_monitor());
         let (cx, cy) = monitor
@@ -608,7 +615,7 @@ impl App {
         let Ok(ctx) = softbuffer::Context::new(window.clone()) else { return };
         let Ok(surface) = Surface::new(&ctx, window.clone()) else { return };
         let frame = Bitmap::new(w, h, 0);
-        self.panels.push(PanelWindow { window, surface, panel, frame, cursor: (0, 0), last_click: None });
+        self.panels.push(PanelWindow { window, surface, panel, frame, pct, cursor: (0, 0), last_click: None });
         self.panel_changed(self.panels.len() - 1);
     }
 
@@ -623,9 +630,24 @@ impl App {
         self.render_panel(i);
     }
 
+    /// The size menus, tooltips and dialogs are drawn at, in percent: that
+    /// of the skin's windows.
+    fn dialog_pct(&self) -> i32 {
+        Scale::of(self.model.settings()).pct()
+    }
+
     fn render_panel(&mut self, i: usize) {
+        let pct = self.dialog_pct();
         let Some(p) = self.panels.get_mut(i) else { return };
-        p.panel.form().draw(&mut p.frame, &mut self.fonts.list);
+        let form = p.panel.form();
+        let (w, h) = (crate::pen::screen(pct, form.w), crate::pen::screen(pct, form.h));
+        if (w, h) != (p.frame.w, p.frame.h) {
+            // The windows changed size while the dialog was open.
+            p.frame = Bitmap::new(w, h, 0);
+            p.pct = pct;
+            let _ = p.window.request_inner_size(PhysicalSize::new(w as u32, h as u32));
+        }
+        form.draw(&mut Pen::new(&mut p.frame, &mut self.fonts.list, pct));
         present_unscaled(&mut p.surface, &p.frame);
     }
 
@@ -641,7 +663,7 @@ impl App {
                 return;
             }
             WindowEvent::CursorMoved { position, .. } => {
-                p.cursor = (position.x as i32, position.y as i32);
+                p.cursor = (crate::pen::dialog(p.pct, position.x as i32), crate::pen::dialog(p.pct, position.y as i32));
                 return;
             }
             WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
@@ -738,7 +760,8 @@ impl App {
             return;
         }
         let text = tip.text.clone();
-        let frame = menu::tooltip(&text, &mut self.fonts.list);
+        let pct = self.dialog_pct();
+        let frame = menu::tooltip(&text, &mut self.fonts.list, pct);
         let (x, y) = self.cursor_screen(WindowKey::Main);
         let attrs = platform::attributes(WindowRole::Tooltip)
             .with_title(text)
@@ -756,7 +779,7 @@ impl App {
 
     fn render_tooltip(&mut self) {
         let Some(Tooltip { text, shown: Some((_, surface)), .. }) = &mut self.tip else { return };
-        let frame = menu::tooltip(text, &mut self.fonts.list);
+        let frame = menu::tooltip(text, &mut self.fonts.list, Scale::of(self.model.settings()).pct());
         present_unscaled(surface, &frame);
     }
 
@@ -771,7 +794,10 @@ impl App {
         }
         p.hover = hover;
         let sub = hover.and_then(|h| {
-            (!p.items[h].sub.is_empty()).then(|| (p.items[h].sub.clone(), p.pos.0 + p.layout.w - 3, p.pos.1 + p.layout.rows[h].0 - 3))
+            (!p.items[h].sub.is_empty()).then(|| {
+                let at = |n: i32| crate::pen::screen(p.layout.pct, n);
+                (p.items[h].sub.clone(), p.pos.0 + at(p.layout.w - 3), p.pos.1 + at(p.layout.rows[h].0 - 3))
+            })
         });
         self.close_popups_from(level + 1);
         self.render_popup(level);

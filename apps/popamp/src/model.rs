@@ -833,16 +833,6 @@ impl Model {
                 Request::Files { title: "Load EQ preset file".into(), multiple: false, filter: vec!["*.eqf".into(), "*.q1".into()], start }
             }
             DialogKind::EqExport => Request::Save { title: "Save EQ preset file".into(), name: "preset.eqf".into(), start },
-            DialogKind::Skin => {
-                let mut rows = vec!["<Popamp Default>".to_string()];
-                rows.extend(
-                    popamp_skin::list_skins(&self.paths.skins_dirs())
-                        .iter()
-                        .map(|p| p.file_name().unwrap_or_default().to_string_lossy().into_owned()),
-                );
-                rows.push("<Install skin from file…>".into());
-                Request::List { title: "Skin browser".into(), column: "Skin".into(), rows }
-            }
             DialogKind::InstallSkin => Request::Files {
                 title: "Install skin".into(),
                 multiple: false,
@@ -1020,15 +1010,6 @@ impl Model {
                     }
                 }
             }
-            DialogKind::Skin => {
-                let skins = popamp_skin::list_skins(&self.paths.skins_dirs());
-                match first.and_then(|s| s.trim().parse::<usize>().ok()) {
-                    Some(0) => self.set_skin(None),
-                    Some(i) if i <= skins.len() => self.set_skin(Some(skins[i - 1].clone())),
-                    Some(_) => self.request_dialog(DialogKind::InstallSkin),
-                    None => {}
-                }
-            }
             DialogKind::InstallSkin => {
                 if let Some(f) = first {
                     self.install_skin(Path::new(&f));
@@ -1160,7 +1141,7 @@ impl Model {
                     self.request_dialog(DialogKind::EditEntry { id });
                 }
             }
-            C::SkinBrowser => self.request_dialog(DialogKind::Skin),
+            C::SkinBrowser => self.ui.push(UiReq::Panel(PanelKind::SkinBrowser)),
             C::SkinMuseum => self.ui.push(UiReq::Panel(PanelKind::SkinMuseum)),
             C::Gallery => self.ui.push(UiReq::Panel(PanelKind::Gallery)),
             C::AlbumArt => self.ui.push(UiReq::Panel(PanelKind::AlbumArt)),

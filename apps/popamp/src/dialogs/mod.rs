@@ -44,7 +44,6 @@ pub enum DialogKind {
     RemoveBookmark,
     EqImport,
     EqExport,
-    Skin,
     InstallSkin,
     Info,
     /// A picture for the cover in File info, from `dir` on.

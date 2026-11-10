@@ -4,6 +4,7 @@
 use crate::dialogs::DialogKind;
 use crate::model::Model;
 use crate::panels::{button, Act};
+use crate::pen::largest;
 use crate::widgets::{fit, Event, Form, Rect, Widget, BUTTON, ROW_H};
 use popamp_audio::cover::{self, Cover};
 use popamp_audio::tags::{self, Changes, CoverChange, Field};
@@ -148,7 +149,7 @@ impl FileInfo {
         let picture = std::fs::read(path).ok().and_then(tags::picture);
         match picture.as_ref().and_then(|p| Bitmap::decode(&p.data).ok()) {
             Some(img) => {
-                self.form.set_image(ed.cover, Some(fit(&img, COVER, COVER)), "");
+                self.form.set_image(ed.cover, Some(fit(&img, largest(COVER), largest(COVER))), "");
                 self.form.set_label(ed.status, String::new());
                 ed.change = CoverChange::Set(picture.expect("decoded"));
             }
@@ -162,7 +163,7 @@ impl FileInfo {
         let Some(ed) = &mut self.edit else { return };
         ed.change = CoverChange::Remove;
         let beside = cover::beside(&ed.path).and_then(|p| decode_file(&p));
-        self.form.set_image(ed.cover, beside.map(|b| fit(&b, COVER, COVER)), "No cover");
+        self.form.set_image(ed.cover, beside.map(|b| fit(&b, largest(COVER), largest(COVER))), "No cover");
     }
 }
 
@@ -210,7 +211,7 @@ fn labels<'a>(form: &mut Form<Act>, mut y: i32, rows: impl Iterator<Item = &'a (
 
 /// The cover of the track at `path`, sized for the File info window.
 fn shown(path: &Path) -> Option<Bitmap> {
-    cover_of(path).map(|b| fit(&b, COVER, COVER))
+    cover_of(path).map(|b| fit(&b, largest(COVER), largest(COVER)))
 }
 
 /// The cover of the track at `path`: in its tags, else a file beside it.
@@ -255,7 +256,7 @@ impl AlbumArt {
         }
         let image = now.as_ref().filter(|(l, _)| !is_url(l)).and_then(|(l, _)| cover_of(Path::new(l)));
         let note = if now.is_some() { "No cover" } else { "Nothing to play" };
-        self.form.set_image(self.image, image.map(|b| fit(&b, ART, ART)), note);
+        self.form.set_image(self.image, image.map(|b| fit(&b, largest(ART), largest(ART))), note);
         self.shown = now;
         true
     }
@@ -268,6 +269,7 @@ impl AlbumArt {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::panels::tests::click_button as click;
     use crate::panels::{Panel, PanelKind};
     use crate::widgets::Key;
     use popamp_core::plformats::Item;
@@ -309,14 +311,6 @@ mod tests {
 
     fn press(p: &mut Panel, m: &mut Model, key: Key) -> bool {
         let ev = p.form_mut().key(key);
-        p.handle(ev, m)
-    }
-
-    fn click(p: &mut Panel, m: &mut Model, act: Act) -> bool {
-        let i = (0..).find(|&i| matches!(p.form().widget(i), Widget::Button { action, .. } if *action == act)).unwrap();
-        let r = p.form().rect(i);
-        p.form_mut().mouse_down(r.x + 2, r.y + 2, false);
-        let ev = p.form_mut().mouse_up(r.x + 2, r.y + 2);
         p.handle(ev, m)
     }
 
@@ -380,7 +374,7 @@ mod tests {
     fn a_picked_picture_becomes_the_cover_and_remove_takes_it() {
         let (mut m, path) = track("m4a", "cover");
         let png = path.with_file_name("art.png");
-        Bitmap::new(400, 200, 0xff00_80ff).save_png(&png).unwrap();
+        Bitmap::new(1200, 600, 0xff00_80ff).save_png(&png).unwrap();
         let mut p = Panel::open(PanelKind::FileInfo, &m);
         assert!(click(&mut p, &mut m, Act::ChangeCover), "asks for a picture");
         let not = path.with_file_name("notes.txt");
@@ -390,7 +384,7 @@ mod tests {
         p.cover_picked(&png);
         assert_eq!(status(&p), "");
         let Widget::Image { image: Some(shown), .. } = p.form().widget(editor(&p).cover) else { panic!("no preview") };
-        assert_eq!((shown.w, shown.h), (COVER, COVER / 2), "fitted");
+        assert_eq!((shown.w, shown.h), (3 * COVER, 3 * COVER / 2), "fitted to the cover at ×3");
         assert!(!click(&mut p, &mut m, Act::Ok));
         assert_eq!(cover::tagged(&path).map(|c| c.data.to_vec()), Some(std::fs::read(&png).unwrap()));
         let mut p = Panel::open(PanelKind::FileInfo, &m);
@@ -434,10 +428,10 @@ mod tests {
         assert!(art.refresh(&m));
         assert_eq!(shows(&art), (None, "No cover".into()));
         assert!(!art.refresh(&m), "nothing new");
-        Bitmap::new(600, 600, 0xffff_0000).save_png(&png).unwrap();
+        Bitmap::new(1000, 1000, 0xffff_0000).save_png(&png).unwrap();
         m.tags_changed(&path.to_string_lossy());
         assert!(art.refresh(&m));
-        assert_eq!(shows(&art).0, Some((ART, ART)), "a cover file beside it, fitted");
+        assert_eq!(shows(&art).0, Some((3 * ART, 3 * ART)), "a cover file beside it, fitted to the window at ×3");
         assert!(art.handle(Event::None) && !art.handle(Event::Cancel));
     }
 }

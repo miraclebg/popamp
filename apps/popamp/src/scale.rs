@@ -39,6 +39,11 @@ impl Scale {
         (p * 100 + self.pct - 1).div_euclid(self.pct)
     }
 
+    /// Screen pixels per 100 skin pixels.
+    pub fn pct(self) -> i32 {
+        self.pct
+    }
+
     pub fn is_one(self) -> bool {
         self.pct == 100
     }

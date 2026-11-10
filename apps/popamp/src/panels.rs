@@ -1,5 +1,5 @@
-//! Popamp's own dialog windows: Jump to file, Preferences and the Skin
-//! Museum (File info and Album art are in `fileinfo.rs`, the Plug-ins
+//! Popamp's own dialog windows: Jump to file, Preferences, the Skin
+//! browser and the Skin Museum (File info and Album art are in `fileinfo.rs`, the Plug-ins
 //! window in `plugins.rs`).
 //! Each is a [`Form`] plus the logic that turns its events into changes to
 //! the [`Model`]; the windows themselves live in `app.rs`.
@@ -26,6 +26,7 @@ pub enum PanelKind {
     SkinMuseum,
     Gallery,
     AlbumArt,
+    SkinBrowser,
 }
 
 /// What a button or check box in a panel stands for.
@@ -45,6 +46,10 @@ pub enum Act {
     DefaultApps,
     Search,
     More,
+    /// Asks for a skin file to install.
+    InstallSkin,
+    /// Opens the Gallery.
+    Gallery,
     /// The check box of the n-th plug-in.
     #[cfg(feature = "plugins")]
     Plugin(usize),
@@ -64,6 +69,7 @@ pub enum Panel {
     Museum(SkinMuseum),
     Gallery(crate::gallery::GalleryPanel),
     Art(AlbumArt),
+    Skins(SkinBrowser),
 }
 
 impl Panel {
@@ -79,6 +85,7 @@ impl Panel {
             PanelKind::SkinMuseum => Panel::Museum(SkinMuseum::new()),
             PanelKind::Gallery => Panel::Gallery(crate::gallery::GalleryPanel::new(model)),
             PanelKind::AlbumArt => Panel::Art(AlbumArt::new(model)),
+            PanelKind::SkinBrowser => Panel::Skins(SkinBrowser::new(model)),
         }
     }
 
@@ -92,6 +99,7 @@ impl Panel {
             Panel::Museum(_) => PanelKind::SkinMuseum,
             Panel::Gallery(_) => PanelKind::Gallery,
             Panel::Art(_) => PanelKind::AlbumArt,
+            Panel::Skins(_) => PanelKind::SkinBrowser,
         }
     }
 
@@ -105,6 +113,7 @@ impl Panel {
             Panel::Museum(_) => "Winamp Skin Museum",
             Panel::Gallery(_) => "Popamp Gallery",
             Panel::Art(_) => "Album art",
+            Panel::Skins(_) => "Skin browser",
         }
     }
 
@@ -118,6 +127,7 @@ impl Panel {
             Panel::Museum(p) => &p.form,
             Panel::Gallery(p) => &p.form,
             Panel::Art(p) => &p.form,
+            Panel::Skins(p) => &p.form,
         }
     }
 
@@ -131,6 +141,7 @@ impl Panel {
             Panel::Museum(p) => &mut p.form,
             Panel::Gallery(p) => &mut p.form,
             Panel::Art(p) => &mut p.form,
+            Panel::Skins(p) => &mut p.form,
         }
     }
 
@@ -146,6 +157,7 @@ impl Panel {
             Panel::Museum(p) => p.handle(ev, model),
             Panel::Gallery(p) => p.handle(ev, model),
             Panel::Art(p) => p.handle(ev),
+            Panel::Skins(p) => p.handle(ev, model),
         }
     }
 
@@ -191,6 +203,7 @@ impl Panel {
     pub fn refresh(&mut self, model: &Model) -> bool {
         match self {
             Panel::Art(p) => p.refresh(model),
+            Panel::Skins(p) => p.refresh(model),
             _ => false,
         }
     }
@@ -584,6 +597,78 @@ impl Preferences {
     }
 }
 
+// --- Skin browser --------------------------------------------------------------
+
+/// The installed skins; picking one puts it on at once.
+pub struct SkinBrowser {
+    form: Form<Act>,
+    list: usize,
+    /// The skin of each row after the first, the built-in one.
+    skins: Vec<std::path::PathBuf>,
+    /// The skin on when the rows were made.
+    current: Option<std::path::PathBuf>,
+}
+
+impl SkinBrowser {
+    fn new(model: &Model) -> SkinBrowser {
+        let (w, list_h) = (380, 4 + 16 * ROW_H);
+        let mut form = Form::new(w, 10 + list_h + 10 + BUTTON.1 + 10);
+        let list = form.add(Rect::new(10, 10, w - 20, list_h), Widget::List { rows: vec![], selected: None, scroll: 0 });
+        let by = 10 + list_h + 10;
+        form.add(
+            Rect::new(10, by, 120, BUTTON.1),
+            Widget::Button { label: "Install from file…".into(), action: Act::InstallSkin, default: false },
+        );
+        form.add(Rect::new(136, by, BUTTON.0, BUTTON.1), Widget::Button { label: "Gallery…".into(), action: Act::Gallery, default: false });
+        button(&mut form, w - BUTTON.0 - 10, by, "Close", Act::Close, true);
+        let mut p = SkinBrowser { form, list, skins: vec![], current: None };
+        p.relist(model);
+        p
+    }
+
+    /// Lists the skins installed now, with the one on selected.
+    fn relist(&mut self, model: &Model) {
+        self.skins = popamp_skin::list_skins(&model.paths.skins_dirs());
+        self.current = model.skin_path.clone();
+        let names = self.skins.iter().map(|p| p.file_name().unwrap_or_default().to_string_lossy().into_owned());
+        let rows = std::iter::once("Popamp Default".to_string()).chain(names).collect();
+        let on = self.current.as_ref().and_then(|c| self.skins.iter().position(|s| s == c)).map_or(0, |i| i + 1);
+        self.form.set_rows(self.list, rows, Some(on));
+    }
+
+    /// A skin installed or put on elsewhere shows here too.
+    fn refresh(&mut self, model: &Model) -> bool {
+        if model.skin_path == self.current {
+            return false;
+        }
+        self.relist(model);
+        true
+    }
+
+    fn handle(&mut self, ev: Event<Act>, model: &mut Model) -> bool {
+        match ev {
+            Event::Selected => {
+                let skin = self.form.selected(self.list).and_then(|r| r.checked_sub(1)).and_then(|i| self.skins.get(i).cloned());
+                if skin != model.skin_path {
+                    model.set_skin(skin);
+                }
+                self.current = model.skin_path.clone();
+                true
+            }
+            Event::Clicked(Act::InstallSkin) => {
+                model.request_dialog(crate::dialogs::DialogKind::InstallSkin);
+                true
+            }
+            Event::Clicked(Act::Gallery) => {
+                model.exec(Command::Gallery);
+                true
+            }
+            Event::Activated | Event::Clicked(_) | Event::Cancel => false,
+            _ => true,
+        }
+    }
+}
+
 // --- Skin Museum -----------------------------------------------------------------
 
 /// Browse and search skins.webamp.org, preview one, download and use it.
@@ -788,6 +873,68 @@ pub(crate) mod tests {
             Widget::List { rows, .. } => rows.clone(),
             _ => unreachable!(),
         }
+    }
+
+    fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for e in std::fs::read_dir(from).unwrap().flatten() {
+            if e.path().is_dir() {
+                copy_dir(&e.path(), &to.join(e.file_name()));
+            } else {
+                std::fs::copy(e.path(), to.join(e.file_name())).unwrap();
+            }
+        }
+    }
+
+    /// Clicks the button for `act`.
+    pub(crate) fn click_button(p: &mut Panel, m: &mut Model, act: Act) -> bool {
+        let i = (0..).find(|&i| matches!(p.form().widget(i), Widget::Button { action, .. } if *action == act)).unwrap();
+        let r = p.form().rect(i);
+        p.form_mut().mouse_down(r.x + 2, r.y + 2, false);
+        let ev = p.form_mut().mouse_up(r.x + 2, r.y + 2);
+        p.handle(ev, m)
+    }
+
+    #[test]
+    fn the_skin_browser_puts_on_the_skin_picked_and_follows_new_ones() {
+        let mut m = Model::for_tests();
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/popamp-skin/tests/fixtures");
+        let dir = m.paths.skins_dir();
+        copy_dir(&fixtures.join("fonts-shade"), &dir.join("fonts-shade"));
+        let mut p = Panel::open(PanelKind::SkinBrowser, &m);
+        let Panel::Skins(b) = &p else { panic!("not the skin browser") };
+        let (rows, selected) = match b.form.widget(b.list) {
+            Widget::List { rows, selected, .. } => (rows.clone(), *selected),
+            _ => unreachable!(),
+        };
+        assert_eq!(rows[0], "Popamp Default");
+        assert_eq!(selected, Some(0), "the built-in skin is on");
+        let at = rows.iter().position(|r| r == "fonts-shade").expect("the installed skin is listed");
+        for _ in 0..at {
+            assert!(press(&mut p, &mut m, Key::Down));
+        }
+        assert_eq!(m.skin_path, Some(dir.join("fonts-shade")), "on at once");
+        assert!(press(&mut p, &mut m, Key::PageUp));
+        assert_eq!(m.skin_path, None, "back to the built-in one");
+
+        copy_dir(&fixtures.join("shaped"), &dir.join("shaped"));
+        m.set_skin(Some(dir.join("shaped")));
+        assert!(p.refresh(&m), "a skin put on elsewhere");
+        let Panel::Skins(b) = &p else { unreachable!() };
+        let Widget::List { rows, selected, .. } = b.form.widget(b.list) else { unreachable!() };
+        assert_eq!(selected.map(|i| rows[i].as_str()), Some("shaped"));
+        assert!(!p.refresh(&m), "nothing new");
+    }
+
+    #[test]
+    fn the_skin_browser_installs_from_a_file_or_the_gallery() {
+        let mut m = Model::for_tests();
+        let mut p = Panel::open(PanelKind::SkinBrowser, &m);
+        assert!(click_button(&mut p, &mut m, Act::InstallSkin));
+        assert!(matches!(m.ui.last(), Some(UiReq::Dialog(crate::dialogs::DialogKind::InstallSkin, _))));
+        assert!(click_button(&mut p, &mut m, Act::Gallery));
+        assert!(matches!(m.ui.last(), Some(UiReq::Panel(PanelKind::Gallery))));
+        assert!(!press(&mut p, &mut m, Key::Escape));
     }
 
     #[test]

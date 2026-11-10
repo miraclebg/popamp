@@ -5,6 +5,7 @@
 
 use crate::model::{AppEvent, Events, Model};
 use crate::panels::{button, Act};
+use crate::pen::largest;
 use crate::widgets::{fit, Event, Form, Rect, Widget, BUTTON, ROW_H};
 use popamp_audio::stream::fetch_bytes;
 use popamp_skin::Bitmap;
@@ -238,7 +239,9 @@ fn run(job: Job, proxy: &str) -> Fetched {
                 .and_then(|v| parse_catalog(&v)),
         ),
         Job::Preview { id, url } => {
-            let result = fetch_bytes(&url, proxy, MAX_PREVIEW).and_then(|b| Bitmap::decode(&b)).map(|b| fit(&b, PREVIEW.0, PREVIEW.1));
+            let result = fetch_bytes(&url, proxy, MAX_PREVIEW)
+                .and_then(|b| Bitmap::decode(&b))
+                .map(|b| fit(&b, largest(PREVIEW.0), largest(PREVIEW.1)));
             Fetched::Preview { id, result }
         }
         Job::Install { item, dir } => {
