@@ -90,8 +90,15 @@ the other.
 
 The installer asks whether to install for you alone or for all users,
 adds Popamp to the Start menu, opens `.wsz` and `.psz` skins with it and
-puts it in "Open with" for audio files and playlists. Settings and skins
+puts it in "Open with" for audio files and playlists, and in Settings >
+Default apps, where you can make it the player for them (Preferences has
+a button that opens that page). Settings and skins
 live in `%APPDATA%\popamp` and stay there when Popamp is uninstalled.
+
+On Linux, "Open with Popamp" in Preferences makes it the default player
+for audio files, playlists or skins, the way `xdg-mime default` does. An
+AppImage or a build of your own gets a desktop entry in
+`~/.local/share/applications` for that.
 
 The portable zip has an empty `popamp.ini` next to `popamp.exe`, which
 keeps the settings and skins in that folder instead, for a copy on a USB
@@ -134,6 +141,10 @@ sudo dnf install popamp           # or popamp-plus
 ```
 
 The first install asks you to trust the repository's signing key.
+
+The skins and plug-ins with a release are in both repositories too, as
+`popamp-skin-<name>` and `popamp-plugin-<id>` (e.g. `popamp-skin-steel`,
+`popamp-plugin-youtube`); a plug-in needs popamp-plus.
 
 The AppImage uses the system's ALSA, X11 and xkbcommon libraries, which
 nearly every desktop has. To build the packages yourself after

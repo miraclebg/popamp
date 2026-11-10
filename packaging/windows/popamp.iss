@@ -106,5 +106,36 @@ Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; Va
 Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".wsz"; ValueData: ""
 Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".psz"; ValueData: ""
 
+; Popamp in Settings > Default apps, where the user can make it the
+; player for each type.
+Root: HKA; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "Popamp"; ValueData: "Software\Popamp\Capabilities"; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Popamp"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Popamp\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "{#Title}"
+Root: HKA; Subkey: "Software\Popamp\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "Skinnable audio player"
+Root: HKA; Subkey: "Software\Popamp\Capabilities"; ValueType: string; ValueName: "ApplicationIcon"; ValueData: "{app}\popamp.exe,0"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mp3"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mp2"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mp1"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".aac"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".m4a"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".m4b"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".alac"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".flac"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".ogg"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".oga"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".wav"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".wave"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".aif"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".aiff"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".aifc"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".caf"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mka"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".m3u"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".m3u8"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".pls"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".xspf"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".wsz"; ValueData: "Popamp.Skin"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".psz"; ValueData: "Popamp.Skin"
+
 [Run]
 Filename: "{app}\popamp.exe"; Description: "{cm:LaunchProgram,{#Title}}"; Flags: nowait postinstall skipifsilent

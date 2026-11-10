@@ -11,7 +11,10 @@ mod canvas;
 mod cli;
 mod dialogs;
 mod edition;
+mod fileinfo;
+mod filetypes;
 mod font;
+mod gallery;
 mod headless;
 mod ipc;
 #[cfg(feature = "visualizers")]

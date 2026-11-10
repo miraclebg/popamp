@@ -1,11 +1,16 @@
-//! Popamp's own dialog windows: Jump to file, File info, Preferences
-//! and the Skin Museum (the Plug-ins window is in `plugins.rs`).
+//! Popamp's own dialog windows: Jump to file, Preferences and the Skin
+//! Museum (File info and Album art are in `fileinfo.rs`, the Plug-ins
+//! window in `plugins.rs`).
 //! Each is a [`Form`] plus the logic that turns its events into changes to
 //! the [`Model`]; the windows themselves live in `app.rs`.
 
+use crate::fileinfo::{AlbumArt, FileInfo};
+#[cfg(unix)]
+use crate::filetypes::Group;
 use crate::model::{Model, UiReq};
 use crate::museum::{self, Fetched, Job};
 use crate::widgets::{Event, Form, Rect, Widget, BUTTON, ROW_H};
+use popamp_audio::output::Device;
 use popamp_core::config::Settings;
 use popamp_core::Command;
 use popamp_skin::Bitmap;
@@ -19,6 +24,8 @@ pub enum PanelKind {
     #[cfg(feature = "plugins")]
     Plugins,
     SkinMuseum,
+    Gallery,
+    AlbumArt,
 }
 
 /// What a button or check box in a panel stands for.
@@ -26,7 +33,16 @@ pub enum PanelKind {
 pub enum Act {
     Ok,
     Close,
+    /// Picks a picture for the cover in File info.
+    ChangeCover,
+    RemoveCover,
     Flag(Flag),
+    /// A file type check box, read on OK.
+    #[cfg(unix)]
+    FileType,
+    /// Opens the system's default apps.
+    #[cfg(windows)]
+    DefaultApps,
     Search,
     More,
     /// The check box of the n-th plug-in.
@@ -46,6 +62,8 @@ pub enum Panel {
     #[cfg(feature = "plugins")]
     Plugins(crate::plugins::PluginsPanel),
     Museum(SkinMuseum),
+    Gallery(crate::gallery::GalleryPanel),
+    Art(AlbumArt),
 }
 
 impl Panel {
@@ -53,10 +71,14 @@ impl Panel {
         match kind {
             PanelKind::JumpToFile => Panel::Jump(JumpToFile::new(model)),
             PanelKind::FileInfo => Panel::Info(FileInfo::new(model)),
-            PanelKind::Preferences => Panel::Prefs(Preferences::new(model.settings())),
+            PanelKind::Preferences => {
+                Panel::Prefs(Preferences::new(model.settings(), popamp_audio::output::devices(), FileTypes::from_env()))
+            }
             #[cfg(feature = "plugins")]
             PanelKind::Plugins => Panel::Plugins(crate::plugins::PluginsPanel::new(model)),
             PanelKind::SkinMuseum => Panel::Museum(SkinMuseum::new()),
+            PanelKind::Gallery => Panel::Gallery(crate::gallery::GalleryPanel::new(model)),
+            PanelKind::AlbumArt => Panel::Art(AlbumArt::new(model)),
         }
     }
 
@@ -68,6 +90,8 @@ impl Panel {
             #[cfg(feature = "plugins")]
             Panel::Plugins(_) => PanelKind::Plugins,
             Panel::Museum(_) => PanelKind::SkinMuseum,
+            Panel::Gallery(_) => PanelKind::Gallery,
+            Panel::Art(_) => PanelKind::AlbumArt,
         }
     }
 
@@ -79,6 +103,8 @@ impl Panel {
             #[cfg(feature = "plugins")]
             Panel::Plugins(_) => "Plug-ins",
             Panel::Museum(_) => "Winamp Skin Museum",
+            Panel::Gallery(_) => "Popamp Gallery",
+            Panel::Art(_) => "Album art",
         }
     }
 
@@ -90,6 +116,8 @@ impl Panel {
             #[cfg(feature = "plugins")]
             Panel::Plugins(p) => &p.form,
             Panel::Museum(p) => &p.form,
+            Panel::Gallery(p) => &p.form,
+            Panel::Art(p) => &p.form,
         }
     }
 
@@ -101,6 +129,8 @@ impl Panel {
             #[cfg(feature = "plugins")]
             Panel::Plugins(p) => &mut p.form,
             Panel::Museum(p) => &mut p.form,
+            Panel::Gallery(p) => &mut p.form,
+            Panel::Art(p) => &mut p.form,
         }
     }
 
@@ -109,11 +139,13 @@ impl Panel {
     pub fn handle(&mut self, ev: Event<Act>, model: &mut Model) -> bool {
         match self {
             Panel::Jump(p) => p.handle(ev, model),
-            Panel::Info(_) => !matches!(ev, Event::Clicked(_) | Event::Cancel),
+            Panel::Info(p) => p.handle(ev, model),
             Panel::Prefs(p) => p.handle(ev, model),
             #[cfg(feature = "plugins")]
             Panel::Plugins(p) => p.handle(ev, model),
             Panel::Museum(p) => p.handle(ev, model),
+            Panel::Gallery(p) => p.handle(ev, model),
+            Panel::Art(p) => p.handle(ev),
         }
     }
 
@@ -122,6 +154,21 @@ impl Panel {
         match self {
             Panel::Museum(p) => std::mem::take(&mut p.jobs),
             _ => Vec::new(),
+        }
+    }
+
+    /// Gallery work the panel asked for since the last call.
+    pub fn take_gallery_jobs(&mut self) -> Vec<crate::gallery::Job> {
+        match self {
+            Panel::Gallery(p) => std::mem::take(&mut p.jobs),
+            _ => Vec::new(),
+        }
+    }
+
+    /// A gallery job finished.
+    pub fn gallery_fetched(&mut self, f: crate::gallery::Fetched, model: &mut Model) {
+        if let Panel::Gallery(p) = self {
+            p.fetched(f, model);
         }
     }
 
@@ -136,6 +183,22 @@ impl Panel {
     pub fn playlist_changed(&mut self, model: &Model) {
         if let Panel::Jump(p) = self {
             p.refilter(model);
+        }
+    }
+
+    /// The model may have moved to another track or changed tags. Returns
+    /// whether the panel needs drawing again.
+    pub fn refresh(&mut self, model: &Model) -> bool {
+        match self {
+            Panel::Art(p) => p.refresh(model),
+            _ => false,
+        }
+    }
+
+    /// The picture the user chose for a cover.
+    pub fn cover_picked(&mut self, path: &std::path::Path) {
+        if let Panel::Info(p) = self {
+            p.cover_picked(path);
         }
     }
 }
@@ -213,29 +276,6 @@ impl JumpToFile {
             Event::Clicked(_) | Event::Cancel => false,
             _ => true,
         }
-    }
-}
-
-// --- File info ------------------------------------------------------------------
-
-/// Tags and format of the selected (or playing) entry.
-pub struct FileInfo {
-    form: Form<Act>,
-}
-
-impl FileInfo {
-    fn new(model: &Model) -> FileInfo {
-        let fields = model.file_info_fields();
-        let (w, key_w) = (520, 110);
-        let mut form = Form::new(w, 10 + fields.len() as i32 * ROW_H + 12 + BUTTON.1 + 10);
-        for (n, (k, v)) in fields.into_iter().enumerate() {
-            let y = 10 + n as i32 * ROW_H;
-            form.add(Rect::new(10, y, key_w - 10, ROW_H), Widget::Label { text: k, dim: true });
-            form.add(Rect::new(key_w, y, w - key_w - 10, ROW_H), Widget::Label { text: v, dim: false });
-        }
-        let by = form.h - BUTTON.1 - 10;
-        button(&mut form, w - BUTTON.0 - 10, by, "Close", Act::Close, true);
-        FileInfo { form }
     }
 }
 
@@ -391,14 +431,38 @@ impl Field {
     }
 }
 
+#[cfg(unix)]
+type FileTypes = crate::filetypes::Desktop;
+/// Windows keeps the choice to itself.
+#[cfg(windows)]
+struct FileTypes;
+#[cfg(windows)]
+impl FileTypes {
+    fn from_env() -> FileTypes {
+        FileTypes
+    }
+}
+
 pub struct Preferences {
     form: Form<Act>,
+    /// Where the default players are chosen, and the check box of each
+    /// group in [`Group::ALL`] order.
+    #[cfg_attr(windows, allow(dead_code))]
+    file_types: FileTypes,
+    #[cfg(unix)]
+    type_checks: [usize; 3],
     fields: Vec<(Field, usize)>,
+    /// The devices to play on, and the list that shows them.
+    devices: Vec<Device>,
+    device_list: usize,
     status: usize,
 }
 
+/// Rows the device list shows at once.
+const DEVICE_ROWS: i32 = 4;
+
 impl Preferences {
-    fn new(s: &Settings) -> Preferences {
+    fn new(s: &Settings, mut devices: Vec<Device>, file_types: FileTypes) -> Preferences {
         let w = 480;
         let mut form = Form::new(w, 0);
         let mut y = 10;
@@ -414,6 +478,26 @@ impl Preferences {
             }
             y += 30 + rows * 22;
         }
+        form.add(Rect::new(10, y, w - 20, 44), Widget::Group { label: "Open with Popamp".into() });
+        #[cfg(unix)]
+        let type_checks = {
+            let on = file_types.defaults();
+            let third = (w - 44) / 3;
+            std::array::from_fn(|n| {
+                let label = Group::ALL[n].label().into();
+                form.add(
+                    Rect::new(22 + n as i32 * third, y + 20, third - 8, 20),
+                    Widget::Check { label, checked: on[n], action: Act::FileType },
+                )
+            })
+        };
+        #[cfg(windows)]
+        {
+            let note = "Windows lets you choose the default player in its Settings.".into();
+            form.add(Rect::new(22, y + 18, w - BUTTON.0 - 54, 24), Widget::Label { text: note, dim: false });
+            button(&mut form, w - BUTTON.0 - 22, y + 16, "Default apps", Act::DefaultApps, false);
+        }
+        y += 52;
         let mut fields = Vec::new();
         for f in Field::ALL {
             form.add(Rect::new(14, y, 136, 24), Widget::Label { text: f.label().into(), dim: false });
@@ -422,12 +506,31 @@ impl Preferences {
             fields.push((f, form.add(Rect::new(150, y, w - 160, 24), Widget::Input { text, cursor })));
             y += 30;
         }
+        if !devices.iter().any(|d| d.name == s.output_device) {
+            // Unplugged, or typed into the settings file: kept until changed.
+            devices.push(Device { label: format!("{} (not found)", s.output_device), name: s.output_device.clone() });
+        }
+        let current = devices.iter().position(|d| d.name == s.output_device);
+        form.add(Rect::new(14, y, 136, 24), Widget::Label { text: "Output device".into(), dim: false });
+        let device_list =
+            form.add(Rect::new(150, y, w - 160, DEVICE_ROWS * ROW_H + 4), Widget::List { rows: vec![], selected: None, scroll: 0 });
+        form.set_rows(device_list, devices.iter().map(|d| d.label.clone()).collect(), current);
+        y += DEVICE_ROWS * ROW_H + 10;
         y += 6;
         let status = form.add(Rect::new(10, y, w - 2 * BUTTON.0 - 36, BUTTON.1), Widget::Label { text: String::new(), dim: false });
         button(&mut form, w - 2 * BUTTON.0 - 16, y, "OK", Act::Ok, true);
         button(&mut form, w - BUTTON.0 - 10, y, "Cancel", Act::Close, false);
         form.h = y + BUTTON.1 + 10;
-        Preferences { form, fields, status }
+        Preferences {
+            form,
+            file_types,
+            #[cfg(unix)]
+            type_checks,
+            fields,
+            devices,
+            device_list,
+            status,
+        }
     }
 
     fn handle(&mut self, ev: Event<Act>, model: &mut Model) -> bool {
@@ -437,6 +540,11 @@ impl Preferences {
                 true
             }
             Event::Clicked(Act::Ok) => self.apply(model),
+            #[cfg(windows)]
+            Event::Clicked(Act::DefaultApps) => {
+                crate::filetypes::open_default_apps();
+                true
+            }
             Event::Clicked(_) | Event::Cancel => false,
             _ => true,
         }
@@ -455,6 +563,9 @@ impl Preferences {
         for &(f, i) in &self.fields {
             f.apply(model, self.form.text(i));
         }
+        if let Some(d) = self.form.selected(self.device_list).and_then(|i| self.devices.get(i)) {
+            model.settings_mut().output_device = d.name.clone();
+        }
         model.settings_mut().sanitize();
         model.push_engine_settings();
         #[cfg(feature = "plugins")]
@@ -463,6 +574,12 @@ impl Preferences {
             model.load_plugins();
         }
         model.pl_dirty += 1;
+        // The rest is kept either way; a file that cannot be written says so.
+        #[cfg(unix)]
+        if let Err(e) = self.file_types.set(self.type_checks.map(|i| self.form.checked(i))) {
+            self.form.set_label(self.status, e);
+            return true;
+        }
         false
     }
 }
@@ -796,6 +913,120 @@ pub(crate) mod tests {
         retype(&mut p, &mut m, Field::FontSize, "30");
         assert!(!press(&mut p, &mut m, Key::Escape));
         assert_eq!(m.settings().pe_fontsize, 10);
+    }
+
+    fn device(name: &str, label: &str) -> Device {
+        Device { name: name.into(), label: label.into() }
+    }
+
+    /// Preferences listing a default device and two cards.
+    fn prefs_with_devices(m: &Model) -> Panel {
+        let cards =
+            vec![device("default", "Default device"), device("hdmi:CARD=NVidia,DEV=0", "HDMI"), device("front:CARD=Audio,DEV=0", "USB")];
+        Panel::Prefs(Preferences::new(m.settings(), cards, test_types("devices")))
+    }
+
+    /// File types kept in a folder of the test's own.
+    #[cfg(unix)]
+    fn test_types(name: &str) -> FileTypes {
+        let root = std::env::temp_dir().join(format!("popamp-prefs-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        test_types_at(&root)
+    }
+
+    #[cfg(windows)]
+    fn test_types(_: &str) -> FileTypes {
+        FileTypes
+    }
+
+    #[cfg(unix)]
+    fn type_check(p: &Panel, g: Group) -> Rect {
+        let Panel::Prefs(pr) = p else { panic!("not preferences") };
+        pr.form.rect(pr.type_checks[Group::ALL.iter().position(|&x| x == g).unwrap()])
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ticked_file_types_open_with_popamp_after_ok() {
+        let mut m = songs(&[]);
+        let types = test_types("ok");
+        let root = types.config.parent().unwrap().to_path_buf();
+        let mut p = Panel::Prefs(Preferences::new(m.settings(), vec![], types));
+        let r = type_check(&p, Group::Playlists);
+        click(&mut p, &mut m, r);
+        assert!(!root.exists(), "nothing written before OK");
+        assert!(!press(&mut p, &mut m, Key::Enter));
+        let Panel::Prefs(pr) = &p else { unreachable!() };
+        assert_eq!(pr.file_types.defaults(), [false, true, false]);
+        let reopened = Panel::Prefs(Preferences::new(m.settings(), vec![], test_types_at(&root)));
+        let Panel::Prefs(pr) = &reopened else { unreachable!() };
+        assert!(pr.form.checked(pr.type_checks[1]) && !pr.form.checked(pr.type_checks[0]), "shown ticked next time");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    fn test_types_at(root: &std::path::Path) -> FileTypes {
+        FileTypes { config: root.join("config"), data: root.join("data"), dirs: vec![], exe: Some("/usr/bin/popamp".into()) }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cancel_leaves_the_file_types() {
+        let mut m = songs(&[]);
+        let types = test_types("cancel");
+        let root = types.config.parent().unwrap().to_path_buf();
+        let mut p = Panel::Prefs(Preferences::new(m.settings(), vec![], types));
+        let r = type_check(&p, Group::Audio);
+        click(&mut p, &mut m, r);
+        assert!(!press(&mut p, &mut m, Key::Escape));
+        assert!(!root.exists());
+    }
+
+    fn device_rows(p: &Panel) -> (Vec<String>, Option<usize>) {
+        let Panel::Prefs(pr) = p else { panic!("not preferences") };
+        match pr.form.widget(pr.device_list) {
+            Widget::List { rows, selected, .. } => (rows.clone(), *selected),
+            _ => unreachable!(),
+        }
+    }
+
+    /// Clicks the n-th row of the device list.
+    fn pick_device(p: &mut Panel, m: &mut Model, row: i32) {
+        let Panel::Prefs(pr) = &*p else { panic!("not preferences") };
+        let r = pr.form.rect(pr.device_list);
+        click(p, m, Rect::new(r.x, r.y + row * ROW_H, r.w, ROW_H));
+    }
+
+    #[test]
+    fn a_picked_device_is_kept_on_ok() {
+        let mut m = songs(&[]);
+        let mut p = prefs_with_devices(&m);
+        assert_eq!(device_rows(&p), (vec!["Default device".into(), "HDMI".into(), "USB".into()], Some(0)));
+        pick_device(&mut p, &mut m, 2);
+        assert_eq!(m.settings().output_device, "default", "not before OK");
+        assert!(!press(&mut p, &mut m, Key::Enter));
+        assert_eq!(m.settings().output_device, "front:CARD=Audio,DEV=0");
+        assert_eq!(device_rows(&prefs_with_devices(&m)).1, Some(2), "shown as chosen next time");
+    }
+
+    #[test]
+    fn cancel_keeps_the_device() {
+        let mut m = songs(&[]);
+        let mut p = prefs_with_devices(&m);
+        pick_device(&mut p, &mut m, 1);
+        assert!(!press(&mut p, &mut m, Key::Escape));
+        assert_eq!(m.settings().output_device, "default");
+    }
+
+    #[test]
+    fn a_missing_device_stays_chosen_until_changed() {
+        let mut m = songs(&[]);
+        m.settings_mut().output_device = "usb-dac".into();
+        let mut p = prefs_with_devices(&m);
+        let (rows, selected) = device_rows(&p);
+        assert_eq!((rows.last().map(String::as_str), selected), (Some("usb-dac (not found)"), Some(3)));
+        assert!(!press(&mut p, &mut m, Key::Enter));
+        assert_eq!(m.settings().output_device, "usb-dac");
     }
 
     #[test]

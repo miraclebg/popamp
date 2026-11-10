@@ -1,14 +1,19 @@
-//! WASAPI output in shared mode: the default device, fed 32-bit float at
-//! the track's rate, which Windows converts to the mixer's. The device
-//! `null` plays nothing, like ALSA's.
+//! WASAPI output in shared mode: a device picked by its name (or the
+//! default one), fed 32-bit float at the track's rate, which Windows
+//! converts to the mixer's. The device `null` plays nothing, like ALSA's.
 
+use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::Media::Audio::{
     eConsole, eRender, IAudioClient, IAudioRenderClient, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, AUDCLNT_SHAREMODE_SHARED,
-    AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, WAVEFORMATEX,
+    AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, DEVICE_STATE_ACTIVE,
+    WAVEFORMATEX,
 };
-use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+use windows::Win32::System::Com::StructuredStorage::{PropVariantClear, PropVariantToStringAlloc};
+use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ};
 use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
+
+use super::{Device, DEFAULT};
 
 /// `WAVE_FORMAT_IEEE_FLOAT`, from mmreg.h.
 const WAVE_FORMAT_IEEE_FLOAT: u16 = 3;
@@ -20,14 +25,64 @@ fn err(what: &str, e: windows::core::Error) -> String {
     format!("WASAPI: {what}: {e}")
 }
 
-/// The default playback device, with COM started on this thread.
-fn default_device() -> Result<IMMDevice, String> {
+/// The device list, with COM started on this thread.
+fn enumerator() -> Result<IMMDeviceEnumerator, String> {
     // SAFETY: COM calls with valid arguments. A thread already in COM
     // (S_FALSE, or another apartment) keeps what it has.
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        let devices: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(|e| err("no device list", e))?;
-        devices.GetDefaultAudioEndpoint(eRender, eConsole).map_err(|e| err("no playback device", e))
+        CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(|e| err("no device list", e))
+    }
+}
+
+fn default_device() -> Result<IMMDevice, String> {
+    // SAFETY: a call on the enumerator.
+    unsafe { enumerator()?.GetDefaultAudioEndpoint(eRender, eConsole) }.map_err(|e| err("no playback device", e))
+}
+
+/// The playback devices plugged in, with their names.
+fn endpoints() -> Result<Vec<(String, IMMDevice)>, String> {
+    // SAFETY: calls on the collection, within its count.
+    unsafe {
+        let all = enumerator()?.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE).map_err(|e| err("no device list", e))?;
+        let count = all.GetCount().map_err(|e| err("no device list", e))?;
+        Ok((0..count).filter_map(|i| all.Item(i).ok()).filter_map(|d| Some((friendly_name(&d)?, d))).collect())
+    }
+}
+
+/// The name Windows shows for a device, like "Speakers (Realtek Audio)".
+fn friendly_name(device: &IMMDevice) -> Option<String> {
+    // SAFETY: the property value is cleared, and its string freed, once read.
+    unsafe {
+        let mut value = device.OpenPropertyStore(STGM_READ).ok()?.GetValue(&PKEY_Device_FriendlyName).ok()?;
+        let text = PropVariantToStringAlloc(&value).ok();
+        let _ = PropVariantClear(&mut value);
+        let text = text?;
+        let name = text.to_string().ok();
+        CoTaskMemFree(Some(text.0.cast()));
+        name
+    }
+}
+
+/// The device named `name`, or the default one for [`DEFAULT`].
+fn device(name: &str) -> Result<IMMDevice, String> {
+    if name == DEFAULT || name.is_empty() {
+        return default_device();
+    }
+    endpoints()?.into_iter().find(|(n, _)| n == name).map(|(_, d)| d).ok_or_else(|| format!("WASAPI: no device {name:?}"))
+}
+
+/// The playback devices, by the names Windows shows. On a thread of its
+/// own, like [`available`].
+pub fn devices() -> Vec<Device> {
+    let names = || endpoints().map(|list| list.into_iter().map(|(name, _)| name).collect::<Vec<_>>());
+    let found = std::thread::spawn(names).join().unwrap_or_else(|_| Err("WASAPI: listing failed".into()));
+    match found {
+        Ok(names) => names.into_iter().map(|name| Device { label: name.clone(), name }).collect(),
+        Err(e) => {
+            log::warn!("{e}");
+            Vec::new()
+        }
     }
 }
 
@@ -40,7 +95,7 @@ pub struct WasapiPcm {
 }
 
 impl WasapiPcm {
-    /// Opens the default device, or `null`; `device` names no other yet.
+    /// Opens the device of that name, the default one, or `null`.
     pub fn open(device: &str, rate: u32, channels: u32, latency_ms: u32) -> Result<Self, String> {
         let stream = match device {
             "null" => None,
@@ -98,10 +153,7 @@ struct Stream {
 unsafe impl Send for Stream {}
 
 impl Stream {
-    fn open(device: &str, rate: u32, channels: u32, latency_ms: u32) -> Result<Self, String> {
-        if device != "default" && !device.is_empty() {
-            log::warn!("WASAPI: playing on the default device, not {device:?}");
-        }
+    fn open(name: &str, rate: u32, channels: u32, latency_ms: u32) -> Result<Self, String> {
         let format = WAVEFORMATEX {
             wFormatTag: WAVE_FORMAT_IEEE_FLOAT,
             nChannels: channels as u16,
@@ -115,7 +167,7 @@ impl Stream {
         // SAFETY: COM calls on objects created here, with a format that
         // lives through Initialize.
         unsafe {
-            let client: IAudioClient = default_device()?.Activate(CLSCTX_ALL, None).map_err(|e| err("cannot open the device", e))?;
+            let client: IAudioClient = device(name)?.Activate(CLSCTX_ALL, None).map_err(|e| err("cannot open the device", e))?;
             let duration = latency_ms.max(10) as i64 * 10_000;
             client
                 .Initialize(AUDCLNT_SHAREMODE_SHARED, flags, duration, 0, &format, None)

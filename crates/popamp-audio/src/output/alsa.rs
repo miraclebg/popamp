@@ -7,6 +7,8 @@
 use std::ffi::{c_char, c_int, c_long, c_uint, c_ulong, c_void, CStr, CString};
 use std::sync::OnceLock;
 
+use super::Device;
+
 type Pcm = *mut c_void;
 
 struct Lib {
@@ -22,6 +24,14 @@ struct Lib {
     pause: unsafe extern "C" fn(Pcm, c_int) -> c_int,
     close: unsafe extern "C" fn(Pcm) -> c_int,
     strerror: unsafe extern "C" fn(c_int) -> *const c_char,
+    name_hint: unsafe extern "C" fn(c_int, *const c_char, *mut *mut *mut c_void) -> c_int,
+    get_hint: unsafe extern "C" fn(*const c_void, *const c_char) -> *mut c_char,
+    free_hint: unsafe extern "C" fn(*mut *mut c_void) -> c_int,
+}
+
+extern "C" {
+    /// The C library's, which frees the strings ALSA's hints give out.
+    fn free(p: *mut c_void);
 }
 
 const STREAM_PLAYBACK: c_int = 0;
@@ -50,6 +60,9 @@ fn lib() -> Result<&'static Lib, String> {
             pause: sym!("snd_pcm_pause"),
             close: sym!("snd_pcm_close"),
             strerror: sym!("snd_strerror"),
+            name_hint: sym!("snd_device_name_hint"),
+            get_hint: sym!("snd_device_name_get_hint"),
+            free_hint: sym!("snd_device_name_free_hint"),
             _lib: lib,
         })
     })
@@ -176,4 +189,97 @@ impl Drop for AlsaPcm {
 /// Checks whether ALSA can be loaded (for diagnostics).
 pub fn available() -> Result<(), String> {
     lib().map(|_| ())
+}
+
+/// The playback devices ALSA names, without the ones nobody picks by hand
+/// (raw hardware, mixing and conversion plug-ins).
+pub fn devices() -> Vec<Device> {
+    let Ok(lib) = lib() else { return Vec::new() };
+    let mut hints: *mut *mut c_void = std::ptr::null_mut();
+    // SAFETY: valid out-pointer; card -1 asks for all cards.
+    if unsafe { (lib.name_hint)(-1, c"pcm".as_ptr(), &mut hints) } < 0 {
+        return Vec::new();
+    }
+    let mut list = Vec::new();
+    // SAFETY: the hint array ends with a null pointer and lives until freed.
+    unsafe {
+        let mut at = hints;
+        while !(*at).is_null() {
+            let (name, desc, io) = (hint(lib, *at, c"NAME"), hint(lib, *at, c"DESC"), hint(lib, *at, c"IOID"));
+            if let Some(name) = name.filter(|n| listed(n) && io.as_deref() != Some("Input")) {
+                list.push(Device { label: label(&name, desc.as_deref()), name });
+            }
+            at = at.add(1);
+        }
+        (lib.free_hint)(hints);
+    }
+    list
+}
+
+/// One field of a device hint.
+///
+/// # Safety
+/// `h` is a hint from `snd_device_name_hint`.
+unsafe fn hint(lib: &Lib, h: *const c_void, id: &CStr) -> Option<String> {
+    let p = unsafe { (lib.get_hint)(h, id.as_ptr()) };
+    if p.is_null() {
+        return None;
+    }
+    let s = unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned();
+    unsafe { free(p.cast()) };
+    Some(s)
+}
+
+/// Sound servers, and each card's outputs with conversions.
+fn listed(name: &str) -> bool {
+    match name.split_once(':') {
+        Some((kind, _)) => matches!(kind, "sysdefault" | "front" | "hdmi" | "iec958"),
+        None => matches!(name, "pipewire" | "pulse" | "jack"),
+    }
+}
+
+/// "Card, device (what it is)" from ALSA's two-line description.
+fn label(name: &str, desc: Option<&str>) -> String {
+    let mut lines = desc.unwrap_or("").lines().map(str::trim).filter(|l| !l.is_empty());
+    match (lines.next(), lines.next()) {
+        (Some(card), Some(what)) => format!("{card} ({what})"),
+        (Some(card), None) => card.to_string(),
+        _ => name.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lists_servers_and_card_outputs_only() {
+        let shown: Vec<_> = [
+            "pipewire",
+            "pulse",
+            "lavrate",
+            "null",
+            "hw:CARD=Audio,DEV=0",
+            "plughw:CARD=Audio,DEV=0",
+            "sysdefault:CARD=Audio",
+            "front:CARD=Audio,DEV=0",
+            "hdmi:CARD=NVidia,DEV=0",
+            "dmix:CARD=NVidia,DEV=3",
+            "surround51:CARD=Audio,DEV=0",
+        ]
+        .into_iter()
+        .filter(|n| listed(n))
+        .collect();
+        assert_eq!(shown, ["pipewire", "pulse", "sysdefault:CARD=Audio", "front:CARD=Audio,DEV=0", "hdmi:CARD=NVidia,DEV=0"]);
+    }
+
+    #[test]
+    fn labels_join_the_description_lines() {
+        assert_eq!(
+            label("hdmi:CARD=NVidia,DEV=0", Some("HDA NVidia, HDMI 0\nHDMI Audio Output")),
+            "HDA NVidia, HDMI 0 (HDMI Audio Output)"
+        );
+        assert_eq!(label("pipewire", Some("PipeWire Sound Server")), "PipeWire Sound Server");
+        assert_eq!(label("jack", None), "jack");
+    }
 }

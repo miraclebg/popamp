@@ -5,24 +5,7 @@ Contributions are welcome. Please open an issue first for larger items.
 
 ## 0.8: Install and set up
 
-- **Gallery in the player:** a window to browse and search the catalog on
-  https://popamp.app (`/api/v1/catalog.json`) and install a skin or
-  plug-in in a click, instead of opening a downloaded file or cloning a
-  repository into the plug-ins folder. It shows a skin's preview, and
-  what a plug-in may do before it is installed, checks each download
-  against the catalog's checksum and offers updates. Windows has no
-  packages, so there this is the way to install. The Skin Museum window,
-  which does this for Winamp skins, shows the way.
-- **Preferences window:** output device, picked by name on ALSA and
-  WASAPI alike (both play on the default device now), and file-type
-  registration, on Linux and Windows (the window itself, with buffer
-  size, playlist font and title format, exists).
-- **Tags and art:** tag editor, and album art in the windows (the media
-  controls already show it).
-- **Skins and plug-ins as rpms** in the openSUSE Build Service, as they
-  already are debs in https://apt.popamp.app.
-- **Packages checked by hand:** install the rpms from the repository on
-  openSUSE and Fedora. On a real Windows machine, what Wine cannot show:
+- **Packages checked by hand:** on a real Windows machine, what Wine cannot show:
   the bar's strip shrinking the work area, the media keys, and the
   timeline, shuffle, repeat and cover in the media overlay. The Windows
   installer: install for one user and for all, file types, upgrade,

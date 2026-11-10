@@ -45,6 +45,7 @@ pub enum AppEvent {
     Dialog(DialogResult),
     Remote(crate::ipc::Request),
     Museum(crate::museum::Fetched),
+    Gallery(crate::gallery::Fetched),
     /// The plug-ins, loaded anew, and an instance of each dsp one for the
     /// engine; the number is that of the request.
     #[cfg(feature = "plugins")]
@@ -121,6 +122,8 @@ pub struct Model {
     pub last_dir: Option<PathBuf>,
     /// Increments when anything visible in the playlist changes.
     pub pl_dirty: u64,
+    /// Goes up whenever Popamp changes a file's tags, so covers are read again.
+    pub tags_generation: u64,
     /// What a bar spans: the main window's monitor less the desktop's
     /// panels.
     pub screen: Option<crate::bar::Screen>,
@@ -174,7 +177,7 @@ impl Model {
         // With plug-ins, tracks given at startup wait for them to load;
         // headless models have no event loop to load them through.
         let sources = Arc::new(if cfg!(feature = "plugins") { Sources::waiting() } else { Sources::default() });
-        let engine = Engine::spawn("default".into(), sources.clone(), move |ev| {
+        let engine = Engine::spawn(config.settings.output_device.clone(), sources.clone(), move |ev| {
             let _ = engine_proxy.send_event(AppEvent::Engine(ev));
         });
         Self::with_engine(paths, config, engine, sources, Events(Some(proxy)))
@@ -246,6 +249,7 @@ impl Model {
             error_skips: 0,
             last_dir: None,
             pl_dirty: 0,
+            tags_generation: 0,
         };
         let skin = m.settings().skin.clone();
         if !skin.is_empty() {
@@ -278,7 +282,12 @@ impl Model {
         let s = self.settings().clone();
         self.engine.send(EngineCmd::Volume(s.volume as u8));
         self.engine.send(EngineCmd::Balance(s.balance as i8));
-        self.engine.send(EngineCmd::Config { buffer_ms: s.buffer_ms, fade_ms: s.fade_ms, proxy: s.proxy.clone() });
+        self.engine.send(EngineCmd::Config {
+            device: s.output_device.clone(),
+            buffer_ms: s.buffer_ms,
+            fade_ms: s.fade_ms,
+            proxy: s.proxy.clone(),
+        });
         self.engine.send(EngineCmd::ReplayGain(ReplayGainSettings {
             enabled: s.replaygain,
             album: s.replaygain_mode == 1,
@@ -522,7 +531,7 @@ impl Model {
         if self.state() == PlayState::Stopped {
             return;
         }
-        let pos = self.engine.shared().position_ms() as i64;
+        let pos = self.engine.position_ms() as i64;
         let len = self.engine.shared().length_ms().map(|l| l as i64).unwrap_or(i64::MAX);
         self.engine.send(EngineCmd::Seek((pos + delta_ms).clamp(0, len.saturating_sub(500).max(0)) as u64));
     }
@@ -842,6 +851,12 @@ impl Model {
             },
             // A message carries its own text: see `C::About`.
             DialogKind::Info => return,
+            DialogKind::PickCover { dir } => Request::Files {
+                title: "Choose a cover picture".into(),
+                multiple: false,
+                filter: ["jpg", "jpeg", "png", "gif", "bmp"].iter().map(|e| format!("*.{e}")).collect(),
+                start: dir.clone(),
+            },
             DialogKind::ConfirmPhysicalRemove { paths } => Request::Question {
                 title: "Delete files".into(),
                 text: format!(
@@ -855,42 +870,38 @@ impl Model {
     }
 
     /// Name/value rows describing the selected (or else the playing) entry.
-    pub fn file_info_fields(&self) -> Vec<(String, String)> {
+    /// The entry File info is about: the first selected one, else the
+    /// current one.
+    pub fn info_entry(&self) -> Option<&Entry> {
         let idx = self.playlist.selected_indices().first().copied().or(self.playlist.current());
-        let Some(e) = idx.and_then(|i| self.playlist.entry(i)) else { return vec![("".into(), "No file selected.".into())] };
-        let mut rows = vec![("Location".to_string(), e.location.clone())];
-        let mut push = |k: &str, v: String| rows.push((k.to_string(), v));
-        if let Some(m) = &e.meta {
-            let fields = [
-                ("Title", &m.title),
-                ("Artist", &m.artist),
-                ("Album", &m.album),
-                ("Album artist", &m.album_artist),
-                ("Year", &m.year),
-                ("Track", &m.track),
-                ("Disc", &m.disc),
-                ("Genre", &m.genre),
-                ("Composer", &m.composer),
-                ("Comment", &m.comment),
-                ("Codec", &m.codec),
-            ];
-            for (k, v) in fields {
-                if let Some(v) = v {
-                    push(k, v.clone());
-                }
+        idx.and_then(|i| self.playlist.entry(i))
+    }
+
+    /// Popamp changed the tags of the file at `location`: its entries read
+    /// them again, and covers are read again.
+    pub fn tags_changed(&mut self, location: &str) {
+        self.tags_generation += 1;
+        let fmt = self.format.clone();
+        let ids: Vec<u64> = self.playlist.entries().iter().filter(|e| e.location == location).map(|e| e.id).collect();
+        for id in ids {
+            if let Some(e) = self.playlist.find_mut_by_id(id) {
+                e.meta = None;
+                e.refresh_display(&fmt);
+                let _ = self.meta_tx.send((e.id, e.location.clone()));
             }
-            if let Some(l) = m.length_ms {
-                push("Length", format_duration_ms(l));
-            }
-            if let (Some(r), Some(c)) = (m.sample_rate, m.channels) {
-                push("Format", format!("{r} Hz, {c} channel(s){}", m.bitrate_kbps.map(|b| format!(", {b} kbps")).unwrap_or_default()));
-            }
-            if let Some(g) = m.replaygain_track_gain {
-                push("ReplayGain", format!("{g:+.2} dB (track)"));
-            }
-        } else if let Some(t) = &e.file_title {
-            push("Title", t.clone());
         }
+        self.pl_dirty += 1;
+    }
+
+    pub fn file_info_fields(&self) -> Vec<(String, String)> {
+        let Some(e) = self.info_entry() else { return vec![("".into(), "No file selected.".into())] };
+        let mut rows = vec![("Location".to_string(), e.location.clone())];
+        match (&e.meta, &e.file_title) {
+            (Some(m), _) => rows.extend(meta_rows(m)),
+            (None, Some(t)) => rows.push(("Title".into(), t.clone())),
+            (None, None) => {}
+        }
+        let mut push = |k: &str, v: String| rows.push((k.to_string(), v));
         if self.status.playing_id == Some(e.id) {
             if let Some(n) = &self.status.stream_name {
                 push("Station", n.clone());
@@ -1024,6 +1035,8 @@ impl Model {
                 }
             }
             DialogKind::Info => {}
+            // The File info window takes the picture (app.rs).
+            DialogKind::PickCover { .. } => {}
             DialogKind::ConfirmPhysicalRemove { paths } => {
                 if first.as_deref() == Some("yes") {
                     for p in &paths {
@@ -1149,6 +1162,8 @@ impl Model {
             }
             C::SkinBrowser => self.request_dialog(DialogKind::Skin),
             C::SkinMuseum => self.ui.push(UiReq::Panel(PanelKind::SkinMuseum)),
+            C::Gallery => self.ui.push(UiReq::Panel(PanelKind::Gallery)),
+            C::AlbumArt => self.ui.push(UiReq::Panel(PanelKind::AlbumArt)),
             #[cfg(feature = "plugins")]
             C::Plugins => self.ui.push(UiReq::Panel(PanelKind::Plugins)),
             #[cfg(not(feature = "plugins"))]
@@ -1407,6 +1422,7 @@ impl Model {
                 ],
             ),
             MenuItem::cmd("View file info…", "Alt+3", C::FileInfo),
+            MenuItem::cmd("Album art", "Alt+A", C::AlbumArt),
             MenuItem::sub("Bookmarks", self.bookmarks_menu()),
             MenuItem::sep(),
             MenuItem::cmd("Main Window", "Alt+W", C::ToggleMainWindow),
@@ -1474,6 +1490,7 @@ impl Model {
             MenuItem::cmd("Skin browser…", "Alt+S", C::SkinBrowser),
             #[cfg(feature = "plugins")]
             MenuItem::cmd("Plug-ins…", "", C::Plugins),
+            MenuItem::cmd("Gallery (popamp.app)…", "", C::Gallery),
             MenuItem::sep(),
             MenuItem::cmd("Time elapsed", "Ctrl+T", C::TimeElapsed).checked(!s.timeleftmode),
             MenuItem::cmd("Time remaining", "Ctrl+T", C::TimeRemaining).checked(s.timeleftmode),
@@ -1543,6 +1560,7 @@ impl Model {
     pub fn skins_menu(&self) -> Vec<MenuItem> {
         let mut items = vec![
             MenuItem::cmd("Skin browser…", "Alt+S", Command::SkinBrowser),
+            MenuItem::cmd("Gallery (popamp.app)…", "", Command::Gallery),
             MenuItem::cmd("Skin Museum (online)…", "", Command::SkinMuseum),
             MenuItem::sep(),
         ];
@@ -1715,7 +1733,7 @@ impl Model {
         let cur = self.playlist.current_entry();
         format!(
             "{{\"state\":\"{state}\",\"position_ms\":{},\"length_ms\":{},\"volume\":{},\"balance\":{},\"shuffle\":{},\"repeat\":{},\"index\":{},\"count\":{},\"title\":\"{}\",\"location\":\"{}\"}}",
-            sh.position_ms(),
+            self.engine.position_ms(),
             sh.length_ms().map(|l| l.to_string()).unwrap_or_else(|| "null".into()),
             s.volume,
             s.balance,
@@ -1735,6 +1753,40 @@ fn zooms(current: i32, action: fn(i32) -> MenuAction) -> Vec<MenuItem> {
         .iter()
         .map(|&pct| MenuItem::action(&format!("×{}", pct as f32 / 100.0), "", action(pct)).checked(pct == current))
         .collect()
+}
+
+/// The tags and format of a track as File info lists them.
+pub fn meta_rows(m: &TrackMeta) -> Vec<(String, String)> {
+    let mut rows = Vec::new();
+    let mut push = |k: &str, v: String| rows.push((k.to_string(), v));
+    let fields = [
+        ("Title", &m.title),
+        ("Artist", &m.artist),
+        ("Album", &m.album),
+        ("Album artist", &m.album_artist),
+        ("Year", &m.year),
+        ("Track", &m.track),
+        ("Disc", &m.disc),
+        ("Genre", &m.genre),
+        ("Composer", &m.composer),
+        ("Comment", &m.comment),
+        ("Codec", &m.codec),
+    ];
+    for (k, v) in fields {
+        if let Some(v) = v {
+            push(k, v.clone());
+        }
+    }
+    if let Some(l) = m.length_ms {
+        push("Length", format_duration_ms(l));
+    }
+    if let (Some(r), Some(c)) = (m.sample_rate, m.channels) {
+        push("Format", format!("{r} Hz, {c} channel(s){}", m.bitrate_kbps.map(|b| format!(", {b} kbps")).unwrap_or_default()));
+    }
+    if let Some(g) = m.replaygain_track_gain {
+        push("ReplayGain", format!("{g:+.2} dB (track)"));
+    }
+    rows
 }
 
 #[cfg(test)]

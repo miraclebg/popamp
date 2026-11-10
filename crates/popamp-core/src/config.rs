@@ -184,6 +184,8 @@ settings! {
     /// Playlist index to resume at.
     plpos: i32 = 0,
     shuffle_morph_rate: i32 = 50,
+    /// The output device, by the name the sound system gives it.
+    output_device: String = "default".to_string(),
     buffer_ms: u32 = 150,
     fade_ms: u32 = 1000,
     enqueuedef: bool = false,
@@ -266,6 +268,9 @@ impl Settings {
         self.vis_fps = self.vis_fps.clamp(1, 70);
         self.sa = self.sa.clamp(0, 2);
         self.buffer_ms = self.buffer_ms.clamp(40, 2000);
+        if self.output_device.trim().is_empty() {
+            self.output_device = "default".to_string();
+        }
     }
 
     /// The ten EQ bands as 0..=63 values (missing entries are flat).

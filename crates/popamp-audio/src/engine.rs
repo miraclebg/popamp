@@ -6,7 +6,7 @@
 
 use crate::decoder::{AudioSource, Decoder, Status, StreamInfo};
 use crate::dsp::{balance_gains, db_to_gain, volume_gain, Effect, Effects, EqSettings, Equalizer};
-use crate::output::Pcm;
+use crate::output::{self, Pcm};
 use crate::pipe::PipeSource;
 use crate::source::{Context, Playback, Sources};
 use crate::stream::{self, StreamHeaders, TitleSlot};
@@ -59,6 +59,8 @@ pub enum EngineCmd {
     Effects(Vec<Box<dyn Effect>>),
     ReplayGain(ReplayGainSettings),
     Config {
+        /// The output device, by its name in [`crate::output::devices`].
+        device: String,
         buffer_ms: u32,
         fade_ms: u32,
         proxy: String,
@@ -140,6 +142,8 @@ pub struct Shared {
     sample_rate: AtomicU32,
     channels: AtomicU32,
     played_frames: AtomicU64,
+    /// Seeks the worker has made.
+    seeks: AtomicU64,
     pub vis: Mutex<VisRing>,
 }
 
@@ -153,6 +157,7 @@ impl Shared {
             sample_rate: AtomicU32::new(0),
             channels: AtomicU32::new(0),
             played_frames: AtomicU64::new(0),
+            seeks: AtomicU64::new(0),
             vis: Mutex::new(VisRing::new()),
         }
     }
@@ -189,6 +194,9 @@ pub struct Engine {
     tx: Sender<EngineCmd>,
     shared: Arc<Shared>,
     thread: Option<std::thread::JoinHandle<()>>,
+    /// Seeks sent, and where the last one goes.
+    seeks: AtomicU64,
+    seek_to: AtomicU64,
 }
 
 impl Engine {
@@ -201,7 +209,7 @@ impl Engine {
             .name("popamp-audio".into())
             .spawn(move || Worker::new(device, sources, rx, worker_shared, Box::new(on_event)).run())
             .expect("spawn audio thread");
-        Engine { tx, shared, thread: Some(thread) }
+        Engine { tx, shared, thread: Some(thread), seeks: AtomicU64::new(0), seek_to: AtomicU64::new(0) }
     }
 
     /// An engine without an audio thread or device, for rendering the
@@ -209,7 +217,7 @@ impl Engine {
     /// windows show.
     pub fn headless() -> Engine {
         let (tx, _) = crossbeam_channel::unbounded();
-        Engine { tx, shared: Arc::new(Shared::new()), thread: None }
+        Engine { tx, shared: Arc::new(Shared::new()), thread: None, seeks: AtomicU64::new(0), seek_to: AtomicU64::new(0) }
     }
 
     /// Publishes a playback state as if a track were playing. Only a
@@ -226,7 +234,21 @@ impl Engine {
     }
 
     pub fn send(&self, cmd: EngineCmd) {
+        if let EngineCmd::Seek(ms) = cmd {
+            self.seek_to.store(ms, Ordering::Relaxed);
+            self.seeks.fetch_add(1, Ordering::Relaxed);
+        }
         let _ = self.tx.send(cmd);
+    }
+
+    /// The position to show: where a seek goes until the worker has made
+    /// it, so a slider let go does not jump back meanwhile.
+    pub fn position_ms(&self) -> u64 {
+        if self.shared.seeks.load(Ordering::Acquire) < self.seeks.load(Ordering::Relaxed) {
+            self.seek_to.load(Ordering::Relaxed)
+        } else {
+            self.shared.position_ms()
+        }
     }
 
     pub fn shared(&self) -> &Arc<Shared> {
@@ -449,7 +471,11 @@ impl Worker {
                     self.stop(true);
                 }
             }
-            EngineCmd::Seek(ms) => self.seek(ms),
+            EngineCmd::Seek(ms) => {
+                self.seek(ms);
+                self.publish();
+                self.shared.seeks.fetch_add(1, Ordering::Release);
+            }
             EngineCmd::Volume(v) => self.volume = v,
             EngineCmd::Balance(b) => self.balance = b,
             EngineCmd::Eq(s) => self.eq.set(s),
@@ -458,10 +484,11 @@ impl Worker {
                 self.rg = rg;
                 // Takes effect from the next track.
             }
-            EngineCmd::Config { buffer_ms, fade_ms, proxy } => {
+            EngineCmd::Config { device, buffer_ms, fade_ms, proxy } => {
                 self.buffer_ms = buffer_ms;
                 self.fade_ms = fade_ms;
                 self.cx.proxy = proxy;
+                self.set_device(device);
             }
             EngineCmd::Quit => {}
         }
@@ -538,11 +565,49 @@ impl Worker {
             old.drain();
             self.written = 0; // new device clock
         }
-        self.pcm = Some(Pcm::open(&self.device, rate, 2, self.buffer_ms)?);
+        self.pcm = Some(match Pcm::open(&self.device, rate, 2, self.buffer_ms) {
+            Ok(pcm) => pcm,
+            // An unplugged device leaves the default one, not silence.
+            Err(e) if self.device != output::DEFAULT => {
+                log::warn!("{e}; playing on the default device");
+                Pcm::open(output::DEFAULT, rate, 2, self.buffer_ms)?
+            }
+            Err(e) => return Err(e),
+        });
         self.written = 0;
         self.eq.set_rate(rate);
         self.effects.set_rate(rate);
         Ok(())
+    }
+
+    /// Moves playback to another device, from where it was audible.
+    fn set_device(&mut self, device: String) {
+        if device == self.device {
+            return;
+        }
+        self.device = device;
+        let Some(rate) = self.pcm.as_ref().map(|p| p.rate) else { return };
+        let at = self.position_ms();
+        let pending = self.pending.take();
+        self.pcm = None;
+        if let Err(e) = self.ensure_pcm(rate) {
+            let id = self.track.as_ref().map_or(0, |t| t.id);
+            return self.fail(id, e);
+        }
+        if self.track.is_none() {
+            return;
+        }
+        self.track_start = self.written;
+        self.seek_base_ms = at;
+        // What the old device had queued is gone: play it again here
+        // (streams, which cannot seek, go on).
+        if self.state == PlayState::Paused {
+            self.resume_seek = Some(at);
+        } else {
+            self.seek_to(at);
+        }
+        // A gapless switch already decoding starts on the new clock.
+        self.pending = pending.map(|p| PendingSwitch { at_frame: 0, ..p });
     }
 
     fn open(&mut self, id: u64, location: String, start_ms: u64) {
@@ -670,6 +735,8 @@ impl Worker {
             // Resume from the new position later.
             if self.resume_seek.is_some() {
                 self.resume_seek = Some(ms);
+                self.track_start = self.played_frames();
+                self.seek_base_ms = ms;
                 return;
             }
             if let Some(p) = &mut self.pcm {
@@ -959,7 +1026,8 @@ mod tests {
         assert!(resets_then_blocks && seen.last().is_some_and(|s| s == "process 0"), "{seen:?}");
     }
 
-    /// Takes `pipe:` locations and plays them through a shell script.
+    /// Takes `pipe:` locations and plays them through a shell script;
+    /// `live:` ones play the same way but cannot seek.
     #[cfg(unix)]
     struct ShellSource;
 
@@ -969,7 +1037,7 @@ mod tests {
             "shell"
         }
         fn handles(&self, location: &str) -> bool {
-            location.starts_with("pipe:")
+            location.starts_with("pipe:") || location.starts_with("live:")
         }
         fn expand(&self, _: &str, _: &Context) -> Result<Option<Vec<popamp_core::plformats::Item>>, String> {
             Ok(None)
@@ -978,7 +1046,11 @@ mod tests {
             None
         }
         fn open(&self, location: &str, _: &Context) -> Result<Playback, String> {
-            Ok(Playback::Pipe(Box::new(crate::pipe::tests::sh(location.trim_start_matches("pipe:")))))
+            let pipe = match location.split_once(':') {
+                Some(("live", script)) => crate::pipe::Pipe { seekable: false, ..crate::pipe::tests::sh(script) },
+                _ => crate::pipe::tests::sh(location.trim_start_matches("pipe:")),
+            };
+            Ok(Playback::Pipe(Box::new(pipe)))
         }
     }
 
@@ -992,6 +1064,102 @@ mod tests {
         // 0.2 s of stereo f32 silence at 48 kHz.
         engine.send(EngineCmd::Open { id: 1, location: "pipe:head -c 76800 /dev/zero".into(), start_ms: 0 });
         assert_eq!(events_until_finished(&events), ["started 1", "finished 1"]);
+    }
+
+    /// A worker driven by hand, playing `location` on ALSA's `null`.
+    #[cfg(unix)]
+    fn worker_playing(location: &str) -> Worker {
+        let sources = Sources::default();
+        sources.set_plugins(vec![Arc::new(ShellSource)]);
+        let (_, rx) = crossbeam_channel::unbounded();
+        let mut w = Worker::new("null".into(), Arc::new(sources), rx, Arc::new(Shared::new()), Box::new(|_| {}));
+        let opened = open_location(&w.sources, location, 0, &w.cx);
+        w.start_now(1, 0, opened);
+        for _ in 0..5 {
+            w.step();
+        }
+        w
+    }
+
+    // ALSA's `plug:null` is a second device that plays nothing.
+    #[cfg(unix)]
+    #[test]
+    fn a_new_device_goes_on_from_where_the_track_was() {
+        let wav = silent_wav("device", 1000);
+        let mut w = worker_playing(&wav.to_string_lossy());
+        let before = w.position_ms();
+        w.set_device("plug:null".into());
+        let after = w.position_ms();
+        for _ in 0..5 {
+            w.step();
+        }
+        let _ = std::fs::remove_file(wav);
+        assert!(before > 0 && after == before, "{before} ms, then {after} ms");
+        assert!(w.state == PlayState::Playing && w.position_ms() > after, "{:?} at {} ms", w.state, w.position_ms());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_stream_goes_on_counting_on_the_new_device() {
+        let mut w = worker_playing("live:head -c 384000 /dev/zero");
+        assert!(!w.track.as_ref().unwrap().dec.info().seekable);
+        let before = w.position_ms();
+        w.set_device("plug:null".into());
+        assert!(before > 0 && w.position_ms() == before, "{before} ms, then {} ms", w.position_ms());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_paused_track_resumes_on_the_new_device_where_it_was() {
+        let wav = silent_wav("device-paused", 1000);
+        let mut w = worker_playing(&wav.to_string_lossy());
+        w.pause(true);
+        let before = w.position_ms();
+        w.set_device("plug:null".into());
+        w.pause(false);
+        let _ = std::fs::remove_file(wav);
+        assert!(before > 0 && w.position_ms() == before, "{before} ms, then {} ms", w.position_ms());
+    }
+
+    #[test]
+    fn a_seek_not_yet_made_shows_where_it_goes() {
+        let engine = Engine::headless();
+        let info = StreamInfo {
+            sample_rate: 44_100,
+            channels: 2,
+            length_ms: Some(225_000),
+            bitrate_kbps: None,
+            codec: "mp3".into(),
+            seekable: true,
+        };
+        engine.simulate(PlayState::Playing, 83_000, &info);
+        engine.send(EngineCmd::Seek(10_000));
+        assert_eq!((engine.position_ms(), engine.shared().position_ms()), (10_000, 83_000));
+    }
+
+    /// Waits until the engine shows `ms`, for up to two seconds.
+    #[cfg(unix)]
+    fn shows(engine: &Engine, ms: u64) -> bool {
+        (0..200).any(|_| {
+            std::thread::sleep(Duration::from_millis(10));
+            engine.position_ms() == ms && engine.shared().position_ms() == ms
+        })
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn seeks_while_paused_show_the_last_one() {
+        let sources = Sources::default();
+        sources.set_plugins(vec![Arc::new(ShellSource)]);
+        let (engine, events) = engine_with(sources);
+        engine.send(EngineCmd::Open { id: 1, location: "pipe:head -c 40000000 /dev/zero".into(), start_ms: 0 });
+        assert!(matches!(events.recv_timeout(Duration::from_secs(2)), Ok(EngineEvent::Started { id: 1, .. })));
+        engine.send(EngineCmd::Pause(true));
+        engine.send(EngineCmd::Seek(3_000));
+        assert!(shows(&engine, 3_000), "at {} ms", engine.position_ms());
+        engine.send(EngineCmd::Seek(5_000));
+        assert!(shows(&engine, 5_000), "at {} ms", engine.position_ms());
+        engine.send(EngineCmd::Stop);
     }
 
     #[test]

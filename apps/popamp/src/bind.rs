@@ -51,7 +51,7 @@ pub fn value(model: &Model, v: Value) -> Option<(i64, i64, i64)> {
         Value::Position => {
             let sh = model.engine.shared();
             let len = sh.length_ms().filter(|&l| l > 0)? as i64;
-            (sh.position_ms() as i64, 0, len)
+            (model.engine.position_ms() as i64, 0, len)
         }
         Value::Preamp => (s.preamp as i64, 0, 63),
         Value::EqBand(i) => (s.eq_bands()[i as usize] as i64, 0, 63),
@@ -76,7 +76,7 @@ pub fn text(model: &Model, t: Text) -> Option<String> {
         Text::Kbps => Some(sh.bitrate_kbps()).filter(|&k| running && k > 0).map(|k| format!("{:>3}", k.min(999))),
         Text::Khz => Some(sh.sample_rate()).filter(|&r| running && r > 0).map(|r| format!("{:>2}", (r / 1000).min(99))),
         Text::ShortTime => running.then(|| {
-            let secs = sh.position_ms() / 1000;
+            let secs = model.engine.position_ms() / 1000;
             format!("{:>2}:{:02}", (secs / 60).min(99), secs % 60)
         }),
         Text::Title => Some(model.current_title()),
@@ -86,7 +86,7 @@ pub fn text(model: &Model, t: Text) -> Option<String> {
             Some(format!("{}/{}{}", format_duration_ms(sel_ms), format_duration_ms(total_ms), plus))
         }
         Text::PlaylistClock => running.then(|| {
-            let pos = sh.position_ms();
+            let pos = model.engine.position_ms();
             let shown = match (model.settings().timeleftmode, sh.length_ms()) {
                 (true, Some(l)) => format!("-{}", format_duration_ms(l.saturating_sub(pos))),
                 _ => format_duration_ms(pos),

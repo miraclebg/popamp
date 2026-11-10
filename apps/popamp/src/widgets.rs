@@ -74,6 +74,12 @@ pub enum Widget<A> {
     Group {
         label: String,
     },
+    /// A row of segments, one of them picked: tabs, or a choice of order.
+    Tabs {
+        labels: Vec<String>,
+        selected: usize,
+        action: A,
+    },
     /// A picture, or `note` in an empty frame until it arrives.
     Image {
         image: Option<Bitmap>,
@@ -88,6 +94,8 @@ pub enum Event<A> {
     /// A button was clicked, or Enter pressed with a default button.
     Clicked(A),
     Toggled(A, bool),
+    /// Another segment of a [`Widget::Tabs`] was picked.
+    Picked(A, usize),
     /// The text of a field changed.
     Edited,
     /// The list selection moved.
@@ -144,14 +152,19 @@ impl<A: Copy + PartialEq> Form<A> {
     }
 
     #[cfg(test)]
+    pub fn count_all(&self) -> usize {
+        self.controls.len()
+    }
+
+    #[cfg(test)]
     pub fn rect(&self, i: usize) -> Rect {
         self.controls[i].0
     }
 
-    /// Changes the text of label `i`.
+    /// Changes the text of label or button `i`.
     pub fn set_label(&mut self, i: usize, new: String) {
-        if let Widget::Label { text, .. } = &mut self.controls[i].1 {
-            *text = new;
+        if let Widget::Label { text: old, .. } | Widget::Button { label: old, .. } = &mut self.controls[i].1 {
+            *old = new;
         }
     }
 
@@ -175,6 +188,20 @@ impl<A: Copy + PartialEq> Form<A> {
         match &self.controls[i].1 {
             Widget::Input { text, .. } => text,
             _ => "",
+        }
+    }
+
+    /// Whether check box `i` is ticked.
+    #[cfg(unix)]
+    pub fn checked(&self, i: usize) -> bool {
+        matches!(self.controls[i].1, Widget::Check { checked: true, .. })
+    }
+
+    /// The picked segment of tabs `i`.
+    pub fn tab(&self, i: usize) -> usize {
+        match &self.controls[i].1 {
+            Widget::Tabs { selected, .. } => *selected,
+            _ => 0,
         }
     }
 
@@ -258,6 +285,15 @@ impl<A: Copy + PartialEq> Form<A> {
             Widget::Check { checked, action, .. } => {
                 *checked = !*checked;
                 Event::Toggled(*action, *checked)
+            }
+            Widget::Tabs { labels, selected, action } => {
+                let n = ((x - rect.x) * labels.len() as i32 / rect.w.max(1)).clamp(0, labels.len() as i32 - 1) as usize;
+                let picked = std::mem::replace(selected, n) != n;
+                if picked {
+                    Event::Picked(*action, n)
+                } else {
+                    Event::None
+                }
             }
             Widget::Label { .. } | Widget::Group { .. } | Widget::Image { .. } => Event::None,
         }
@@ -346,9 +382,38 @@ impl<A: Copy + PartialEq> Form<A> {
                 Widget::Check { label, checked, .. } => draw_check(b, font, *r, label, *checked),
                 Widget::Group { label } => draw_group(b, font, *r, label),
                 Widget::Image { image, note } => draw_image(b, font, *r, image.as_ref(), note),
+                Widget::Tabs { labels, selected, .. } => draw_tabs(b, font, *r, labels, *selected),
             }
         }
     }
+}
+
+/// `img` shrunk to fit `w`×`h`, each pixel the average of those it covers.
+pub fn fit(img: &Bitmap, w: i32, h: i32) -> Bitmap {
+    if img.w <= w && img.h <= h || img.w <= 0 || img.h <= 0 {
+        return img.clone();
+    }
+    let k = (w as f64 / img.w as f64).min(h as f64 / img.h as f64);
+    let (ow, oh) = (((img.w as f64 * k) as i32).max(1), ((img.h as f64 * k) as i32).max(1));
+    let mut out = Bitmap::new(ow, oh, 0);
+    for y in 0..oh {
+        let (y0, y1) = (y * img.h / oh, ((y + 1) * img.h / oh).max(y * img.h / oh + 1));
+        for x in 0..ow {
+            let (x0, x1) = (x * img.w / ow, ((x + 1) * img.w / ow).max(x * img.w / ow + 1));
+            let mut sum = [0u64; 4];
+            for sy in y0..y1 {
+                for sx in x0..x1 {
+                    let p = img.px[(sy * img.w + sx) as usize];
+                    for (c, s) in sum.iter_mut().enumerate() {
+                        *s += ((p >> (c * 8)) & 0xff) as u64;
+                    }
+                }
+            }
+            let n = ((y1 - y0) * (x1 - x0)) as u64;
+            out.px[(y * ow + x) as usize] = sum.iter().enumerate().map(|(c, s)| ((s / n) as u32) << (c * 8)).sum();
+        }
+    }
+    out
 }
 
 /// Applies an editing key to a one-line text field. Returns whether the
@@ -434,6 +499,20 @@ fn draw_button(b: &mut Bitmap, font: &mut Font, r: Rect, label: &str, down: bool
     font.draw(b, r.x + (r.w - tw) / 2, text_y(r), label, FONT_PX, TEXT, r.x + 2, r.w - 4);
 }
 
+fn draw_tabs(b: &mut Bitmap, font: &mut Font, r: Rect, labels: &[String], selected: usize) {
+    let n = labels.len().max(1) as i32;
+    for (k, label) in labels.iter().enumerate() {
+        let (x0, x1) = (r.x + r.w * k as i32 / n, r.x + r.w * (k as i32 + 1) / n);
+        let seg = Rect::new(x0, r.y, x1 - x0 + 1, r.h);
+        let face = if k == selected { HILITE } else { mix(BG, BORDER, 0.35) };
+        b.fill(seg.x, seg.y, seg.w, seg.h, face);
+        b.bevel(seg.x, seg.y, seg.w, seg.h, BORDER, BORDER);
+        let t = font.fit(label, FONT_PX, seg.w - 6);
+        let tw = font.width(&t, FONT_PX);
+        font.draw(b, seg.x + (seg.w - tw) / 2, text_y(seg), &t, FONT_PX, TEXT, seg.x + 2, seg.w - 4);
+    }
+}
+
 fn draw_check(b: &mut Bitmap, font: &mut Font, r: Rect, label: &str, checked: bool) {
     let (bx, by) = (r.x, r.y + (r.h - 13) / 2);
     sunken(b, Rect::new(bx, by, 13, 13), false);
@@ -459,7 +538,7 @@ fn draw_group(b: &mut Bitmap, font: &mut Font, r: Rect, label: &str) {
 
 fn draw_image(b: &mut Bitmap, font: &mut Font, r: Rect, image: Option<&Bitmap>, note: &str) {
     match image {
-        Some(img) => b.blit(img, 0, 0, img.w.min(r.w), img.h.min(r.h), r.x, r.y),
+        Some(img) => b.blit(img, 0, 0, img.w.min(r.w), img.h.min(r.h), r.x + (r.w - img.w).max(0) / 2, r.y + (r.h - img.h).max(0) / 2),
         None => {
             sunken(b, r, false);
             let t = font.fit(note, FONT_PX, r.w - 8);
@@ -606,6 +685,20 @@ mod tests {
     }
 
     #[test]
+    fn tabs_pick_the_segment_under_the_mouse() {
+        let mut f: Form<Act> = Form::new(300, 40);
+        let t = f.add(
+            Rect::new(0, 0, 300, 24),
+            Widget::Tabs { labels: vec!["A".into(), "B".into(), "C".into()], selected: 0, action: Act::Flag },
+        );
+        assert_eq!(f.mouse_down(250, 10, false), Event::Picked(Act::Flag, 2));
+        assert_eq!(f.tab(t), 2);
+        assert_eq!(f.mouse_down(250, 10, false), Event::None, "already picked");
+        assert_eq!(f.mouse_down(99, 10, false), Event::Picked(Act::Flag, 0));
+        assert_eq!(f.mouse_down(100, 10, false), Event::Picked(Act::Flag, 1));
+    }
+
+    #[test]
     fn new_rows_clamp_the_selection() {
         let (mut f, _, list) = form();
         f.set_rows(list, rows(3), Some(10));
@@ -613,5 +706,15 @@ mod tests {
         f.set_rows(list, vec![], Some(0));
         assert_eq!(f.selected(list), None);
         assert_eq!(f.key(Key::Down), Event::None);
+    }
+
+    #[test]
+    fn pictures_shrink_to_fit_averaging_pixels() {
+        let mut img = Bitmap::new(4, 2, 0);
+        img.px = vec![0xff00_0000, 0xff00_00ff, 0xffff_ffff, 0xffff_ffff, 0xff00_0000, 0xff00_00ff, 0xffff_ffff, 0xffff_ffff];
+        let small = fit(&img, 2, 2);
+        assert_eq!((small.w, small.h), (2, 1));
+        assert_eq!(small.px, [0xff00_007f, 0xffff_ffff]);
+        assert_eq!(fit(&img, 10, 10).w, 4, "small ones stay as they are");
     }
 }

@@ -26,6 +26,9 @@ Linux and Windows.
 - **Thousands of classic skins.** Open any `.wsz` file, or browse, search
   and install skins from the [Winamp Skin Museum](https://skins.webamp.org)
   without leaving the player.
+- **A gallery in the player.** Install and update the skins and plug-ins
+  from [popamp.app](https://popamp.app) in a click, each checked against
+  the catalog.
 - **Sounds right.** Gapless playback, ReplayGain, a 10-band equalizer
   with `.eqf` presets, internet radio, and the common formats: MP3, AAC, FLAC,
   Ogg Vorbis, WAV, ALAC and more.

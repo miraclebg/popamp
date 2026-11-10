@@ -6,11 +6,42 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-10
+
 ### Added
 
 - Golden-image tests: `cargo test` draws every window state of the
   built-in skin and compares it pixel by pixel with committed PNGs, on
   Linux and Windows, so a change to a window cannot go unnoticed.
+- Output device in Preferences: a list of the sound servers and card
+  outputs on ALSA, and of the playback devices on Windows. The choice is
+  kept by name (`output_device` in the settings); playback moves to it at
+  once, from where it was, and an unplugged device falls back to the
+  default one.
+- "Open with Popamp" in Preferences: on Linux, check boxes that make it
+  the default player for audio files, playlists and skins (in
+  `~/.config/mimeapps.list`, with a desktop entry of its own for an
+  AppImage or a build from source); on Windows, a button that opens
+  Settings > Default apps at Popamp, where the installer now lists it.
+- Gallery window (Skins or Options > Gallery): the skins, plug-ins and
+  visualizations of popamp.app on tabs of their own, sorted by
+  popularity, rating or date as on the site, with previews, ratings,
+  what each plug-in may do, and install or update in a click. Downloads are checked against the catalog's size
+  and SHA-256; plug-ins unpack into a folder of their own, replacing an
+  older version only once the new one is whole, and stay off until
+  turned on in Plug-ins. In the build without plug-ins only the Skins
+  tab lists anything.
+- Tag editor: File info (`Alt+3`) changes the tags and the cover of MP3,
+  FLAC, Ogg Vorbis and MP4/M4A files, keeping the tags it does not show.
+  A save goes into a copy that then replaces the file. Years must be
+  dates and track or disc numbers numbers; WAV, AIFF and streams are
+  shown only.
+- Album art window (`Alt+A`, main menu): the cover of the current track,
+  from its tags or a cover picture beside it, updated as the track or its
+  tags change.
+- rpms of the skins and plug-ins, in the openSUSE and Fedora repositories
+  next to popamp: `popamp-skin-<name>` and `popamp-plugin-<id>`, the same
+  files as their debs (`packaging/obs/publish-addons.sh`).
 
 ### Changed
 
@@ -29,6 +60,9 @@ All notable changes to this project are documented here. The format follows
 - A bigger window size shortens a playlist that would no longer fit, so
   its resize grip stays on the screen.
 - The options menu opens the Preferences; before, only Ctrl+P did.
+- A click on the position bar no longer makes the slider and the clock
+  jump back for a moment before they show the new place, and a second
+  seek while paused shows its own position.
 
 ## [0.7.0] - 2026-11-09
 
@@ -267,7 +301,8 @@ First release.
 - **Packaging:** desktop entry, `.wsz` MIME type, icons and a per-user
   install script.
 
-[Unreleased]: https://github.com/popamp/popamp/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/popamp/popamp/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/popamp/popamp/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/popamp/popamp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/popamp/popamp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/popamp/popamp/releases/tag/v0.5.0

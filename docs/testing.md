@@ -54,6 +54,26 @@ The unit tests cover:
   with `POPAMP_BLESS=1 cargo test -p popamp golden` and look at them
   before committing.
 - Command-line parsing and control-socket round trips.
+- Tags: each field and the cover written and read back in MP3, FLAC, Ogg
+  Vorbis and M4A (silent files in `crates/popamp-audio/tests/fixtures/`,
+  made with ffmpeg); tags the editor does not show survive; bad years and
+  track numbers are refused; a failed save leaves the file whole. The File
+  info and Album art windows as a user drives them.
+- Gallery: the catalog, the tabs and the three orders, checksums,
+  installing and updating skins and plug-ins, archives that try to
+  write outside their folder.
+  `cargo test -p popamp gallery_live -- --ignored` installs everything
+  popamp.app offers into a folder of its own.
+
+### Published packages
+
+`packaging/check-repos.sh` installs `popamp` and `popamp-plus` from the
+published repositories in fresh containers (openSUSE Tumbleweed and Leap
+16.0, Fedora 43 and 44, Debian 12 and 13, Ubuntu 22.04 and 24.04), with
+the commands of docs/building.md, and checks the version, the installed
+files, the libraries, the skin MIME type, a `/RENDER` of the windows,
+the skins (and with popamp-plus the plug-ins) from the same repository,
+and a clean removal. All eight passed for 0.7.0 on 2026-11-10.
 
 ### Manual checks performed
 
@@ -76,7 +96,8 @@ All playback checks ran at volume 0 through the real ALSA/PipeWire output.
   playlist drag-reorder.
 - Keyboard shortcuts.
 - The `zenity`/`kdialog` dialogs, Popamp's own dialogs (Jump to file,
-  File info, Preferences) and drag & drop.
+  File info, Album art, Preferences) and drag & drop.
+- Saving tags of the track that is playing, on Windows.
 - Double size.
 - A skin with a `region.txt` window shape.
 - ReplayGain-tagged files.

@@ -18,6 +18,22 @@
   Skins > Skin Museum browses, searches and downloads skins from
   [skins.webamp.org](https://skins.webamp.org); Popamp contacts the
   museum only while that window is open.
+- **Gallery:** Skins > Gallery (also under Options) lists the skins,
+  plug-ins and visualizations on [popamp.app](https://popamp.app), each
+  on a tab of its own, by popularity, rating or date as on the site,
+  with a preview, the rating and downloads, and what each plug-in may
+  do, and installs or updates one in a click. Each
+  download is checked against the catalog's size and SHA-256; what the
+  gallery did not install itself is left alone. In the build without
+  plug-ins only the Skins tab lists anything. Popamp contacts the site only while
+  that window is open.
+- **Tags and covers:** File info (`Alt+3`) changes the title, artist,
+  album, album artist, year, genre, track and disc numbers, composer and
+  comment of MP3, FLAC, Ogg Vorbis and MP4/M4A files, and sets or removes
+  the cover. Tags it does not show are kept. The change goes into a copy
+  that then replaces the file, so a failed save leaves the file as it was.
+  The Album art window (`Alt+A`) shows the cover of the current track: the
+  one in its tags, else a `cover`/`folder`/`front` picture beside it.
 - **Playback:**
   - Formats: MP3, AAC/M4A, FLAC, Ogg Vorbis, WAV, AIFF, MKA (Matroska audio)
     and ALAC, decoded by [Symphonia](https://github.com/pdeljanov/Symphonia).
@@ -59,6 +75,7 @@
 - No native Wayland windows: Popamp needs Xwayland on Wayland desktops.
 - The Preferences window (`Ctrl+P`) covers the common options; the rest are
   in the menus and `popamp.ini`.
-- No tag editing, album art in the windows, tray icon, media library or Modern (`.wal`)
-  skins yet. See [ROADMAP.md](ROADMAP.md).
+- Tags can be changed in MP3, FLAC, Ogg Vorbis and MP4 files only, one
+  file at a time.
+- No tray icon, media library or Modern (`.wal`) skins yet. See [ROADMAP.md](ROADMAP.md).
 
