@@ -12,6 +12,16 @@ All notable changes to this project are documented here. The format follows
   [popamp-skin-default](https://github.com/popamp/popamp-skin-default), and
   is still built into the program. It can be forked without the player.
 
+### Fixed
+
+- Bringing the player up from the desktop's media controls or by starting
+  it again raises the equalizer and the playlist too, not only the main
+  window.
+- The playlist no longer grows past the bottom or the right of the screen
+  when resized, which made the window manager push it over the equalizer.
+- A bigger window size shortens a playlist that would no longer fit, so
+  its resize grip stays on the screen.
+
 ## [0.7.0] - 2026-11-09
 
 ### Added

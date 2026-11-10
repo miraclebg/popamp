@@ -16,7 +16,7 @@ use crate::widgets::{self, Event};
 use popamp_audio::PlayState;
 use popamp_core::config::BarEdge;
 use popamp_core::Command;
-use popamp_skin::layout::{Mode, Paint, Placement, Shape, WindowKey};
+use popamp_skin::layout::{Dim, Mode, Paint, Placement, Shape, WindowKey};
 use popamp_skin::textcfg::region_mask;
 use popamp_skin::CursorKind;
 use popamp_skin::{Bitmap, Picture};
@@ -352,25 +352,13 @@ impl App {
                 Some((w.pos.0, w.pos.1, w.shown.px(w.size.0), w.shown.px(w.size.1)))
             })
             .collect();
-        let sizes: Vec<(i32, i32)> = WindowKey::ALL
-            .iter()
-            .map(|&k| {
-                let (lw, lh) = self.logical_size(k);
-                (self.scale(k).px(lw), self.scale(k).px(lh))
-            })
-            .collect();
         let bar = bar::edge(&self.model).zip(self.model.screen);
-        let new_pos: Vec<(i32, i32)> = match bar {
-            Some((edge, screen)) => {
-                bar::places(edge, screen, [sizes[0], sizes[1], sizes[2]], self.wanted_visible(WindowKey::Playlist)).to_vec()
-            }
-            None => {
-                // Without a bar all windows have one scale: the equalizer's.
-                let (scale, shown) = (self.scale(WindowKey::Eq), self.win(WindowKey::Eq).map_or(Scale::ONE, |w| w.shown));
-                let moved = follow_docked(&old, &sizes, anchor.index(), |d| scale.px(shown.skin(d)));
-                WindowKey::ALL.iter().zip(moved).map(|(&k, p)| self.win(k).map_or((0, 0), |w| if w.visible { p } else { w.pos })).collect()
-            }
-        };
+        let mut plan = self.plan(&old, anchor, bar);
+        let pl = WindowKey::Playlist.index();
+        if bar.is_none() && self.keep_playlist_grip_on_screen(old[pl], plan.pos[pl]) {
+            plan = self.plan(&old, anchor, bar);
+        }
+        let Plan { sizes, pos: new_pos } = plan;
         for (i, &k) in WindowKey::ALL.iter().enumerate() {
             let visible = self.wanted_visible(k);
             let (lw, lh) = self.logical_size(k);
@@ -396,6 +384,60 @@ impl App {
             self.reserve_bar_strip(edge, screen, sizes[0].1);
         }
         self.update_shapes();
+    }
+
+    /// The windows' sizes in screen pixels and their top-left corners for
+    /// the sizes and scale in the settings now.
+    fn plan(&self, old: &[Option<Rect>], anchor: WindowKey, bar: Option<(BarEdge, Screen)>) -> Plan {
+        let sizes: Vec<(i32, i32)> = WindowKey::ALL
+            .iter()
+            .map(|&k| {
+                let (lw, lh) = self.logical_size(k);
+                (self.scale(k).px(lw), self.scale(k).px(lh))
+            })
+            .collect();
+        let new_pos: Vec<(i32, i32)> = match bar {
+            Some((edge, screen)) => {
+                bar::places(edge, screen, [sizes[0], sizes[1], sizes[2]], self.wanted_visible(WindowKey::Playlist)).to_vec()
+            }
+            None => {
+                // Without a bar all windows have one scale: the equalizer's.
+                let (scale, shown) = (self.scale(WindowKey::Eq), self.win(WindowKey::Eq).map_or(Scale::ONE, |w| w.shown));
+                let moved = follow_docked(old, &sizes, anchor.index(), |d| scale.px(shown.skin(d)));
+                WindowKey::ALL.iter().zip(moved).map(|(&k, p)| self.win(k).map_or((0, 0), |w| if w.visible { p } else { w.pos })).collect()
+            }
+        };
+        Plan { sizes, pos: new_pos }
+    }
+
+    /// Shortens the playlist where a resize or a bigger window size would
+    /// push its resize grip out of its monitor's usable area: off the
+    /// screen the grip cannot be reached, and the window manager moves a
+    /// window that grows over a panel. True if the stored size changed.
+    fn keep_playlist_grip_on_screen(&mut self, old: Option<Rect>, pos: (i32, i32)) -> bool {
+        let (Some(old), Some(w)) = (old, self.win(WindowKey::Playlist)) else { return false };
+        let Some(def) = self.model.skin.layout.window(WindowKey::Playlist) else { return false };
+        let monitors: Vec<Screen> = w
+            .window
+            .available_monitors()
+            .map(|m| Screen { x: m.position().x, y: m.position().y, w: m.size().width as i32, h: m.size().height as i32 })
+            .collect();
+        let Some(monitor) = monitors.into_iter().find(|m| pos.0 >= m.x && pos.0 < m.x + m.w && pos.1 >= m.y && pos.1 < m.y + m.h) else {
+            return false;
+        };
+        let area = bar::usable(monitor, &self.platform.work_areas(), None);
+        let scale = self.scale(WindowKey::Playlist);
+        let stored = crate::bind::stored_size(&self.model, WindowKey::Playlist);
+        let fitted = (
+            fit_grown(def.normal.width, stored.0, old.0 + old.2, |n| pos.0 + scale.px(n), area.x + area.w),
+            fit_grown(def.normal.height, stored.1, old.1 + old.3, |n| pos.1 + scale.px(n), area.y + area.h),
+        );
+        if fitted == stored {
+            return false;
+        }
+        let s = self.model.settings_mut();
+        (s.pe_width, s.pe_height) = fitted;
+        true
     }
 
     /// Tells the window manager to keep other windows out of the bar's strip.
@@ -1210,8 +1252,12 @@ impl App {
                             w.window.set_minimized(false);
                         }
                     }
-                    if let Some(w) = self.win(WindowKey::Main) {
-                        w.window.focus_window();
+                    // Each window is brought above other programs' windows,
+                    // the main one last so that it has the keyboard.
+                    for k in [WindowKey::Playlist, WindowKey::Eq, WindowKey::Main] {
+                        if let Some(w) = self.win(k).filter(|w| w.visible) {
+                            w.window.focus_window();
+                        }
                     }
                 }
                 UiReq::Quit => {
@@ -1603,6 +1649,27 @@ fn follow_docked(old: &[Option<Rect>], sizes: &[(i32, i32)], anchor: usize, resc
     pos.into_iter().map(|p| p.unwrap_or((0, 0))).collect()
 }
 
+/// Where the windows go: sizes in screen pixels and top-left corners, in
+/// [`WindowKey::ALL`] order.
+struct Plan {
+    sizes: Vec<(i32, i32)>,
+    pos: Vec<(i32, i32)>,
+}
+
+/// The length of a resizable side that wants to be `want` skin pixels:
+/// `want` itself, unless the side would end past `limit` further out than
+/// it ended before (`was`); then the longest allowed length that ends
+/// inside `limit`, or the shortest allowed one. `end` gives the screen
+/// position a length ends at.
+fn fit_grown(dim: Dim, want: i32, was: i32, end: impl Fn(i32) -> i32, limit: i32) -> i32 {
+    let Dim::Free { min, step } = dim else { return want };
+    let mut len = want;
+    while step > 0 && len - step >= min && end(len) > limit && end(len) > was {
+        len -= step;
+    }
+    len
+}
+
 /// Where `b`, which touched `a` before, goes now that `a` is at `now` and
 /// `b` has `size`; `None` if they did not touch.
 fn reattach(a: Rect, b: Rect, now: Rect, size: (i32, i32), rescale: &impl Fn(i32) -> i32) -> Option<(i32, i32)> {
@@ -1679,6 +1746,27 @@ mod tests {
         let old = [Some((500, 0, 275, 116)), None, Some((225, 0, 275, 232))];
         let sizes = [(275, 116), (0, 0), (300, 232)];
         assert_eq!(follow_docked(&old, &sizes, 2, |d| d), [(525, 0), (0, 0), (225, 0)]);
+    }
+
+    #[test]
+    fn a_side_that_grows_past_the_screen_stops_at_the_last_step_inside() {
+        let dim = Dim::Free { min: 116, step: 29 };
+        // A playlist at y 700 on a screen 1000 high, x1.5.
+        let end = |n: i32| 700 + x15(n);
+        assert_eq!(fit_grown(dim, 232, 700 + x15(174), end, 1000), 174, "203 would end at 1004");
+        assert_eq!(fit_grown(dim, 174, 700 + x15(145), end, 1000), 174, "what fits is left alone");
+        // Bigger windows: a playlist that fitted at x1 is cut at x1.5.
+        assert_eq!(fit_grown(dim, 290, 700 + 290, end, 1000), 174);
+        assert_eq!(fit_grown(dim, 290, 700 + 290, |n| 990 + x15(n), 1000), 116, "never under the shortest");
+    }
+
+    #[test]
+    fn a_side_already_past_the_screen_is_not_cut_until_it_grows() {
+        let dim = Dim::Free { min: 116, step: 29 };
+        let end = |n: i32| 900 + n;
+        assert_eq!(fit_grown(dim, 232, 900 + 232, end, 1000), 232, "parked over the edge by the user");
+        assert_eq!(fit_grown(dim, 261, 900 + 232, end, 1000), 232, "growing further is refused");
+        assert_eq!(fit_grown(Dim::Fixed(275), 275, 0, end, 1000), 275);
     }
 
     #[test]
