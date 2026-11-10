@@ -14,9 +14,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
-- Bringing the player up from the desktop's media controls or by starting
-  it again raises the equalizer and the playlist too, not only the main
-  window.
+- Bringing the player up from its taskbar icon, the desktop's media
+  controls or by starting it again raises the equalizer and the playlist
+  too, not only the main window. On X11 the two are tied to the main
+  window, so they also minimize with it.
 - The playlist no longer grows past the bottom or the right of the screen
   when resized, which made the window manager push it over the equalizer.
 - A bigger window size shortens a playlist that would no longer fit, so

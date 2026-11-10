@@ -244,6 +244,7 @@ impl App {
             }
         }
         self.build_cursors(el);
+        self.attach_docked();
         self.apply_layout(WindowKey::Main);
         if self.start_minimized {
             for k in WindowKey::ALL {
@@ -311,6 +312,20 @@ impl App {
         true
     }
 
+    /// Ties the equalizer and the playlist to an ordinary main window, so
+    /// that the window manager brings all three up together. A bar is a
+    /// panel of the desktop, and nothing is tied to it.
+    fn attach_docked(&self) {
+        let owner = self.win(WindowKey::Main).filter(|w| w.role == WindowRole::Main).map(|w| &*w.window);
+        for k in [WindowKey::Eq, WindowKey::Playlist] {
+            if let Some(w) = self.win(k) {
+                if let Err(e) = self.platform.attach(&w.window, owner) {
+                    log::warn!("cannot tie {k:?} to the main window: {e}");
+                }
+            }
+        }
+    }
+
     /// After a skin change: windows that became a bar or stopped being one
     /// are made again, since the window manager reads a window's type only
     /// when it first shows it.
@@ -331,6 +346,7 @@ impl App {
                 }
             }
         }
+        self.attach_docked();
         if left_bar {
             for k in [WindowKey::Eq, WindowKey::Playlist] {
                 let pos = self.saved_pos(k);

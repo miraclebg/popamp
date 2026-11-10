@@ -69,6 +69,21 @@ impl Platform {
         Ok(())
     }
 
+    /// Makes `window` a companion of `owner` (`WM_TRANSIENT_FOR`): the
+    /// window manager then keeps it above the owner and brings it up and
+    /// minimizes it together with the owner, as when the owner's taskbar
+    /// icon is clicked. `None` makes it a window of its own again.
+    pub fn attach(&self, window: &Window, owner: Option<&Window>) -> Result<(), String> {
+        let (Some(conn), Some(xid)) = (&self.x11, x11_window_id(window)) else { return Ok(()) };
+        let err = |e: &dyn std::fmt::Display| e.to_string();
+        match owner.and_then(x11_window_id) {
+            Some(owner) => conn.change_property32(PropMode::REPLACE, xid, AtomEnum::WM_TRANSIENT_FOR, AtomEnum::WINDOW, &[owner]),
+            None => conn.delete_property(xid, AtomEnum::WM_TRANSIENT_FOR.into()),
+        }
+        .map_err(|e| err(&e))?;
+        conn.flush().map_err(|e| err(&e))
+    }
+
     /// Nothing to give back: a strut goes with its window.
     pub fn release(&self, _window: &Window) {}
 
