@@ -59,7 +59,8 @@ Only Linux has run these by hand unless marked otherwise.
 9. **Tray icon** (Preferences > Desktop > "Icon in the system tray", on by
    default): the icon is there. A left click brings Popamp up, a middle
    click plays or pauses, and the right-click menu has the transport
-   buttons. Pausing changes the icon's state at once. Code:
+   buttons. Pausing changes the icon's tooltip at once; the picture is
+   always the logo. Code:
    `apps/popamp/src/media/tray_windows.rs`.
 10. **Minimize to the tray** (Desktop > "Minimize to the tray"):
     - With the icon setting **off** and this one on, minimizing hides all
@@ -97,5 +98,52 @@ Only Linux has run these by hand unless marked otherwise.
 
 ## Results
 
-(date, Windows version, build or commit; per item: works / fails, with
-what was seen)
+2026-11-11, Windows 11 Home 10.0.26300. A local release build of
+`playback-extras` with line tables (`--features plus`, version set to
+0.9.0 for the build), at 83c72c1, then 447f92b, then 6188df9, each
+started with `/NEW /INIDIR=<scratch>` beside the installed 0.8.
+
+Three bugs were found and fixed on the branch:
+
+- 83c72c1: Popamp stopped responding minutes after start, on Play or a
+  drop from Explorer. The media controls' thread never answered window
+  messages.
+- 447f92b: after a pause, another track, a seek or Stop left the sound
+  stuck, and closing hung. Emptying the WASAPI output kept it paused.
+- 6188df9: the media card kept the previous cover for a track without
+  one. Windows ignores an empty thumbnail; such a track now shows the
+  logo.
+
+Per item:
+
+1. **Opus:** works (`.opus`, `.webm`).
+2. **MIDI:** works.
+3. **Tracker modules:** works (`.mod`).
+4. **CUE sheets:** works.
+5. **Decoder plug-in:** works once installed and allowed; `.ape` plays
+   with the right durations. Seeking not checked: the test files are a
+   few seconds long. Without the plug-in Symphonia takes `.ape` for
+   something else and plays noise. plugin-ape asks for Popamp 0.9.0, so
+   it installs only once the version is bumped.
+6. **Crossfade:** works by ear.
+7. **History:** works: plays listed, search, `history.txt` written.
+8. **ReplayGain scanner:** works; all six tracks in `replaygain.txt`,
+   fast. The audio files did not change.
+9. **Tray icon:** works. A left click raises all three windows, a middle
+   click plays or pauses, the menu has Show, Exit and the transport.
+   Pause changes the tooltip; the picture stays the logo by design.
+10. **Minimize to the tray:** works in all four cases, `/STARTMIN`
+    included (all windows hidden at start).
+11. **Global hotkeys:** works; every key, with another app focused.
+12. **Media overlay:** works after the two fixes above: title and cover
+    follow the track, a track without a cover shows the logo, and the
+    card's previous, play/pause and next work while Popamp is
+    minimized. This Windows 11 card shows no timeline and no shuffle or
+    repeat buttons, so those were not checked; no media keys on the
+    keyboard either.
+13. **Track notifications:** works: turned on, nothing pops up, playback
+    goes on.
+
+Also seen: `%TEMP%` holds a dozen `popamp-cover-<pid>-<id>.jpg` left by
+earlier runs. A tagged cover is written there for the media card and
+removed on the next track, but not when Popamp exits. Not fixed yet.
