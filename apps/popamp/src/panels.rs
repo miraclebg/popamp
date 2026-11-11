@@ -390,10 +390,11 @@ pub enum Field {
     FadeMs,
     BufferMs,
     Proxy,
+    SoundFont,
 }
 
 impl Field {
-    const ALL: [Field; 5] = [Field::FontSize, Field::TitleFormat, Field::FadeMs, Field::BufferMs, Field::Proxy];
+    const ALL: [Field; 6] = [Field::FontSize, Field::TitleFormat, Field::FadeMs, Field::BufferMs, Field::Proxy, Field::SoundFont];
 
     fn label(self) -> &'static str {
         match self {
@@ -402,6 +403,7 @@ impl Field {
             Field::FadeMs => "Fade-out (ms)",
             Field::BufferMs => "Output buffer (ms)",
             Field::Proxy => "HTTP proxy",
+            Field::SoundFont => "MIDI SoundFont",
         }
     }
 
@@ -412,6 +414,7 @@ impl Field {
             Field::FadeMs => s.fade_ms.to_string(),
             Field::BufferMs => s.buffer_ms.to_string(),
             Field::Proxy => s.proxy.clone(),
+            Field::SoundFont => s.soundfont.clone(),
         }
     }
 
@@ -423,7 +426,10 @@ impl Field {
             Field::FadeMs => number("Fade-out"),
             Field::BufferMs => number("Output buffer"),
             Field::TitleFormat if text.trim().is_empty() => Err("Title format: must not be empty".into()),
-            Field::TitleFormat | Field::Proxy => Ok(()),
+            Field::SoundFont if !text.trim().is_empty() && !std::path::Path::new(text.trim()).is_file() => {
+                Err("MIDI SoundFont: no such file (leave it empty for the system's)".into())
+            }
+            Field::TitleFormat | Field::Proxy | Field::SoundFont => Ok(()),
         }
     }
 
@@ -435,6 +441,7 @@ impl Field {
             Field::FadeMs => model.settings_mut().fade_ms = n(),
             Field::BufferMs => model.settings_mut().buffer_ms = n(),
             Field::Proxy => model.settings_mut().proxy = text.trim().to_string(),
+            Field::SoundFont => model.settings_mut().soundfont = text.trim().to_string(),
             Field::TitleFormat => {
                 if text != model.settings().titlefmt {
                     model.set_title_format(text);

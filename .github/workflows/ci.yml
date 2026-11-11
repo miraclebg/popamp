@@ -19,6 +19,8 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      # Loaded at run time by the Opus and tracker module decoders.
+      - run: sudo apt-get update && sudo apt-get install -y libopus0 libopenmpt0t64
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
@@ -41,6 +43,12 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      # The Opus and libopenmpt DLLs the tests load, found on PATH.
+      - shell: bash
+        run: |
+          libs="$(cygpath -u "$RUNNER_TEMP")/libs"
+          sh packaging/windows/fetch-libs.sh "$libs"
+          cygpath -w "$libs" >> "$GITHUB_PATH"
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
       - run: cargo clippy --workspace --all-targets --locked --features popamp/plugins -- -D warnings

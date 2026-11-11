@@ -275,7 +275,7 @@ impl Model {
 
     /// What sources need from the settings.
     pub(crate) fn source_context(&self) -> Context {
-        Context { proxy: self.settings().proxy.clone() }
+        Context { proxy: self.settings().proxy.clone(), soundfont: self.settings().soundfont.clone() }
     }
 
     pub fn push_engine_settings(&mut self) {
@@ -286,7 +286,7 @@ impl Model {
             device: s.output_device.clone(),
             buffer_ms: s.buffer_ms,
             fade_ms: s.fade_ms,
-            proxy: s.proxy.clone(),
+            cx: self.source_context(),
         });
         self.engine.send(EngineCmd::ReplayGain(ReplayGainSettings {
             enabled: s.replaygain,
@@ -356,7 +356,9 @@ impl Model {
         let local: Vec<(u64, String)> =
             self.playlist.entries().iter().filter(|e| !e.is_url()).map(|e| (e.id, e.location.clone())).collect();
         for (id, path) in local {
-            self.on_meta(id, popamp_audio::read_meta(Path::new(&path)));
+            if let Some(res) = self.sources.of_now(&path).describe(&path) {
+                self.on_meta(id, res);
+            }
         }
     }
 
@@ -781,7 +783,7 @@ impl Model {
 
     pub fn request_dialog(&mut self, kind: DialogKind) {
         let media_filter: Vec<String> =
-            popamp_core::AUDIO_EXTENSIONS.iter().chain(["m3u", "m3u8", "pls", "xspf"].iter()).map(|e| format!("*.{e}")).collect();
+            popamp_core::audio_extensions().chain(["m3u", "m3u8", "pls", "xspf", "cue"]).map(|e| format!("*.{e}")).collect();
         let start = self.start_dir();
         let req = match &kind {
             DialogKind::OpenFiles { .. } => Request::Files { title: "Open file(s)".into(), multiple: true, filter: media_filter, start },

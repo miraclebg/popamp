@@ -2,8 +2,9 @@
 
 use popamp_core::meta::{parse_gain, TrackMeta};
 use std::path::Path;
+use std::sync::LazyLock;
 use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::codecs::{CodecRegistry, DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymError;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo};
 use symphonia::core::io::{MediaSource, MediaSourceStream};
@@ -61,6 +62,17 @@ pub struct Decoder {
     frames_acc: u64,
     packets_seen: u64,
     length_known: bool,
+}
+
+/// Symphonia's codecs plus Opus.
+fn codecs() -> &'static CodecRegistry {
+    static CODECS: LazyLock<CodecRegistry> = LazyLock::new(|| {
+        let mut registry = CodecRegistry::new();
+        symphonia::default::register_enabled_codecs(&mut registry);
+        registry.register_all::<crate::opus::OpusDecoder>();
+        registry
+    });
+    &CODECS
 }
 
 pub(crate) fn hint_for(ext: Option<&str>) -> Hint {
@@ -128,8 +140,7 @@ impl Decoder {
         }
         let track = reader.tracks().iter().find(|t| t.codec_params.codec != CODEC_TYPE_NULL).ok_or("no audio track")?.clone();
         let params = &track.codec_params;
-        let codec =
-            symphonia::default::get_codecs().make(params, &DecoderOptions::default()).map_err(|e| format!("unsupported codec: {e}"))?;
+        let codec = codecs().make(params, &DecoderOptions::default()).map_err(|e| format!("unsupported codec: {e}"))?;
         let sample_rate = params.sample_rate.unwrap_or(44_100);
         let channels = params.channels.map(|c| c.count() as u16).unwrap_or(2);
         // `n_frames` is in time-base units (milliseconds for Matroska), not samples.
@@ -140,7 +151,7 @@ impl Decoder {
             }
             None => n * 1000 / sample_rate as u64,
         });
-        let codec_name = symphonia::default::get_codecs().get_codec(params.codec).map(|d| d.short_name.to_uppercase()).unwrap_or_default();
+        let codec_name = codecs().get_codec(params.codec).map(|d| d.short_name.to_uppercase()).unwrap_or_default();
         let bitrate_kbps = match (params.bits_per_sample, length_ms, byte_len) {
             // Lossless/PCM: average over the file is the honest figure.
             (_, Some(l), Some(b)) if l > 0 => Some((b * 8 / l) as u32),
@@ -309,5 +320,44 @@ mod tests {
         out.clear();
         to_stereo(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0], 6, &mut out);
         assert_eq!(out, [0.7, 0.0]);
+    }
+
+    fn fixture(name: &str) -> std::path::PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)
+    }
+
+    /// Decodes the whole file; returns what it says about itself and the samples.
+    fn decode_all(path: &Path) -> (StreamInfo, Vec<f32>) {
+        let (mut dec, _) = Decoder::open_file(path).unwrap();
+        let mut out = Vec::new();
+        while let Status::Data = dec.next(&mut out).unwrap() {}
+        (dec.info.clone(), out)
+    }
+
+    fn rms(samples: &[f32]) -> f32 {
+        (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()
+    }
+
+    #[test]
+    fn opus_in_ogg_and_webm_plays_its_one_second_tone() {
+        for name in ["tone.opus", "tone.webm"] {
+            let (info, out) = decode_all(&fixture(name));
+            assert_eq!((info.codec.as_str(), info.sample_rate, info.channels), ("OPUS", 48_000, 2), "{name}");
+            let frames = out.len() / 2;
+            assert!((47_000..=49_000).contains(&frames), "{name}: {frames} frames");
+            // A sine at -6 dB: amplitude 0.5, RMS 0.354.
+            let level = rms(&out[4_800..out.len() - 4_800]);
+            assert!((0.32..0.39).contains(&level), "{name}: RMS {level}");
+        }
+    }
+
+    #[test]
+    fn an_opus_file_seeks_to_the_middle() {
+        let (mut dec, _) = Decoder::open_file(&fixture("tone.opus")).unwrap();
+        let reached = dec.seek(500).unwrap();
+        let mut out = Vec::new();
+        while let Status::Data = dec.next(&mut out).unwrap() {}
+        let left = 48 * (1_000 - reached as usize);
+        assert!(out.len() / 2 > left - 1_000 && out.len() / 2 < left + 1_000, "{} frames after {reached} ms", out.len() / 2);
     }
 }

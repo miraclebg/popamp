@@ -251,6 +251,9 @@ settings! {
     replaygain_non_rg_gain: f32 = -6.0,
     // Network.
     proxy: String = String::new(),
+    // MIDI.
+    /// The SoundFont that plays MIDI files, empty for the system's.
+    soundfont: String = String::new(),
 }
 
 impl Settings {

@@ -32,14 +32,21 @@
   that window is open.
 - **Tags and covers:** File info (`Alt+3`) changes the title, artist,
   album, album artist, year, genre, track and disc numbers, composer and
-  comment of MP3, FLAC, Ogg Vorbis and MP4/M4A files, and sets or removes
+  comment of MP3, FLAC, Ogg Vorbis, Opus and MP4/M4A files, and sets or removes
   the cover. Tags it does not show are kept. The change goes into a copy
   that then replaces the file, so a failed save leaves the file as it was.
   The Album art window (`Alt+A`) shows the cover of the current track: the
   one in its tags, else a `cover`/`folder`/`front` picture beside it.
 - **Playback:**
   - Formats: MP3, AAC/M4A, FLAC, Ogg Vorbis, WAV, AIFF, MKA (Matroska audio)
-    and ALAC, decoded by [Symphonia](https://github.com/pdeljanov/Symphonia).
+    and ALAC, decoded by [Symphonia](https://github.com/pdeljanov/Symphonia);
+    Opus (in Ogg, Matroska and WebM) through the system's libopus; MIDI
+    (`.mid`, `.midi`, `.kar`, `.rmi`) through a SoundFont synthesizer
+    ([rustysynth](https://github.com/sinshu/rustysynth)), with the
+    system's General MIDI SoundFont (on Windows, GeneralUser GS, which
+    comes with Popamp) or the one set in Preferences; tracker
+    modules (MOD, XM, S3M, IT, MPTM and more) through the system's
+    libopenmpt.
   - Gapless playback, stop with fadeout, stop after current, ReplayGain.
   - HTTP(S)/Icecast/SHOUTcast streams with ICY titles.
   - YouTube videos, playlists and channels through the
@@ -56,6 +63,8 @@
   can go full screen. See [plugins.md](plugins.md).
 - **Playlist:**
   - M3U, M3U8, PLS and XSPF.
+  - CUE sheets: an album in one file opens as its tracks, each with its
+    title, performer and length, and seeking stays inside the track.
   - Sort, reverse, randomize, crop, remove dead entries.
   - Drag to reorder, jump to time.
   - Bookmarks for favourite files and streams (`Alt+I`, main menu).
@@ -74,11 +83,10 @@
 
 ## Known limitations
 
-- Opus, MIDI and tracker modules are not supported.
 - No native Wayland windows: Popamp needs Xwayland on Wayland desktops.
 - The Preferences window (`Ctrl+P`) covers the common options; the rest are
   in the menus and `popamp.ini`.
-- Tags can be changed in MP3, FLAC, Ogg Vorbis and MP4 files only, one
+- Tags can be changed in MP3, FLAC, Ogg Vorbis, Opus and MP4 files only, one
   file at a time.
 - No tray icon, media library or Modern (`.wal`) skins yet. See [ROADMAP.md](ROADMAP.md).
 

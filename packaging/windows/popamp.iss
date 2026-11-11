@@ -76,10 +76,38 @@ Root: HKA; Subkey: "Software\Classes\.aiff\OpenWithProgids"; ValueType: string; 
 Root: HKA; Subkey: "Software\Classes\.aifc\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.caf\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.mka\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.opus\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.mid\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.midi\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.kar\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.rmi\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.mod\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.xm\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.s3m\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.it\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.mptm\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.stm\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.669\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.mtm\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.med\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.okt\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.far\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.ult\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.amf\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.dsm\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.psm\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.umx\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.dmf\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.mdl\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.ptm\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.gdm\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.imf\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.j2b\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.m3u\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.m3u8\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.pls\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.xspf\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.cue\OpenWithProgids"; ValueType: string; ValueName: "Popamp.Audio"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.wsz"; ValueType: string; ValueName: ""; ValueData: "Popamp.Skin"; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.psz"; ValueType: string; ValueName: ""; ValueData: "Popamp.Skin"; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".mp3"; ValueData: ""
@@ -99,10 +127,38 @@ Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; Va
 Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".aifc"; ValueData: ""
 Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".caf"; ValueData: ""
 Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".mka"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".opus"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".mid"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".midi"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".kar"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".rmi"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".mod"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".xm"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".s3m"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".it"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".mptm"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".stm"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".669"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".mtm"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".med"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".okt"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".far"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".ult"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".amf"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".dsm"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".psm"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".umx"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".dmf"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".mdl"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".ptm"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".gdm"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".imf"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".j2b"; ValueData: ""
 Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".m3u"; ValueData: ""
 Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".m3u8"; ValueData: ""
 Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".pls"; ValueData: ""
 Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".xspf"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".cue"; ValueData: ""
 Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".wsz"; ValueData: ""
 Root: HKA; Subkey: "Software\Classes\Applications\popamp.exe\SupportedTypes"; ValueType: string; ValueName: ".psz"; ValueData: ""
 
@@ -130,10 +186,38 @@ Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: s
 Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".aifc"; ValueData: "Popamp.Audio"
 Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".caf"; ValueData: "Popamp.Audio"
 Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mka"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".opus"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mid"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".midi"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".kar"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".rmi"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mod"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".xm"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".s3m"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".it"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mptm"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".stm"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".669"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mtm"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".med"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".okt"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".far"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".ult"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".amf"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".dsm"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".psm"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".umx"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".dmf"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".mdl"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".ptm"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".gdm"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".imf"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".j2b"; ValueData: "Popamp.Audio"
 Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".m3u"; ValueData: "Popamp.Audio"
 Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".m3u8"; ValueData: "Popamp.Audio"
 Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".pls"; ValueData: "Popamp.Audio"
 Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".xspf"; ValueData: "Popamp.Audio"
+Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".cue"; ValueData: "Popamp.Audio"
 Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".wsz"; ValueData: "Popamp.Skin"
 Root: HKA; Subkey: "Software\Popamp\Capabilities\FileAssociations"; ValueType: string; ValueName: ".psz"; ValueData: "Popamp.Skin"
 

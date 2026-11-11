@@ -94,6 +94,10 @@ jobs:
       - run: git config --global core.autocrlf false
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      # The Opus and libopenmpt DLLs and the MIDI SoundFont, beside popamp.exe.
+      - run: |
+          sh packaging/windows/fetch-libs.sh dist/libs
+          cygpath -w "$PWD/dist/libs" >> "$GITHUB_PATH"
       - run: cargo test --release --locked --workspace
       - run: cargo test --release --locked --workspace --features popamp/plus
       - name: Package popamp

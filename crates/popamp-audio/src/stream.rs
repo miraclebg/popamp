@@ -94,12 +94,12 @@ pub fn open(url: &str, proxy: &str) -> Result<Opened, String> {
     let ext = match headers.content_type.as_str() {
         "audio/mpeg" | "audio/mp3" => Some("mp3"),
         "audio/aac" | "audio/aacp" | "audio/x-aac" => Some("aac"),
-        "audio/ogg" | "application/ogg" | "audio/vorbis" => Some("ogg"),
+        "audio/ogg" | "application/ogg" | "audio/vorbis" | "audio/opus" => Some("ogg"),
         "audio/flac" | "audio/x-flac" => Some("flac"),
         "audio/wav" | "audio/x-wav" | "audio/wave" => Some("wav"),
         _ => url.rsplit('.').next().and_then(|e| match e.to_ascii_lowercase().as_str() {
             "mp3" => Some("mp3"),
-            "ogg" | "oga" => Some("ogg"),
+            "ogg" | "oga" | "opus" => Some("ogg"),
             "aac" => Some("aac"),
             "flac" => Some("flac"),
             _ => None,

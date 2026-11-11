@@ -18,9 +18,9 @@ parking_lot.workspace = true
 ureq.workspace = true
 serde_json.workspace = true
 log.workspace = true
-
-[target.'cfg(unix)'.dependencies]
 libloading.workspace = true
+rustysynth.workspace = true
+midly.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [

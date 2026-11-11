@@ -31,7 +31,7 @@ Linux and Windows.
   the catalog.
 - **Sounds right.** Gapless playback, ReplayGain, a 10-band equalizer
   with `.eqf` presets, internet radio, and the common formats: MP3, AAC, FLAC,
-  Ogg Vorbis, WAV, ALAC and more.
+  Ogg Vorbis, Opus, WAV, ALAC, MIDI, tracker modules and more.
 - **At home on your desktop.** Media keys and the system's player
   controls show the track and its cover. A bar skin docks to the edge of
   the screen like a taskbar.

@@ -29,3 +29,15 @@ contributors, MIT OR Apache-2.0.
 | `museum.rs`, `SkinMuseum` in `panels.rs` | the Skin Museum: GraphQL queries, reply parsing, safe file names and the dialog layout (`src/museum.rs`, `src/ui/dialogs.rs`) |
 | `MainWin::tooltip`, tooltip timing in `app.rs` | the tooltip texts, the 0.6 s delay and 7 s timeout (`src/ui/main_win.rs`, `src/app.rs`) |
 | `packaging/build-deb.sh`, `packaging/build-appimage.sh`, `.github/workflows/release.yml` | the package scripts and the release workflow, including the pinned appimagetool checksums (`packaging/linux/`, `.github/workflows/release.yml`) |
+
+## Shipped with the Windows downloads
+
+Linux takes these from the system; the Windows installer and zip carry
+them beside `popamp.exe`, with their licences in `licenses/`
+(`packaging/windows/fetch-libs.sh` fetches them).
+
+| File | Project | Licence |
+|---|---|---|
+| `opus.dll` | [Opus](https://opus-codec.org), built by vcpkg | BSD-3-Clause |
+| `libopenmpt.dll`, `openmpt-*.dll` | [libopenmpt](https://lib.openmpt.org), the official build, with mpg123, Ogg, Vorbis and zlib | BSD-3-Clause; LGPL-2.1 (mpg123); BSD (Ogg, Vorbis); zlib |
+| `GeneralUser-GS.sf2` | [GeneralUser GS](https://www.schristiancollins.com/generaluser.php) by S. Christian Collins, the SoundFont for MIDI | GeneralUser GS License v2.0 (free to use and to ship in software) |

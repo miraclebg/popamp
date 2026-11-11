@@ -5,8 +5,8 @@
 # Usage: packaging/build-appimage.sh [target/release/popamp] [output-dir]
 # Needs: appimagetool (https://github.com/AppImage/appimagetool) and strip.
 # Set APPIMAGE_RUNTIME to a runtime file to stop appimagetool downloading one.
-# Libraries are not bundled: the AppImage uses the system's ALSA, X11 and
-# xkbcommon, like the .deb (see build-deb.sh for the list).
+# Libraries are not bundled: the AppImage uses the system's ALSA, X11,
+# xkbcommon, Opus and libopenmpt, like the .deb (see build-deb.sh for the list).
 # Adapted from Ferramp's build-appimage.sh (see THIRD_PARTY.md).
 set -eu
 

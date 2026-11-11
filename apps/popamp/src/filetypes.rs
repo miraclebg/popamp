@@ -39,6 +39,8 @@ impl Group {
                 "audio/ogg",
                 "audio/x-vorbis+ogg",
                 "audio/vorbis",
+                "audio/x-opus+ogg",
+                "audio/opus",
                 "audio/mp4",
                 "audio/x-m4a",
                 "audio/aac",
@@ -46,23 +48,34 @@ impl Group {
                 "audio/x-wav",
                 "audio/x-aiff",
                 "audio/x-matroska",
+                "audio/midi",
+                "audio/x-midi",
+                "audio/x-mod",
+                "audio/x-xm",
+                "audio/x-s3m",
+                "audio/x-it",
+                "audio/x-stm",
             ],
-            Group::Playlists => {
-                &["audio/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl", "audio/x-scpls", "application/xspf+xml"]
-            }
+            Group::Playlists => &[
+                "audio/x-mpegurl",
+                "audio/mpegurl",
+                "application/vnd.apple.mpegurl",
+                "audio/x-scpls",
+                "application/xspf+xml",
+                "application/x-cue",
+            ],
             Group::Skins => &["application/x-popamp-skin", "application/x-popamp-vector-skin"],
         }
     }
 
-    /// Its file name extensions, as the Windows installer registers them.
+    /// Its file name extensions, as the Windows installer registers them:
+    /// every audio type but the video containers.
     #[cfg(test)]
-    pub fn extensions(self) -> &'static [&'static str] {
+    pub fn extensions(self) -> Vec<&'static str> {
         match self {
-            Group::Audio => &[
-                "mp3", "mp2", "mp1", "aac", "m4a", "m4b", "alac", "flac", "ogg", "oga", "wav", "wave", "aif", "aiff", "aifc", "caf", "mka",
-            ],
-            Group::Playlists => &["m3u", "m3u8", "pls", "xspf"],
-            Group::Skins => &["wsz", "psz"],
+            Group::Audio => popamp_core::audio_extensions().filter(|e| !["mp4", "mkv", "webm"].contains(e)).collect(),
+            Group::Playlists => vec!["m3u", "m3u8", "pls", "xspf", "cue"],
+            Group::Skins => vec!["wsz", "psz"],
         }
     }
 }

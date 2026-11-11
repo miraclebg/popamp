@@ -6,6 +6,29 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Opus:** `.opus` files (and Opus in Matroska and WebM) play, seek and
+  have their tags read and changed. Decoding goes through the system's
+  libopus, loaded when the first Opus track opens, so building needs no
+  Opus headers; the packages depend on it.
+- **MIDI:** `.mid`, `.midi`, `.kar` and `.rmi` files play through a
+  SoundFont synthesizer (rustysynth). The SoundFont is the system's
+  General MIDI one (`fluid-soundfont-gm` and the like), or the file set
+  under MIDI SoundFont in Preferences. Seeking is instant: it jumps, and
+  the notes held at that point start again.
+- **Tracker modules:** MOD, XM, S3M, IT, MPTM and the other common module
+  types play through the system's libopenmpt, loaded at run time, with
+  their title, artist and message. The packages recommend it.
+- **CUE sheets:** opening a `.cue` adds its tracks, each one a part of the
+  album file with the sheet's title and performer. A track plays, seeks
+  and ends within its part; a sheet that names `album.wav` finds
+  `album.flac` beside it. Tracks are kept in playlists as
+  `album.cue#3`.
+- The Windows downloads carry what these need: `opus.dll`, libopenmpt and
+  the GeneralUser GS SoundFont for MIDI, with their licences (see
+  THIRD_PARTY.md). The installer offers Popamp for the new file types.
+
 ## [0.8.0] - 2026-11-11
 
 ### Added
