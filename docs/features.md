@@ -97,8 +97,10 @@
   - Global hotkeys, as in Winamp (off by default, Preferences > Desktop):
     Ctrl+Alt+Insert play, Home pause, End stop, Page Up/Down previous and
     next, Up/Down volume, Left/Right 5 seconds back and forward. On X11
-    and Windows; not yet under Wayland. GNOME keeps Ctrl+Alt+Left/Right
-    for its workspaces.
+    and Windows; under Wayland through the desktop's GlobalShortcuts
+    portal (KDE Plasma 6, GNOME 48, Hyprland), which asks the user once
+    and lets them pick other keys. GNOME keeps Ctrl+Alt+Left/Right for its
+    workspaces.
   - Bar skins reserve their strip of the screen, like a taskbar.
 
 ## Known limitations

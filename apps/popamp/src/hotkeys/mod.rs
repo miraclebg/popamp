@@ -1,10 +1,14 @@
 //! Global hotkeys: Ctrl+Alt with Insert, Home, End, Page Up/Down and the
 //! arrows work from any program, as in Winamp. Grabbed through X11 on
-//! Linux and RegisterHotKey on Windows, on a thread of their own; a key
-//! another program holds already is left to it.
+//! Linux, asked of the desktop portal under Wayland, and registered with
+//! RegisterHotKey on Windows, on a thread of their own; a key another
+//! program holds already is left to it.
 
 use popamp_core::Command;
 use std::sync::Arc;
+
+#[cfg(unix)]
+mod portal;
 
 /// Sends a command to the UI thread.
 pub type Send = Arc<dyn Fn(Command) + std::marker::Send + Sync>;
@@ -53,11 +57,11 @@ impl Hotkeys {
     }
 }
 
-/// X11's passive grabs on the root window. Under Wayland they only see
-/// keys pressed in Xwayland's windows, so there are none.
+/// X11's passive grabs on the root window. Under Wayland they would only
+/// see keys pressed in Xwayland's windows, so there the portal is asked.
 #[cfg(unix)]
 mod os {
-    use super::{Key, Send, BINDINGS};
+    use super::{portal, Key, Send, BINDINGS};
     use std::sync::Arc;
     use std::thread::JoinHandle;
     use x11rb::connection::Connection;
@@ -68,7 +72,12 @@ mod os {
     use x11rb::rust_connection::RustConnection;
     use x11rb::COPY_DEPTH_FROM_PARENT;
 
+    /// The X11 grab or the portal's session, kept until dropped.
     pub struct Grab {
+        _held: Box<dyn std::any::Any>,
+    }
+
+    pub struct X11 {
         conn: Arc<RustConnection>,
         /// Ours alone: a message to it ends the thread.
         wake: Window,
@@ -93,9 +102,13 @@ mod os {
 
     pub fn grab(send: Send) -> Option<Grab> {
         if std::env::var_os("WAYLAND_DISPLAY").is_some() {
-            log::info!("no global hotkeys under Wayland yet");
-            return None;
+            portal::bind(send).map(|s| Grab { _held: Box::new(s) })
+        } else {
+            grab_x11(send).map(|g| Grab { _held: Box::new(g) })
         }
+    }
+
+    fn grab_x11(send: Send) -> Option<X11> {
         let (conn, screen) = x11rb::connect(None).map_err(|e| log::warn!("no global hotkeys: {e}")).ok()?;
         let root = conn.setup().roots[screen].root;
         let keys = keycodes(&conn).map_err(|e| log::warn!("no global hotkeys: {e}")).ok()?;
@@ -122,7 +135,7 @@ mod os {
             .spawn(move || listen(&listener, wake, &keys, &send))
             .map_err(|e| log::warn!("no global hotkeys: {e}"))
             .ok()?;
-        Some(Grab { conn, wake, thread: Some(thread) })
+        Some(X11 { conn, wake, thread: Some(thread) })
     }
 
     /// The keycode of each key this keyboard has.
@@ -160,7 +173,7 @@ mod os {
         }
     }
 
-    impl Drop for Grab {
+    impl Drop for X11 {
         /// Wakes the thread to end; the grabs end with the connection.
         fn drop(&mut self) {
             let msg = ClientMessageEvent::new(32, self.wake, x11rb::NONE, [0u32; 5]);

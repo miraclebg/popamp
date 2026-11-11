@@ -108,6 +108,8 @@ All playback checks ran at volume 0 through the real ALSA/PipeWire output.
 - Crossfade by ear, and the History window.
 - Media keys through the desktop.
 - The tray icon's clicks and menu on screen.
+- Global hotkeys under Wayland with a real portal (tested against a fake
+  one on the session bus).
 - Global hotkeys and the tray icon on Windows (their threads are covered
   by tests in Proton, where the icon is added; its menu is not seen yet).
 
