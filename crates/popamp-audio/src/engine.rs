@@ -291,16 +291,6 @@ struct Upcoming {
     result: Result<Opened, String>,
 }
 
-/// Tracks of one album flow into each other as they were mastered; any
-/// other pair crossfades.
-fn crossfades(prev_album: Option<&str>, next_album: Option<&str>) -> bool {
-    let album = |a: Option<&str>| a.map(|a| a.trim().to_lowercase()).filter(|a| !a.is_empty());
-    match (album(prev_album), album(next_album)) {
-        (Some(a), Some(b)) => a != b,
-        _ => true,
-    }
-}
-
 /// The end of the previous track fading out under the start of the new
 /// one, with equal-power curves so the loudness holds through the overlap.
 struct Blend {
@@ -366,7 +356,6 @@ struct Track {
     gain: f32,
     title: Option<TitleSlot>,
     last_title: Option<String>,
-    album: Option<String>,
 }
 
 struct PendingSwitch {
@@ -760,7 +749,7 @@ impl Worker {
                 let gain = self.track_gain(&meta);
                 let info = dec.info().clone();
                 self.shared.channels.store(info.channels as u32, Ordering::Relaxed);
-                self.track = Some(Track { id, dec, gain, title, last_title: None, album: meta.album.clone() });
+                self.track = Some(Track { id, dec, gain, title, last_title: None });
                 self.set_state(PlayState::Playing);
                 (self.emit)(EngineEvent::Started { id, info, meta, stream: headers });
             }
@@ -779,7 +768,7 @@ impl Worker {
                 }
                 let info = dec.info().clone();
                 let gain = self.track_gain(&meta);
-                self.track = Some(Track { id, dec, gain, title, last_title: None, album: meta.album.clone() });
+                self.track = Some(Track { id, dec, gain, title, last_title: None });
                 self.track_start = self.written;
                 self.seek_base_ms = 0;
                 self.pending = Some(PendingSwitch { at_frame: self.written, id, info, meta });
@@ -978,19 +967,19 @@ impl Worker {
     }
 
     /// Switches to the track opened ahead once the current one is within
-    /// the crossfade of its end. A pair that does not crossfade waits for
-    /// the end and continues gaplessly.
+    /// the crossfade of its end. A track of another sample rate cannot be
+    /// mixed in: it waits for the end and continues gaplessly.
     fn start_blend(&mut self) {
-        let (Some(up), Some(track), Some(left)) = (&self.upcoming, &self.track, self.frames_left()) else { return };
-        let Ok((dec, meta, ..)) = &up.result else { return };
-        let fits = dec.info().sample_rate as u64 == self.rate() && crossfades(track.album.as_deref(), meta.album.as_deref());
+        let (Some(up), Some(_), Some(left)) = (&self.upcoming, &self.track, self.frames_left()) else { return };
+        let Ok((dec, ..)) = &up.result else { return };
+        let fits = dec.info().sample_rate as u64 == self.rate();
         if !fits || self.pending.is_some() || left > self.rate() * self.crossfade_ms as u64 / 1000 {
             return;
         }
         let Some(Upcoming { id, result: Ok((dec, meta, title, _, _)) }) = self.upcoming.take() else { return };
         let info = dec.info().clone();
         let gain = self.track_gain(&meta);
-        let new = Track { id, dec, gain, title, last_title: None, album: meta.album.clone() };
+        let new = Track { id, dec, gain, title, last_title: None };
         let old = self.track.replace(new).expect("checked above");
         self.blend = Some(Blend::new(old.dec, old.gain, left));
         self.track_start = self.written;
@@ -1289,13 +1278,6 @@ mod tests {
         let Ok(EngineEvent::Started { meta, .. }) = started else { panic!("{started:?}") };
         assert_eq!(meta.replaygain_track_gain, Some(-6.0206));
         assert!((meter.lock().1 - 0.25).abs() < 0.001, "half of the half-scale file: {}", meter.lock().1);
-    }
-
-    #[test]
-    fn only_tracks_of_different_albums_crossfade() {
-        assert!(!crossfades(Some("Kind of Blue"), Some(" kind of blue ")));
-        assert!(crossfades(Some("Kind of Blue"), Some("Blue Train")));
-        assert!(crossfades(None, Some("Blue Train")) && crossfades(Some(""), Some("")));
     }
 
     /// Takes `pipe:` locations and plays them through a shell script;

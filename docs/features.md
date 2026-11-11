@@ -47,7 +47,7 @@
     comes with Popamp) or the one set in Preferences; tracker
     modules (MOD, XM, S3M, IT, MPTM and more) through the system's
     libopenmpt.
-  - Gapless playback, crossfade between tracks of different albums, stop
+  - Gapless playback, crossfade between tracks, stop
     with fadeout, stop after current.
   - ReplayGain from tags, or measured by Popamp's own scanner (EBU R128,
     track and album gain: select tracks, then *Scan ReplayGain* in the
