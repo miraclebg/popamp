@@ -19,7 +19,7 @@ extern "ExtismHost" {
     fn popamp_http(req: Json<popamp_plugin_api::HttpRequest>) -> Json<HttpResponse>;
     fn popamp_list(path: Json<String>) -> Json<Listing>;
     fn popamp_read(req: Json<ReadRequest>) -> Json<FileData>;
-    fn popamp_input(req: Json<Range>) -> Json<FileData>;
+    fn popamp_input(req: Json<Range>) -> Vec<u8>;
 }
 
 fn path(location: &str) -> &str {
@@ -185,11 +185,7 @@ static FRAMES: AtomicU64 = AtomicU64::new(0);
 static POS: AtomicU64 = AtomicU64::new(0);
 
 fn input(offset: u64, length: u32) -> Result<Vec<u8>, Error> {
-    let data = unsafe { popamp_input(Json(Range { offset, length }))? }.0;
-    match data.error {
-        Some(e) => Err(Error::msg(e)),
-        None => Ok(data.data),
-    }
+    unsafe { popamp_input(Json(Range { offset, length })) }
 }
 
 #[plugin_fn]

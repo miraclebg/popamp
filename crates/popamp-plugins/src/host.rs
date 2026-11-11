@@ -21,8 +21,8 @@ use popamp_audio::source::{Context, Playback, Source};
 use popamp_core::meta::TrackMeta;
 use popamp_core::plformats::Item;
 use popamp_plugin_api::{
-    bytes_of, calls, config, host, samples_of, ExecOutput, ExecRequest, FileData, FileInfo, Format, HttpRequest, Play, Range, ReadRequest,
-    Stream, Tags, Track, Version, VERSION,
+    bytes_of, calls, config, host, samples_of, ExecOutput, ExecRequest, FileInfo, Format, HttpRequest, Play, Range, ReadRequest, Stream,
+    Tags, Track, Version, VERSION,
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -186,7 +186,7 @@ impl Plugin {
                     move |path: String, _| folders.list(&path)
                 }),
                 function(host::READ, move |req: ReadRequest, _| folders.read(&req)),
-                function(host::INPUT, |range: Range, _| input(range)),
+                Function::new(host::INPUT, [PTR], [PTR], UserData::new(()), input),
             ])
             .compile()
             .map_err(|e| format!("cannot compile {MODULE}: {e}"))?;
@@ -528,20 +528,21 @@ fn with_input<T>(file: &mut Option<File>, call: impl FnOnce() -> T) -> T {
     out
 }
 
-/// `popamp_input`: a piece of the file being decoded on this thread.
-fn input(range: Range) -> FileData {
-    let piece = INPUT.with(|i| {
+/// `popamp_input`: a piece of the file being decoded on this thread, as
+/// raw bytes; a decoder reads its whole file this way.
+fn input(plugin: &mut CurrentPlugin, inputs: &[Val], outputs: &mut [Val], _: UserData<()>) -> Result<(), extism::Error> {
+    let range: Range = serde_json::from_str(&plugin.memory_get_val::<String>(&inputs[0])?)?;
+    let data = INPUT.with(|i| {
         let mut file = i.borrow_mut();
-        let file = file.as_mut().ok_or("only a decoder reads its file")?;
+        let file = file.as_mut().ok_or_else(|| extism::Error::msg("only a decoder reads its file"))?;
         let mut data = Vec::new();
-        file.seek(SeekFrom::Start(range.offset)).map_err(|e| e.to_string())?;
-        file.take(range.length.min(INPUT_PIECE) as u64).read_to_end(&mut data).map_err(|e| e.to_string())?;
-        Ok::<_, String>(data)
-    });
-    match piece {
-        Ok(data) => FileData { error: None, data },
-        Err(e) => FileData { error: Some(e), data: Vec::new() },
-    }
+        file.seek(SeekFrom::Start(range.offset))?;
+        file.take(range.length.min(INPUT_PIECE) as u64).read_to_end(&mut data)?;
+        Ok::<_, extism::Error>(data)
+    })?;
+    let handle = plugin.memory_new(data)?;
+    outputs[0] = plugin.memory_to_val(handle);
+    Ok(())
 }
 
 /// A decoder plug-in as the player's format dispatch sees it.

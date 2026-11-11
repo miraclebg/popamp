@@ -306,9 +306,9 @@ little-endian, at that rate. Reading a playlist's tags only opens the
 file.
 
 A decoder reads its file with `popamp_input` (`{"offset", "length"}` in,
-at most 1 MiB out) and can read nothing else: the call reads the file of
-the instance it came from, and any other plug-in that calls it gets an
-error.
+at most 1 MiB of raw bytes out, fewer at the end) and can read nothing
+else: the call reads the file of
+the instance it came from, and for any other plug-in the call fails.
 
 ## Visualizer plug-ins
 
