@@ -15,8 +15,6 @@ use rustysynth::{SoundFont, Synthesizer, SynthesizerSettings};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-pub const EXTENSIONS: &[&str] = &["mid", "midi", "kar", "rmi"];
-
 const RATE: u32 = 44_100;
 /// Frames rendered per call: about 23 ms.
 const BLOCK: usize = 1_024;

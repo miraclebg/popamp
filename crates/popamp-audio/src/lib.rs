@@ -12,6 +12,7 @@ pub mod pipe;
 pub mod source;
 pub mod stream;
 pub mod tags;
+mod tracker;
 
 pub use decoder::{AudioSource, StreamInfo};
 pub use dsp::EqSettings;

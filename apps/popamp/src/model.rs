@@ -781,7 +781,7 @@ impl Model {
 
     pub fn request_dialog(&mut self, kind: DialogKind) {
         let media_filter: Vec<String> =
-            popamp_core::AUDIO_EXTENSIONS.iter().chain(["m3u", "m3u8", "pls", "xspf"].iter()).map(|e| format!("*.{e}")).collect();
+            popamp_core::audio_extensions().chain(["m3u", "m3u8", "pls", "xspf"]).map(|e| format!("*.{e}")).collect();
         let start = self.start_dir();
         let req = match &kind {
             DialogKind::OpenFiles { .. } => Request::Files { title: "Open file(s)".into(), multiple: true, filter: media_filter, start },

@@ -4,19 +4,23 @@
 use crate::decoder::{AudioSource, Decoder};
 use crate::midi::{self, MidiSource};
 use crate::source::Context;
+use crate::tracker::{self, TrackerSource};
 use popamp_core::meta::TrackMeta;
 use std::path::Path;
 
 enum Kind {
     Midi,
+    Tracker,
     Common,
 }
 
 fn kind(path: &Path) -> Kind {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
     let is = |list: &[&str]| list.iter().any(|e| e.eq_ignore_ascii_case(ext));
-    if is(midi::EXTENSIONS) {
+    if is(popamp_core::MIDI_EXTENSIONS) {
         Kind::Midi
+    } else if is(popamp_core::MODULE_EXTENSIONS) {
+        Kind::Tracker
     } else {
         Kind::Common
     }
@@ -26,6 +30,7 @@ fn kind(path: &Path) -> Kind {
 pub fn open(path: &Path, cx: &Context) -> Result<(Box<dyn AudioSource>, TrackMeta), String> {
     match kind(path) {
         Kind::Midi => MidiSource::open(path, &cx.soundfont).map(|(s, m)| (Box::new(s) as Box<dyn AudioSource>, m)),
+        Kind::Tracker => TrackerSource::open(path).map(|(s, m)| (Box::new(s) as Box<dyn AudioSource>, m)),
         Kind::Common => Decoder::open_file(path).map(|(d, m)| (Box::new(d) as Box<dyn AudioSource>, m)),
     }
 }
@@ -34,6 +39,7 @@ pub fn open(path: &Path, cx: &Context) -> Result<(Box<dyn AudioSource>, TrackMet
 pub fn read_meta(path: &Path) -> Result<TrackMeta, String> {
     match kind(path) {
         Kind::Midi => midi::read_meta(path),
+        Kind::Tracker => tracker::read_meta(path),
         Kind::Common => crate::decoder::read_meta(path),
     }
 }
@@ -49,7 +55,7 @@ mod tests {
     #[test]
     fn each_file_goes_to_the_decoder_of_its_format() {
         let cx = Context { soundfont: fixture("sine.sf2").to_string_lossy().into_owned(), ..Context::default() };
-        for (name, codec) in [("a4.mid", "MIDI"), ("tone.opus", "OPUS"), ("silence.flac", "FLAC")] {
+        for (name, codec) in [("a4.mid", "MIDI"), ("sine.mod", "MOD"), ("tone.opus", "OPUS"), ("silence.flac", "FLAC")] {
             let (source, _) = open(&fixture(name), &cx).unwrap();
             assert_eq!(source.info().codec, codec, "{name}");
             assert_eq!(read_meta(&fixture(name)).unwrap().codec.as_deref(), Some(codec), "{name}");

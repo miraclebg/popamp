@@ -17,6 +17,9 @@ All notable changes to this project are documented here. The format follows
   General MIDI one (`fluid-soundfont-gm` and the like), or the file set
   under MIDI SoundFont in Preferences. Seeking is instant: it jumps, and
   the notes held at that point start again.
+- **Tracker modules:** MOD, XM, S3M, IT, MPTM and the other common module
+  types play through the system's libopenmpt, loaded at run time, with
+  their title, artist and message. The packages recommend it.
 
 ## [0.8.0] - 2026-11-11
 
