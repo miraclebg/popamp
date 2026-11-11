@@ -43,6 +43,8 @@ All notable changes to this project are documented here. The format follows
   stopping) could leave the sound stuck, and closing Popamp then hung.
   Emptying the output kept it marked paused, so it never started again
   and the next write waited for room forever. Since 0.5.0.
+- Windows: the media card by the volume flyout kept the cover of the
+  last track that had one; a track without a cover now shows the logo.
 
 ## [0.8.0] - 2026-11-11
 

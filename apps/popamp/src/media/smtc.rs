@@ -28,7 +28,7 @@ use windows::Media::{
     SystemMediaTransportControlsDisplayUpdater, SystemMediaTransportControlsTimelineProperties,
 };
 use windows::Storage::StorageFile;
-use windows::Storage::Streams::RandomAccessStreamReference;
+use windows::Storage::Streams::{DataWriter, InMemoryRandomAccessStream, RandomAccessStreamReference};
 use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
 use winit::event_loop::EventLoopProxy;
 
@@ -228,13 +228,30 @@ fn put(card: &mut Card, track: Option<&Track>) -> Result<()> {
     display.ClearAll()?;
     if let Some(t) = track {
         describe(&display, t)?;
-        if let Some(path) = card.covers.of(t) {
-            if let Err(e) = thumbnail(&display, &path) {
-                log::debug!("cover {}: {e}", path.display());
+        // The card keeps the last picture it had, through ClearAll and an
+        // empty one alike: a track without a cover shows the logo, not
+        // the cover of the one before.
+        let cover = card.covers.of(t);
+        let shown = cover.as_deref().map(|path| thumbnail(&display, path).inspect_err(|e| log::debug!("cover {}: {e}", path.display())));
+        if !matches!(shown, Some(Ok(()))) {
+            if let Err(e) = logo(&display) {
+                log::debug!("logo on the media card: {e}");
             }
         }
     }
     display.Update()
+}
+
+/// Puts Popamp's logo on the card.
+fn logo(display: &SystemMediaTransportControlsDisplayUpdater) -> Result<()> {
+    static PNG: &[u8] = include_bytes!("../../../../assets/logo/png/popamp-256.png");
+    let stream = InMemoryRandomAccessStream::new()?;
+    let writer = DataWriter::CreateDataWriter(&stream)?;
+    writer.WriteBytes(PNG)?;
+    writer.StoreAsync()?.join()?;
+    writer.DetachStream()?;
+    stream.Seek(0)?;
+    display.SetThumbnail(&RandomAccessStreamReference::CreateFromStream(&stream)?)
 }
 
 /// Puts the image file at `path` on the card.
