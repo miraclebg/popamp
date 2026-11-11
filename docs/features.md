@@ -40,7 +40,10 @@
 - **Playback:**
   - Formats: MP3, AAC/M4A, FLAC, Ogg Vorbis, WAV, AIFF, MKA (Matroska audio)
     and ALAC, decoded by [Symphonia](https://github.com/pdeljanov/Symphonia);
-    Opus (in Ogg, Matroska and WebM) through the system's libopus.
+    Opus (in Ogg, Matroska and WebM) through the system's libopus; MIDI
+    (`.mid`, `.midi`, `.kar`, `.rmi`) through a SoundFont synthesizer
+    ([rustysynth](https://github.com/sinshu/rustysynth)), with the
+    system's General MIDI SoundFont or the one set in Preferences.
   - Gapless playback, stop with fadeout, stop after current, ReplayGain.
   - HTTP(S)/Icecast/SHOUTcast streams with ICY titles.
   - YouTube videos, playlists and channels through the
@@ -75,7 +78,7 @@
 
 ## Known limitations
 
-- MIDI and tracker modules are not supported.
+- Tracker modules are not supported.
 - No native Wayland windows: Popamp needs Xwayland on Wayland desktops.
 - The Preferences window (`Ctrl+P`) covers the common options; the rest are
   in the menus and `popamp.ini`.

@@ -12,6 +12,11 @@ All notable changes to this project are documented here. The format follows
   have their tags read and changed. Decoding goes through the system's
   libopus, loaded when the first Opus track opens, so building needs no
   Opus headers; the packages depend on it.
+- **MIDI:** `.mid`, `.midi`, `.kar` and `.rmi` files play through a
+  SoundFont synthesizer (rustysynth). The SoundFont is the system's
+  General MIDI one (`fluid-soundfont-gm` and the like), or the file set
+  under MIDI SoundFont in Preferences. Seeking is instant: it jumps, and
+  the notes held at that point start again.
 
 ## [0.8.0] - 2026-11-11
 

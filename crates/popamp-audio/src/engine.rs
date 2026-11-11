@@ -63,7 +63,8 @@ pub enum EngineCmd {
         device: String,
         buffer_ms: u32,
         fade_ms: u32,
-        proxy: String,
+        /// What opening a track needs from the settings.
+        cx: Context,
     },
     Quit,
 }
@@ -484,10 +485,10 @@ impl Worker {
                 self.rg = rg;
                 // Takes effect from the next track.
             }
-            EngineCmd::Config { device, buffer_ms, fade_ms, proxy } => {
+            EngineCmd::Config { device, buffer_ms, fade_ms, cx } => {
                 self.buffer_ms = buffer_ms;
                 self.fade_ms = fade_ms;
-                self.cx.proxy = proxy;
+                self.cx = cx;
                 self.set_device(device);
             }
             EngineCmd::Quit => {}
@@ -868,8 +869,8 @@ fn open_location(sources: &Sources, location: &str, start_ms: u64, cx: &Context)
             Ok((Box::new(dec), meta, Some(title), Some(headers), 0))
         }
         Playback::File(path) => {
-            let (dec, meta) = Decoder::open_file(&path)?;
-            Ok((Box::new(dec), meta, None, None, 0))
+            let (dec, meta) = crate::formats::open(&path, cx)?;
+            Ok((dec, meta, None, None, 0))
         }
     }
 }

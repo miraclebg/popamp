@@ -48,6 +48,8 @@ impl Group {
                 "audio/x-wav",
                 "audio/x-aiff",
                 "audio/x-matroska",
+                "audio/midi",
+                "audio/x-midi",
             ],
             Group::Playlists => {
                 &["audio/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl", "audio/x-scpls", "application/xspf+xml"]

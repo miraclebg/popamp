@@ -275,7 +275,7 @@ impl Model {
 
     /// What sources need from the settings.
     pub(crate) fn source_context(&self) -> Context {
-        Context { proxy: self.settings().proxy.clone() }
+        Context { proxy: self.settings().proxy.clone(), soundfont: self.settings().soundfont.clone() }
     }
 
     pub fn push_engine_settings(&mut self) {
@@ -286,7 +286,7 @@ impl Model {
             device: s.output_device.clone(),
             buffer_ms: s.buffer_ms,
             fade_ms: s.fade_ms,
-            proxy: s.proxy.clone(),
+            cx: self.source_context(),
         });
         self.engine.send(EngineCmd::ReplayGain(ReplayGainSettings {
             enabled: s.replaygain,

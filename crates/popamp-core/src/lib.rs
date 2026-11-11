@@ -16,7 +16,7 @@ pub use command::Command;
 /// File extensions (lower-case) Popamp tries to play.
 pub const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "mp2", "mp1", "aac", "m4a", "m4b", "mp4", "alac", "flac", "ogg", "oga", "opus", "wav", "wave", "aif", "aiff", "aifc", "caf",
-    "mka", "mkv", "webm",
+    "mka", "mkv", "webm", "mid", "midi", "kar", "rmi",
 ];
 
 pub fn is_audio_file(path: &str) -> bool {

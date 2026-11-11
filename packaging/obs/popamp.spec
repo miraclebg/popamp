@@ -55,6 +55,12 @@ Requires:       libopus.so.0()(64bit)
 Requires:       fontconfig
 Requires:       hicolor-icon-theme
 Recommends:     (zenity or kdialog)
+# A General MIDI SoundFont, for MIDI files.
+%if 0%{?suse_version}
+Suggests:       fluid-soundfont
+%else
+Suggests:       fluid-soundfont-gm
+%endif
 %if 0%{?suse_version}
 Recommends:     dejavu-fonts
 %else

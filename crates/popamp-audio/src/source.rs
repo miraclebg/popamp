@@ -21,6 +21,8 @@ use std::time::Duration;
 pub struct Context {
     /// HTTP proxy (`[user:pass@]host:port`), empty for none.
     pub proxy: String,
+    /// The SoundFont that plays MIDI, empty for the system's.
+    pub soundfont: String,
 }
 
 /// How the engine plays a track.
@@ -167,7 +169,7 @@ impl Source for FileSource {
     }
 
     fn describe(&self, location: &str) -> Option<Result<TrackMeta, String>> {
-        Some(crate::decoder::read_meta(Path::new(location)))
+        Some(crate::formats::read_meta(Path::new(location)))
     }
 
     fn open(&self, location: &str, _cx: &Context) -> Result<Playback, String> {

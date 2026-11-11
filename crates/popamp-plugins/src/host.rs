@@ -643,7 +643,8 @@ default = "ffmpeg"
     fn test_plugin(values: &[(&str, &str)], call_time: Duration) -> Plugin {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test");
         let values = values.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-        Plugin::load_with(&dir, &values, &Context { proxy: "proxy:3128".into() }, Access::default(), call_time).unwrap()
+        Plugin::load_with(&dir, &values, &Context { proxy: "proxy:3128".into(), ..Context::default() }, Access::default(), call_time)
+            .unwrap()
     }
 
     fn with_access(access: Access) -> Plugin {
