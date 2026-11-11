@@ -47,7 +47,14 @@
     comes with Popamp) or the one set in Preferences; tracker
     modules (MOD, XM, S3M, IT, MPTM and more) through the system's
     libopenmpt.
-  - Gapless playback, stop with fadeout, stop after current, ReplayGain.
+  - Gapless playback, crossfade between tracks of different albums, stop
+    with fadeout, stop after current.
+  - ReplayGain from tags, or measured by Popamp's own scanner (EBU R128,
+    track and album gain: select tracks, then *Scan ReplayGain* in the
+    playlist's menu). Scanned values are kept in `replaygain.txt` in the
+    settings folder; Popamp never writes them into the files.
+  - History (Ctrl+H): the last 5000 plays, searchable, kept in
+    `history.txt`.
   - HTTP(S)/Icecast/SHOUTcast streams with ICY titles.
   - YouTube videos, playlists and channels through the
     [YouTube plug-in](https://github.com/popamp/plugin-youtube).

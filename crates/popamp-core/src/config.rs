@@ -373,6 +373,9 @@ impl Paths {
     pub fn history_file(&self) -> PathBuf {
         self.config_dir.join("history.txt")
     }
+    pub fn replaygain_file(&self) -> PathBuf {
+        self.config_dir.join("replaygain.txt")
+    }
     pub fn eq_library(&self) -> PathBuf {
         self.config_dir.join("popamp.q1")
     }

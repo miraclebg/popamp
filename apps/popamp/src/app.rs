@@ -1519,6 +1519,7 @@ impl ApplicationHandler<AppEvent> for App {
             }
             AppEvent::Meta(id, m) => self.model.on_meta(id, m),
             AppEvent::Expanded { items, mode } => self.model.on_expanded(items, mode),
+            AppEvent::Scan(ev) => self.model.on_scan(ev),
             AppEvent::Dialog(r) if matches!(r.kind, crate::dialogs::DialogKind::PickCover { .. }) => {
                 if let (Some(i), Some(f)) = (self.panels.iter().position(|p| p.panel.kind() == PanelKind::FileInfo), r.values.first()) {
                     self.panels[i].panel.cover_picked(std::path::Path::new(f));

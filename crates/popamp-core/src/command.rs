@@ -111,6 +111,7 @@ commands! {
     Gallery = 50029,
     AlbumArt = 50030,
     History = 50031,
+    ScanReplayGain = 50032,
 }
 
 #[cfg(test)]

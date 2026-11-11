@@ -13,6 +13,7 @@ use popamp_core::cue;
 use popamp_core::meta::TrackMeta;
 use popamp_core::playlist::is_url;
 use popamp_core::plformats::{self, is_playlist, Item};
+use popamp_core::replaygain::Scanned;
 use popamp_core::text;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -27,6 +28,8 @@ pub struct Context {
     pub soundfont: String,
     /// The decoder plug-ins that are on.
     pub decoders: Decoders,
+    /// The ReplayGain values Popamp measured; they win over the tags.
+    pub scanned: Arc<Scanned>,
 }
 
 /// How the engine plays a track.

@@ -8,6 +8,8 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::path::Path;
 
+use crate::text::{escape_field as escape, unescape_field as unescape};
+
 /// How many plays are kept.
 pub const LIMIT: usize = 5000;
 
@@ -101,40 +103,6 @@ fn append(path: &Path, line: &str) -> std::io::Result<()> {
         std::fs::create_dir_all(dir)?;
     }
     std::fs::OpenOptions::new().create(true).append(true).open(path)?.write_all(line.as_bytes())
-}
-
-/// Keeps a field on its line: backslash, tab and line breaks are escaped.
-fn escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '\t' => out.push_str("\\t"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            c => out.push(c),
-        }
-    }
-    out
-}
-
-fn unescape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c != '\\' {
-            out.push(c);
-            continue;
-        }
-        match chars.next() {
-            Some('t') => out.push('\t'),
-            Some('n') => out.push('\n'),
-            Some('r') => out.push('\r'),
-            Some(other) => out.push(other),
-            None => out.push('\\'),
-        }
-    }
-    out
 }
 
 #[cfg(test)]

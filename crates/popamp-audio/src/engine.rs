@@ -269,7 +269,7 @@ impl Drop for Engine {
 }
 
 /// A source plus its tags, ICY title slot, stream headers and start offset.
-type Opened = (Box<dyn AudioSource>, TrackMeta, Option<TitleSlot>, Option<StreamHeaders>, u64);
+pub(crate) type Opened = (Box<dyn AudioSource>, TrackMeta, Option<TitleSlot>, Option<StreamHeaders>, u64);
 
 /// What a track is opened for.
 #[derive(Clone, Copy)]
@@ -1029,7 +1029,13 @@ impl Worker {
 
 /// Opens a file or a stream; slow for streams, so never on the worker.
 fn open_location(sources: &Sources, location: &str, start_ms: u64, cx: &Context) -> Result<Opened, String> {
-    match sources.of(location).open(location, cx)? {
+    open_playback(sources.of(location).open(location, cx)?, location, start_ms, cx)
+}
+
+/// Opens what a source said `location` plays as; a local track gets the
+/// ReplayGain values Popamp measured for it.
+pub(crate) fn open_playback(playback: Playback, location: &str, start_ms: u64, cx: &Context) -> Result<Opened, String> {
+    match playback {
         Playback::Pipe(pipe) => {
             // The program seeks on its own; start where asked.
             let (src, meta) = PipeSource::open(*pipe, start_ms)?;
@@ -1043,12 +1049,14 @@ fn open_location(sources: &Sources, location: &str, start_ms: u64, cx: &Context)
             }
             Ok((Box::new(dec), meta, Some(title), Some(headers), 0))
         }
-        Playback::Part { path, start_ms, end_ms, meta } => {
+        Playback::Part { path, start_ms, end_ms, mut meta } => {
             let (dec, _) = crate::formats::open_part(&path, start_ms, end_ms, cx)?;
+            cx.scanned.apply(location, &path, &mut meta);
             Ok((dec, *meta, None, None, 0))
         }
         Playback::File(path) => {
-            let (dec, meta) = crate::formats::open(&path, cx)?;
+            let (dec, mut meta) = crate::formats::open(&path, cx)?;
+            cx.scanned.apply(location, &path, &mut meta);
             Ok((dec, meta, None, None, 0))
         }
     }
@@ -1258,6 +1266,29 @@ mod tests {
         let (seen, frames, peak) = play_two_halves(0);
         assert_eq!(seen, ["started 1", "changed 2", "finished 2"]);
         assert_eq!((frames, peak), (44_100 * 1500 / 1000, 0.5));
+    }
+
+    #[test]
+    fn a_scanned_gain_plays_and_reaches_the_ui() {
+        use popamp_core::replaygain::{Gains, Level, Scanned, Stamp};
+        let (engine, events) = engine_with(Sources::default());
+        let meter = Arc::new(parking_lot::Mutex::new((0, 0.0)));
+        let wav = level_wav("scanned", 300, 16_384);
+        let location: String = wav.to_string_lossy().into();
+        let mut scanned = Scanned::default();
+        let track = Level { gain_db: -6.0206, peak: 0.5 };
+        scanned.insert(location.clone(), Stamp::of(&wav).unwrap(), Gains { track, album: None });
+        let cx = Context { scanned: Arc::new(scanned), ..Context::default() };
+        engine.send(EngineCmd::Config { device: "null".into(), buffer_ms: 150, fade_ms: 1000, crossfade_ms: 0, cx });
+        engine.send(EngineCmd::ReplayGain(ReplayGainSettings { enabled: true, ..Default::default() }));
+        engine.send(EngineCmd::Effects(vec![Box::new(Meter(meter.clone()))]));
+        engine.send(EngineCmd::Open { id: 1, location, start_ms: 0 });
+        let started = events.recv_timeout(Duration::from_secs(3));
+        events_until_finished(&events);
+        let _ = std::fs::remove_file(wav);
+        let Ok(EngineEvent::Started { meta, .. }) = started else { panic!("{started:?}") };
+        assert_eq!(meta.replaygain_track_gain, Some(-6.0206));
+        assert!((meter.lock().1 - 0.25).abs() < 0.001, "half of the half-scale file: {}", meter.lock().1);
     }
 
     #[test]

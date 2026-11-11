@@ -30,6 +30,8 @@ symphonia = { version = "0.5", features = ["all", "opt-simd"] }
 libloading = "0.8"
 rustysynth = "1.3"
 midly = "0.5"
+# ReplayGain scanning: EBU R128 loudness, pure Rust.
+ebur128 = "0.1"
 rustfft = "6"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 image = { version = "0.25", default-features = false, features = ["bmp", "png", "gif", "jpeg", "ico"] }

@@ -31,6 +31,7 @@ mod platform;
 mod plugins;
 mod render;
 mod scale;
+mod scan;
 mod skinwin;
 mod ui;
 mod vis;

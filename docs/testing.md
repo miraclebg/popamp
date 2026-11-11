@@ -102,7 +102,8 @@ All playback checks ran at volume 0 through the real ALSA/PipeWire output.
 - Saving tags of the track that is playing, on Windows.
 - Double size.
 - A skin with a `region.txt` window shape.
-- ReplayGain-tagged files.
+- ReplayGain-tagged files, and the ReplayGain scanner by ear.
+- Crossfade by ear, and the History window.
 - Media keys through the desktop.
 
 Please report problems with these first.

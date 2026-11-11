@@ -15,6 +15,7 @@ use popamp_core::history::{self, History, Played};
 use popamp_core::meta::TrackMeta;
 use popamp_core::playlist::{is_url, Entry, Playlist, SortKey};
 use popamp_core::plformats::{self, Item};
+use popamp_core::replaygain::Scanned;
 use popamp_core::text::format_duration_ms;
 use popamp_core::Command;
 use popamp_skin::Skin;
@@ -48,6 +49,8 @@ pub enum AppEvent {
     Remote(crate::ipc::Request),
     Museum(crate::museum::Fetched),
     Gallery(crate::gallery::Fetched),
+    /// How a ReplayGain scan goes.
+    Scan(crate::scan::ScanEvent),
     /// The plug-ins, loaded anew, and an instance of each dsp one for the
     /// engine; the number is that of the request.
     #[cfg(feature = "plugins")]
@@ -114,6 +117,10 @@ pub struct Model {
     pub bookmarks: Vec<Item>,
     /// What was played, kept in `history.txt`.
     pub history: History,
+    /// The ReplayGain values Popamp measured, kept in `replaygain.txt`.
+    pub scanned: Arc<Scanned>,
+    /// True while a ReplayGain scan runs.
+    pub scanning: bool,
     pub vis: Vis,
     pub ui: Vec<UiReq>,
     pub quit: bool,
@@ -228,6 +235,7 @@ impl Model {
         let eq_auto = eqf::read_file(&paths.eq_auto_library()).unwrap_or_default();
         let bookmarks = plformats::read_file(&paths.bookmarks_file()).unwrap_or_default();
         let history = History::load(&paths.history_file());
+        let scanned = Arc::new(Scanned::load(&paths.replaygain_file()));
         let format = Format::cached(&config.settings.titlefmt);
         let mut m = Model {
             paths,
@@ -246,6 +254,8 @@ impl Model {
             eq_auto,
             bookmarks,
             history,
+            scanned,
+            scanning: false,
             vis: Vis::new(),
             ui: Vec::new(),
             quit: false,
@@ -284,7 +294,12 @@ impl Model {
 
     /// What sources need from the settings.
     pub(crate) fn source_context(&self) -> Context {
-        Context { proxy: self.settings().proxy.clone(), soundfont: self.settings().soundfont.clone(), decoders: self.decoders.clone() }
+        Context {
+            proxy: self.settings().proxy.clone(),
+            soundfont: self.settings().soundfont.clone(),
+            decoders: self.decoders.clone(),
+            scanned: self.scanned.clone(),
+        }
     }
 
     pub fn push_engine_settings(&mut self) {
@@ -1172,6 +1187,7 @@ impl Model {
             C::Gallery => self.ui.push(UiReq::Panel(PanelKind::Gallery)),
             C::AlbumArt => self.ui.push(UiReq::Panel(PanelKind::AlbumArt)),
             C::History => self.ui.push(UiReq::Panel(PanelKind::History)),
+            C::ScanReplayGain => self.scan_replaygain(),
             #[cfg(feature = "plugins")]
             C::Plugins => self.ui.push(UiReq::Panel(PanelKind::Plugins)),
             #[cfg(not(feature = "plugins"))]
@@ -1634,6 +1650,7 @@ impl Model {
             MenuItem::cmd("View file info…", "Alt+3", C::FileInfo),
             MenuItem::cmd("Playlist entry…", "Ctrl+E", C::EditPlaylistEntry),
             MenuItem::cmd("Bookmark item(s)", "Alt+I", C::BookmarkSelected),
+            MenuItem::cmd("Scan ReplayGain", "", C::ScanReplayGain),
             MenuItem::sep(),
             MenuItem::sub("Sort", self.sort_menu()),
         ]
