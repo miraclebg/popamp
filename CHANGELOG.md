@@ -6,45 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added
-
-- Skins: `align = "left" | "center" | "right"` on a `clock` element places
-  a font's play time across it, so it can keep against a line or a label
-  whatever the width of the font's digits. Left is the default.
-- `min_popamp = "0.8.0"` in a skin's `[meta]` or a `plugin.toml`: the
-  oldest Popamp it works with. Older ones say a newer Popamp is needed,
-  as the first thing they check, instead of failing on a key they do not
-  know; the gallery keeps the installed plug-in rather than replace it
-  with one that would not start.
-
-### Changed
-
-- Menus, tooltips and Popamp's own dialogs follow the display scaling
-  (Windows' scaling setting, `Xft.dpi` on X11) instead of growing with the
-  player's windows, so Double Size no longer makes them bigger.
-
-### Fixed
-
-- Windows: right-click menus closed as soon as they opened.
-- Windows: the equalizer and playlist did not come back after the main
-  window was minimized and restored from the taskbar; they are now owned
-  by the main window and minimize and restore with it.
-- Windows: visualizer plug-ins closed at once ("the underlying handle is
-  not available"): winit gives out a window's handle only on the event
-  loop's thread, and the GPU draws on a thread of its own. Why a plug-in
-  stopped is now also written to the log.
-- Windows: a bar crept up the screen, reserving one strip above another:
-  Windows moves the bar out of the strip just reserved for it, and the
-  strip was told apart from the desktop's panels by where the bar was.
-  It is now known by what was reserved, and the bar goes back into it.
-- Vector skins at x1.5 and other sizes between whole pixels: text came out
-  longer than its place, and the play time lost its last digit (Steel).
-  Glyphs are still drawn at a whole size, but spaced at the exact one.
-- The play time of a vector skin sits in the middle of its place by the
-  digits themselves, not by the room a font leaves above them: with the
-  system font (Modern) it sat low on Windows, over the visualization.
-
-## [0.8.0] - 2026-11-10
+## [0.8.0] - 2026-11-11
 
 ### Added
 
@@ -80,6 +42,14 @@ All notable changes to this project are documented here. The format follows
 - rpms of the skins and plug-ins, in the openSUSE and Fedora repositories
   next to popamp: `popamp-skin-<name>` and `popamp-plugin-<id>`, the same
   files as their debs (`packaging/obs/publish-addons.sh`).
+- Skins: `align = "left" | "center" | "right"` on a `clock` element places
+  a font's play time across it, so it can keep against a line or a label
+  whatever the width of the font's digits. Left is the default.
+- `min_popamp = "0.8.0"` in a skin's `[meta]` or a `plugin.toml`: the
+  oldest Popamp it works with. Older ones say a newer Popamp is needed,
+  as the first thing they check, instead of failing on a key they do not
+  know; the gallery keeps the installed plug-in rather than replace it
+  with one that would not start.
 
 ### Changed
 
@@ -87,7 +57,8 @@ All notable changes to this project are documented here. The format follows
   [popamp-skin-default](https://github.com/popamp/popamp-skin-default), and
   is still built into the program. It can be forked without the player.
 - Menus, tooltips and Popamp's own windows (Preferences, Gallery, File
-  info and the others) grow with the skin's windows at ×1.25 to ×3, with
+  info and the others) follow the display scaling (Windows' scaling
+  setting, `Xft.dpi` on X11), not the size of the player's windows, with
   their text set at that size, so it stays sharp. Covers and previews are
   kept large enough for ×3.
 - The Skin browser (`Alt+S`, Options) is a window of Popamp's own instead
@@ -108,6 +79,24 @@ All notable changes to this project are documented here. The format follows
 - A click on the position bar no longer makes the slider and the clock
   jump back for a moment before they show the new place, and a second
   seek while paused shows its own position.
+- Windows: right-click menus closed as soon as they opened.
+- Windows: the equalizer and playlist did not come back after the main
+  window was minimized and restored from the taskbar; they are now owned
+  by the main window and minimize and restore with it.
+- Windows: visualizer plug-ins closed at once ("the underlying handle is
+  not available"): winit gives out a window's handle only on the event
+  loop's thread, and the GPU draws on a thread of its own. Why a plug-in
+  stopped is now also written to the log.
+- Windows: a bar crept up the screen, reserving one strip above another:
+  Windows moves the bar out of the strip just reserved for it, and the
+  strip was told apart from the desktop's panels by where the bar was.
+  It is now known by what was reserved, and the bar goes back into it.
+- Vector skins at x1.5 and other sizes between whole pixels: text came out
+  longer than its place, and the play time lost its last digit (Steel).
+  Glyphs are still drawn at a whole size, but spaced at the exact one.
+- The play time of a vector skin sits in the middle of its place by the
+  digits themselves, not by the room a font leaves above them: with the
+  system font (Modern) it sat low on Windows, over the visualization.
 
 ## [0.7.0] - 2026-11-09
 
