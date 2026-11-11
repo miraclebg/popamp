@@ -4,7 +4,9 @@
 # for one built with --features plus (its /VERSION says which).
 # The zip holds one folder: the exe, its papers and an empty popamp.ini,
 # which keeps the settings in that folder instead of %APPDATA%.
-# Usage: packaging/build-windows.sh [target/release/popamp.exe] [output-dir]
+# Usage: packaging/build-windows.sh [target/release/popamp.exe] [output-dir] [libs-dir]
+# libs-dir (default dist/libs) holds what packaging/windows/fetch-libs.sh
+# fetched: the Opus and libopenmpt DLLs and the MIDI SoundFont.
 # Needs: Git Bash on Windows, 7z (7-Zip) and Inno Setup 6 (ISCC.exe).
 set -eu
 
@@ -12,12 +14,18 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 bin=${1:-"$root/target/release/popamp.exe"}
 outdir=${2:-"$root/dist"}
+libs=${3:-"$root/dist/libs"}
 
 if [ ! -f "$bin" ]; then
     echo "error: binary not found: $bin" >&2
     echo "hint: run 'cargo build --release -p popamp' first" >&2
     exit 1
 fi
+[ -f "$libs/opus.dll" ] && [ -f "$libs/libopenmpt.dll" ] && [ -f "$libs/GeneralUser-GS.sf2" ] || {
+    echo "error: $libs lacks the DLLs or the SoundFont" >&2
+    echo "hint: run 'sh packaging/windows/fetch-libs.sh $libs' first" >&2
+    exit 1
+}
 command -v 7z >/dev/null 2>&1 || {
     echo "error: 7z not found (https://www.7-zip.org)" >&2
     exit 1
@@ -54,6 +62,7 @@ cp "$bin" "$workdir/$folder/popamp.exe"
 for f in README.md LICENSE-MIT LICENSE-APACHE THIRD_PARTY.md; do
     cp "$root/$f" "$workdir/$folder/$f"
 done
+cp -r "$libs/." "$workdir/$folder/"
 
 "$iscc" -Q "-DVersion=$version" "-DTitle=$title" "-DSource=$(cygpath -w "$workdir/$folder")" \
     "-DOutputName=$folder-setup" "-DOutputDir=$(cygpath -w "$outdir")" "$(cygpath -w "$here/windows/popamp.iss")"

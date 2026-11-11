@@ -31,14 +31,24 @@ const SYSTEM_SOUNDFONTS: &[&str] = &[
     "/usr/share/sounds/sf2/TimGM6mb.sf2",
 ];
 
-/// The SoundFont to use: `setting` when given, else the system's.
+/// The SoundFont the Windows downloads carry beside popamp.exe.
+const BUNDLED_SOUNDFONT: &str = "GeneralUser-GS.sf2";
+
+/// The SoundFont to use: `setting` when given, else the one beside the
+/// program, else the system's.
 pub fn soundfont_path(setting: &str) -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().ok();
+    find_soundfont(setting, exe.as_deref().and_then(Path::parent))
+}
+
+fn find_soundfont(setting: &str, program_dir: Option<&Path>) -> Result<PathBuf, String> {
     if !setting.is_empty() {
         return Ok(PathBuf::from(setting));
     }
-    SYSTEM_SOUNDFONTS
-        .iter()
-        .map(PathBuf::from)
+    let bundled = program_dir.map(|d| d.join(BUNDLED_SOUNDFONT));
+    bundled
+        .into_iter()
+        .chain(SYSTEM_SOUNDFONTS.iter().map(PathBuf::from))
         .find(|p| p.is_file())
         .ok_or_else(|| "MIDI needs a SoundFont: set one in Preferences, or install a General MIDI one (fluid-soundfont-gm)".to_string())
 }
@@ -358,6 +368,18 @@ mod tests {
         let song = parse(&smf).unwrap();
         assert_eq!(song.events.iter().map(|e| e.frame).collect::<Vec<_>>(), [0, 66_150]);
         assert_eq!(song.length_ms(), 1_500);
+    }
+
+    #[test]
+    fn the_soundfont_beside_the_program_comes_before_the_systems() {
+        let dir = std::env::temp_dir().join(format!("popamp-sf-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(BUNDLED_SOUNDFONT), b"").unwrap();
+        assert_eq!(find_soundfont("", Some(&dir)), Ok(dir.join(BUNDLED_SOUNDFONT)));
+        assert_eq!(find_soundfont("/my.sf2", Some(&dir)), Ok(PathBuf::from("/my.sf2")), "the setting wins");
+        std::fs::remove_dir_all(&dir).unwrap();
+        let fallback = find_soundfont("", Some(&dir));
+        assert!(fallback.as_ref().map_or(true, |p| SYSTEM_SOUNDFONTS.iter().any(|s| p == Path::new(s))), "{fallback:?}");
     }
 
     #[test]

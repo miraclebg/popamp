@@ -68,15 +68,14 @@ impl Group {
         }
     }
 
-    /// Its file name extensions, as the Windows installer registers them.
+    /// Its file name extensions, as the Windows installer registers them:
+    /// every audio type but the video containers.
     #[cfg(test)]
-    pub fn extensions(self) -> &'static [&'static str] {
+    pub fn extensions(self) -> Vec<&'static str> {
         match self {
-            Group::Audio => &[
-                "mp3", "mp2", "mp1", "aac", "m4a", "m4b", "alac", "flac", "ogg", "oga", "wav", "wave", "aif", "aiff", "aifc", "caf", "mka",
-            ],
-            Group::Playlists => &["m3u", "m3u8", "pls", "xspf"],
-            Group::Skins => &["wsz", "psz"],
+            Group::Audio => popamp_core::audio_extensions().filter(|e| !["mp4", "mkv", "webm"].contains(e)).collect(),
+            Group::Playlists => vec!["m3u", "m3u8", "pls", "xspf", "cue"],
+            Group::Skins => vec!["wsz", "psz"],
         }
     }
 }

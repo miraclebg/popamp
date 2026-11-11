@@ -25,6 +25,9 @@ All notable changes to this project are documented here. The format follows
   and ends within its part; a sheet that names `album.wav` finds
   `album.flac` beside it. Tracks are kept in playlists as
   `album.cue#3`.
+- The Windows downloads carry what these need: `opus.dll`, libopenmpt and
+  the GeneralUser GS SoundFont for MIDI, with their licences (see
+  THIRD_PARTY.md). The installer offers Popamp for the new file types.
 
 ## [0.8.0] - 2026-11-11
 

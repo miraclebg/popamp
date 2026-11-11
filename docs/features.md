@@ -43,7 +43,8 @@
     Opus (in Ogg, Matroska and WebM) through the system's libopus; MIDI
     (`.mid`, `.midi`, `.kar`, `.rmi`) through a SoundFont synthesizer
     ([rustysynth](https://github.com/sinshu/rustysynth)), with the
-    system's General MIDI SoundFont or the one set in Preferences; tracker
+    system's General MIDI SoundFont (on Windows, GeneralUser GS, which
+    comes with Popamp) or the one set in Preferences; tracker
     modules (MOD, XM, S3M, IT, MPTM and more) through the system's
     libopenmpt.
   - Gapless playback, stop with fadeout, stop after current, ReplayGain.
