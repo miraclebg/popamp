@@ -3,7 +3,7 @@
 //! `toggle-shuffle`); cursors use their classic file name without `.cur`.
 
 use crate::cursors::CursorKind;
-use crate::layout::{EmptyPress, Fill, Flag, FrameMap, MenuRef, Placement, Text, Value, WindowKey};
+use crate::layout::{Align, EmptyPress, Fill, Flag, FrameMap, MenuRef, Placement, Text, Value, WindowKey};
 use crate::sprites::Sheet;
 use popamp_core::config::BarEdge;
 use popamp_core::Command;
@@ -60,6 +60,7 @@ macro_rules! named {
 named!(Command, "command", Command::ALL);
 named!(WindowKey, "window", WindowKey::ALL);
 named!(Fill, "fill", [Fill::Once, Fill::Tile]);
+named!(Align, "alignment", [Align::Left, Align::Center, Align::Right]);
 named!(FrameMap, "frame order", [FrameMap::Rising, FrameMap::Falling, FrameMap::FromMiddle]);
 named!(EmptyPress, "empty-spot action", [EmptyPress::Nothing, EmptyPress::Move, EmptyPress::MoveIfEasy]);
 impl Named for Placement {

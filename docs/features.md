@@ -8,7 +8,8 @@
   Tooltips explain the main window's buttons.
 - **Own dialogs:** Jump to file (search as you type), File info, the Skin
   browser (`Alt+S`) and a Preferences window (`Ctrl+P`). They and the menus
-  grow with the windows (×1.25 to ×3), with sharp text. Opening and saving
+  follow the display scaling (Windows' scaling setting, `Xft.dpi` on X11),
+  not the size of the player's windows, with sharp text. Opening and saving
   files uses the desktop's dialog: `zenity` or `kdialog` on Linux, the
   system's own on Windows.
 - **Vector skins** (`.psz`): drawn in SVG, sharp at every size, with TrueType text

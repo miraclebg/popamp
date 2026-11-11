@@ -6,11 +6,11 @@ use crate::scale::Scale;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use windows::{attributes, use_parent_console, Platform};
+pub use windows::{attributes, use_parent_console, Platform, OWNED_FOLLOW_OWNER};
 #[cfg(unix)]
 mod x11;
 #[cfg(unix)]
-pub use x11::{attributes, Platform};
+pub use x11::{attributes, Platform, OWNED_FOLLOW_OWNER};
 
 /// What a window is for, which decides how the window manager treats it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -137,7 +137,7 @@ fn main_normal(volume_h: i32, balance_h: i32) -> Mode {
     v.extend(clutter_bar());
     v.extend(status());
     v.push(
-        Element::new(Place::fixed(m::TIME_AREA.x, m::TIME_AREA.y, m::TIME_AREA.w, m::TIME_AREA.h), Kind::Clock)
+        Element::new(Place::fixed(m::TIME_AREA.x, m::TIME_AREA.y, m::TIME_AREA.w, m::TIME_AREA.h), Kind::Clock { align: Align::Left })
             .show(Cond::Unless(Flag::Stopped)),
     );
     v.push(hot_spot(rect(m::TIME_AREA), Action::Press(Command::ToggleTimeMode)).menu(MenuRef::Time));

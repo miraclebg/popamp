@@ -62,6 +62,13 @@ default skin.
 | `name` | required | Shown in the skins menu. |
 | `author` | optional | |
 | `format_version` | required | `1`. |
+| `min_popamp` | optional | The oldest Popamp the skin works with, such as `"0.8.0"`. An older one says it needs a newer Popamp instead of loading the skin. |
+
+Set it when the skin uses a key a later Popamp brought: older players
+refuse a key they do not know, with a less helpful message. It is
+read first, so later players give that message even when the rest of the
+file uses keys they have never seen. Popamp 0.8.0 is the first that reads
+it; a skin with it does not load in older ones at all.
 
 ## `[sheets]`: SVG drawings of the classic sheets
 
@@ -230,7 +237,7 @@ hit = "play.svg"       # only the round part is the button
 | `slider` | A slider | `value`, `vertical`, `track`, `thumb`, `thumb_len`, `live`, `reset`, `wheel_step`, `detent` |
 | `text` | A text | `text` |
 | `marquee` | The scrolling song title | `area` (the text's place inside the element; all of it when left out), `double` |
-| `clock` | The play time | |
+| `clock` | The play time | `align` (`left`, `center` or `right`: where a `[clock]` font's time sits across the element; `left` when left out) |
 | `vis` | Spectrum analyzer or oscilloscope | |
 | `eq-graph` | The equalizer curve | |
 | `list` | The playlist's track list | |
@@ -249,6 +256,13 @@ A popup's items stack upward, the first one over the button, as in
 Winamp. A click leaves the column open; so does holding the button and
 letting go on an item, which runs that item. With `above = true` the items
 start above the button and leave it in sight.
+
+A clock written in a `[clock]` font is centred from top to bottom on its
+digits. With `align = "right"` it ends at the element's right edge, so
+it keeps against what is drawn there whatever the font (the system's
+font differs between Windows and Linux). The classic digit sheets have
+fixed places and ignore `align`. It came in Popamp 0.8.0, so a skin with
+it sets `min_popamp = "0.8.0"`.
 
 A slider:
 

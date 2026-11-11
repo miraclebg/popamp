@@ -25,6 +25,10 @@ pub fn attributes(role: WindowRole) -> WindowAttributes {
     }
 }
 
+/// Window managers differ in whether they minimize transient windows with
+/// their owner, so every window is minimized and restored by itself.
+pub const OWNED_FOLLOW_OWNER: bool = false;
+
 /// A connection to the X server for what winit does not cover.
 pub struct Platform {
     x11: Option<RustConnection>,
@@ -83,6 +87,10 @@ impl Platform {
         .map_err(|e| err(&e))?;
         conn.flush().map_err(|e| err(&e))
     }
+
+    /// Nothing to do: menus and tooltips are override-redirect windows,
+    /// which the window manager never focuses.
+    pub fn no_activate(&self, _window: &Window) {}
 
     /// Nothing to give back: a strut goes with its window.
     pub fn release(&self, _window: &Window) {}

@@ -225,13 +225,10 @@ impl App {
     /// Finds again what a bar spans on the main window's monitor; true
     /// when it changed, as when a desktop panel appears or resizes.
     fn update_bar_area(&mut self) -> bool {
-        let bar = self.win(WindowKey::Main).filter(|w| w.role == WindowRole::Bar && w.visible).map(|w| Screen {
-            x: w.pos.0,
-            y: w.pos.1,
-            w: w.shown.px(w.size.0),
-            h: w.shown.px(w.size.1),
-        });
-        let area = self.monitor.map(|m| bar::usable(m, &self.platform.work_areas(), bar));
+        // The strip as reserved, not where the window is: the system may
+        // move the bar out of its own strip when the work area shrinks.
+        let strip = self.win(WindowKey::Main).filter(|w| w.role == WindowRole::Bar && w.visible).and_then(|w| w.strip).map(|s| s.area());
+        let area = self.monitor.map(|m| bar::usable(m, &self.platform.work_areas(), strip));
         let changed = area != self.model.screen;
         self.model.screen = area;
         changed
@@ -251,11 +248,7 @@ impl App {
         self.attach_docked();
         self.apply_layout(WindowKey::Main);
         if self.start_minimized {
-            for k in WindowKey::ALL {
-                if let Some(w) = self.win(k) {
-                    w.window.set_minimized(true);
-                }
-            }
+            self.set_minimized(true);
         }
     }
 
@@ -314,6 +307,21 @@ impl App {
         });
         self.store_pos(k, pos);
         true
+    }
+
+    /// Minimizes or restores the windows. Where the system does that with
+    /// the main window for the windows tied to it, only the main window:
+    /// a minimized owned window would stay behind as a stub on the desktop.
+    fn set_minimized(&self, on: bool) {
+        let owned = platform::OWNED_FOLLOW_OWNER && self.win(WindowKey::Main).is_some_and(|w| w.role == WindowRole::Main);
+        for k in WindowKey::ALL {
+            if owned && k != WindowKey::Main {
+                continue;
+            }
+            if let Some(w) = self.win(k).filter(|w| w.visible) {
+                w.window.set_minimized(on);
+            }
+        }
     }
 
     /// Ties the equalizer and the playlist to an ordinary main window, so
@@ -557,6 +565,7 @@ impl App {
             .with_inner_size(PhysicalSize::new(w as u32, h as u32))
             .with_position(PhysicalPosition::new(x, y));
         let Ok(window) = el.create_window(attrs).map(Arc::new) else { return };
+        self.platform.no_activate(&window);
         let Ok(ctx) = softbuffer::Context::new(window.clone()) else { return };
         let Ok(surface) = Surface::new(&ctx, window.clone()) else { return };
         let frame = Bitmap::new(w, h, 0);
@@ -630,10 +639,14 @@ impl App {
         self.render_panel(i);
     }
 
-    /// The size menus, tooltips and dialogs are drawn at, in percent: that
-    /// of the skin's windows.
+    /// The size menus, tooltips and dialogs are drawn at, in percent: the
+    /// display scaling of the main window's monitor, as for the menus and
+    /// dialogs of other programs (Windows' scaling setting, `Xft.dpi` on
+    /// X11). Not the skin's window size: a player made bigger keeps
+    /// dialogs of the usual size.
     fn dialog_pct(&self) -> i32 {
-        Scale::of(self.model.settings()).pct()
+        let factor = self.win(WindowKey::Main).map_or(1.0, |w| w.window.scale_factor());
+        ((factor * 100.0).round() as i32).max(100)
     }
 
     fn render_panel(&mut self, i: usize) {
@@ -769,6 +782,7 @@ impl App {
             .with_position(PhysicalPosition::new(x, y + 20))
             .with_window_level(WindowLevel::AlwaysOnTop);
         let Ok(window) = el.create_window(attrs).map(Arc::new) else { return };
+        self.platform.no_activate(&window);
         let Ok(ctx) = softbuffer::Context::new(window.clone()) else { return };
         let Ok(surface) = Surface::new(&ctx, window.clone()) else { return };
         window.request_redraw();
@@ -778,8 +792,9 @@ impl App {
     }
 
     fn render_tooltip(&mut self) {
+        let pct = self.dialog_pct();
         let Some(Tooltip { text, shown: Some((_, surface)), .. }) = &mut self.tip else { return };
-        let frame = menu::tooltip(text, &mut self.fonts.list, Scale::of(self.model.settings()).pct());
+        let frame = menu::tooltip(text, &mut self.fonts.list, pct);
         present_unscaled(surface, &frame);
     }
 
@@ -1285,19 +1300,9 @@ impl App {
                     self.apply_layout(WindowKey::Main);
                     self.redraw_all();
                 }
-                UiReq::Minimize => {
-                    for k in WindowKey::ALL {
-                        if let Some(w) = self.win(k).filter(|w| w.visible) {
-                            w.window.set_minimized(true);
-                        }
-                    }
-                }
+                UiReq::Minimize => self.set_minimized(true),
                 UiReq::Raise => {
-                    for k in WindowKey::ALL {
-                        if let Some(w) = self.win(k).filter(|w| w.visible) {
-                            w.window.set_minimized(false);
-                        }
-                    }
+                    self.set_minimized(false);
                     // Each window is brought above other programs' windows,
                     // the main one last so that it has the keyboard.
                     for k in [WindowKey::Playlist, WindowKey::Eq, WindowKey::Main] {
@@ -1603,6 +1608,13 @@ impl ApplicationHandler<AppEvent> for App {
                 self.render(k);
             }
             WindowEvent::Moved(p) => {
+                // Windows moves a window out of a work area that shrank,
+                // the bar out of the strip just reserved for it: it goes back.
+                if let Some(w) = self.win(k).filter(|w| w.role == WindowRole::Bar && w.strip.is_some() && w.pos != (p.x, p.y)) {
+                    log::debug!(target: "moves", "{k:?} moved to ({},{}) by the system; back to {:?}", p.x, p.y, w.pos);
+                    w.window.set_outer_position(PhysicalPosition::new(w.pos.0, w.pos.1));
+                    return;
+                }
                 log::debug!(target: "moves", "{k:?} moved to ({},{}); we had {:?}, dragging {}", p.x, p.y, self.win(k).map(|w| w.pos), self.drag.is_some());
                 // Always trust the WM: it may hold a window back (at a panel,
                 // say), and the pointer's screen position is counted from

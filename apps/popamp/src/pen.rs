@@ -1,5 +1,5 @@
-//! Drawing for the menus, tooltips and Popamp's own dialogs at the size of
-//! the skin's windows. Callers give coordinates in dialog pixels, as at ×1;
+//! Drawing for the menus, tooltips and Popamp's own dialogs at the
+//! display's scaling. Callers give coordinates in dialog pixels, as at ×1;
 //! the pen draws them `pct` / 100 times as large. Text is set at that size
 //! rather than stretched, so it stays sharp at ×2 or ×3.
 
@@ -18,8 +18,9 @@ pub fn dialog(pct: i32, p: i32) -> i32 {
     (p * 100).div_euclid(pct)
 }
 
-/// The size in screen pixels that `n` dialog pixels reach at the largest
-/// window size: how large a picture shown in `n` pixels is worth keeping.
+/// The size in screen pixels that `n` dialog pixels reach at ×3, the
+/// largest common display scaling: how large a picture shown in `n`
+/// pixels is worth keeping.
 pub fn largest(n: i32) -> i32 {
     screen(popamp_core::config::ZOOMS[popamp_core::config::ZOOMS.len() - 1], n)
 }

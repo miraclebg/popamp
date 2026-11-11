@@ -125,6 +125,16 @@ struct File {
     permissions: Permissions,
     #[serde(default, rename = "setting")]
     settings: Vec<Setting>,
+    #[serde(default)]
+    #[allow(dead_code)] // Checked by `Head`.
+    min_popamp: Option<String>,
+}
+
+/// `min_popamp`, read before the rest and leniently: a plug-in for a newer
+/// Popamp is refused for that, not for a key this one does not know.
+#[derive(Deserialize)]
+struct Head {
+    min_popamp: Option<String>,
 }
 
 impl Manifest {
@@ -143,6 +153,9 @@ impl Manifest {
     }
 
     pub fn parse(text: &str) -> Result<Manifest, String> {
+        if let Ok(Head { min_popamp: Some(min) }) = toml::from_str(text) {
+            popamp_core::version::check_min(&min)?;
+        }
         let f: File = toml::from_str(text).map_err(|e| format!("{FILE}: {}", e.to_string().trim_end()))?;
         check_id(&f.id)?;
         let api = check_api(&f.api)?;
@@ -272,6 +285,24 @@ default = "yt-dlp"
         assert_eq!(m.permissions.exec[0].text(), "yt-dlp -j {url}");
         assert!(m.permissions.net.is_empty());
         assert_eq!(m.settings[0].kind, SettingKind::Path);
+    }
+
+    #[test]
+    fn a_plugin_for_a_newer_popamp_says_so_before_anything_else() {
+        let newer = with((
+            "api = \"1.0\"",
+            "api = \"1.0\"
+min_popamp = \"99.0.0\"
+future_key = 1",
+        ))
+        .unwrap_err();
+        assert_eq!(newer, format!("needs Popamp 99.0.0 or newer; this is {}", popamp_core::version::POPAMP));
+        let this = format!(
+            "api = \"1.0\"
+min_popamp = \"{}\"",
+            popamp_core::version::POPAMP
+        );
+        assert!(with(("api = \"1.0\"", &this)).is_ok());
     }
 
     #[test]

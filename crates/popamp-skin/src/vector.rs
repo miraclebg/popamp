@@ -26,11 +26,9 @@ pub fn load(files: &HashMap<String, Vec<u8>>) -> Result<Skin, String> {
 pub(crate) fn load_onto(base: Skin, files: &HashMap<String, Vec<u8>>) -> Result<Skin, String> {
     let text = files.get(FILE).ok_or(format!("no {FILE}"))?;
     let text = std::str::from_utf8(text).map_err(|e| format!("{FILE}: not UTF-8 text: {e}"))?;
+    check_head(text)?;
     let file: SkinFile = toml::from_str(text).map_err(|e| at(text, e.span(), e.message()))?;
     let mut build = Builder { text, files, skin: base, svg_ids: HashMap::new() };
-    if *file.meta.format_version.get_ref() != FORMAT_VERSION {
-        return Err(at(text, Some(file.meta.format_version.span()), &format!("this player reads format_version {FORMAT_VERSION}")));
-    }
     build.skin.name = file.meta.name.clone();
     build.skin.vector = true;
     build.sheets(&file.sheets)?;
@@ -43,6 +41,34 @@ pub(crate) fn load_onto(base: Skin, files: &HashMap<String, Vec<u8>>) -> Result<
     }
     build.skin.layout.windows.sort_by_key(|w| w.key.index());
     Ok(build.skin)
+}
+
+/// Whether this player may read the file at all, from `min_popamp` and
+/// `format_version`, read before the rest and leniently: a skin for a newer
+/// Popamp is refused for that, not for a key this one does not know. A file
+/// this cannot read gets its error from the full reading.
+fn check_head(text: &str) -> Result<(), String> {
+    let Ok(Head { meta: Some(meta) }) = toml::from_str::<Head>(text) else { return Ok(()) };
+    if let Some(min) = meta.min_popamp {
+        popamp_core::version::check_min(min.get_ref()).map_err(|e| at(text, Some(min.span()), &e))?;
+    }
+    match meta.format_version {
+        Some(v) if *v.get_ref() != FORMAT_VERSION => {
+            Err(at(text, Some(v.span()), &format!("this player reads format_version {FORMAT_VERSION}")))
+        }
+        _ => Ok(()),
+    }
+}
+
+#[derive(Deserialize)]
+struct Head {
+    meta: Option<HeadMeta>,
+}
+
+#[derive(Deserialize)]
+struct HeadMeta {
+    min_popamp: Option<Spanned<String>>,
+    format_version: Option<Spanned<u32>>,
 }
 
 /// `skin.toml, line 12: message`.
@@ -81,7 +107,11 @@ struct Meta {
     #[serde(default)]
     #[allow(dead_code)] // Shown by the skin browser later.
     author: String,
+    #[allow(dead_code)] // Checked by `check_head`.
     format_version: Spanned<u32>,
+    #[serde(default)]
+    #[allow(dead_code)] // Checked by `check_head`.
+    min_popamp: Option<String>,
 }
 
 /// A text style; without `font` the system's sans-serif font is used.
@@ -211,6 +241,7 @@ struct ElementFile {
     // Texts.
     text: Option<N<Text>>,
     area: Option<[i32; 4]>,
+    align: Option<N<Align>>,
     // Popups.
     #[serde(default, rename = "item")]
     items: Vec<ItemFile>,
@@ -257,6 +288,7 @@ impl ElementFile {
             ("detent", self.detent.is_some()),
             ("text", self.text.is_some()),
             ("area", self.area.is_some()),
+            ("align", self.align.is_some()),
             ("item", !self.items.is_empty()),
             ("bar", self.bar.is_some()),
         ];
@@ -274,7 +306,7 @@ const KINDS: &[(&str, &[&str])] = &[
     ("slider", &["value", "vertical", "track", "thumb", "thumb_len", "live", "reset", "wheel_step", "detent"]),
     ("text", &["text"]),
     ("marquee", &["area", "double"]),
-    ("clock", &[]),
+    ("clock", &["align"]),
     ("vis", &[]),
     ("eq-graph", &[]),
     ("list", &[]),
@@ -532,7 +564,7 @@ impl Builder<'_> {
                 Kind::Popup { items, bar: self.paint(f.bar.as_ref())?, above: f.above }
             }
             "drag" => Kind::Drag { double: f.double.map(|x| x.0) },
-            "clock" => Kind::Clock,
+            "clock" => Kind::Clock { align: f.align.map_or(Align::Left, |a| a.0) },
             "vis" => Kind::Vis,
             "eq-graph" => Kind::EqGraph,
             "list" => Kind::List,
@@ -744,6 +776,55 @@ shift = \"stop\"
     }
 
     #[test]
+    fn a_clock_is_aligned_left_unless_the_skin_says_otherwise() {
+        let clock = |extra: &str| {
+            skin(&format!(
+                "{HEAD}[[window]]
+key = \"main\"
+normal.size = [275, 116]
+[[window.normal.element]]
+type = \"clock\"
+rect = [26, 21, 62, 18]
+{extra}"
+            ))
+            .map(|s| s.layout.window(WindowKey::Main).unwrap().normal.elements[0].kind.clone())
+        };
+        assert!(matches!(clock(""), Ok(Kind::Clock { align: Align::Left })));
+        assert!(matches!(
+            clock(
+                "align = \"right\"
+"
+            ),
+            Ok(Kind::Clock { align: Align::Right })
+        ));
+        assert!(matches!(
+            clock(
+                "align = \"center\"
+"
+            ),
+            Ok(Kind::Clock { align: Align::Center })
+        ));
+        assert!(clock(
+            "align = \"middle\"
+"
+        )
+        .unwrap_err()
+        .contains("unknown alignment `middle`; it can be one of: left, center, right"));
+        let text = skin(&format!(
+            "{HEAD}[[window]]
+key = \"main\"
+normal.size = [275, 116]
+[[window.normal.element]]
+type = \"text\"
+rect = [0, 0, 9, 9]
+text = \"kbps\"
+align = \"right\"
+"
+        ));
+        assert!(text.err().unwrap().contains("`align` does not apply to type `text`"));
+    }
+
+    #[test]
     fn only_a_skin_with_nums_ex_draws_its_clock_with_it() {
         assert!(!skin(&format!("{HEAD}[sheets]\nmain = \"play.svg\"\n")).unwrap().has_nums_ex());
         assert!(skin(&format!("{HEAD}[sheets]\nnums_ex = \"play.svg\"\n")).unwrap().has_nums_ex());
@@ -889,6 +970,42 @@ colors = [{}]
         assert_eq!(e, "skin.toml, line 6: `green` is not a colour; write it #rrggbb");
         let e = skin(&format!("{HEAD}[clock]\nfont = \"play.svg\"\nsize = 13\ncolor = \"#00ff00\"\n")).err().unwrap();
         assert!(e.starts_with("skin.toml, line 5: play.svg: not a font"), "{e}");
+    }
+
+    #[test]
+    fn a_skin_for_a_newer_popamp_says_so_before_anything_else() {
+        // A key this Popamp does not know, in a skin that asks for a newer one.
+        let e = skin(
+            "[meta]
+name = \"X\"
+format_version = 1
+min_popamp = \"99.0.0\"
+[future]
+key = 1
+",
+        )
+        .err()
+        .unwrap();
+        assert_eq!(e, format!("skin.toml, line 4: needs Popamp 99.0.0 or newer; this is {}", popamp_core::version::POPAMP));
+        assert!(skin(&format!(
+            "[meta]
+name = \"X\"
+format_version = 1
+min_popamp = \"{}\"
+",
+            popamp_core::version::POPAMP
+        ))
+        .is_ok());
+        assert!(skin(
+            "[meta]
+name = \"X\"
+format_version = 1
+min_popamp = \"0.8\"
+"
+        )
+        .err()
+        .unwrap()
+        .contains("is not a version"));
     }
 
     #[test]

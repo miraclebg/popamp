@@ -14,7 +14,7 @@ use popamp_audio::PlayState;
 use popamp_core::text::format_duration_ms;
 use popamp_core::Command;
 use popamp_skin::layout::{
-    Action, Element, EmptyPress, Fill, Kind, Look, MenuRef, Mode, Paint, PopupItem, Slider, Value, Wheel, WindowDef, WindowKey,
+    Action, Align, Element, EmptyPress, Fill, Kind, Look, MenuRef, Mode, Paint, PopupItem, Slider, Value, Wheel, WindowDef, WindowKey,
 };
 use popamp_skin::sprites::{eq as e, Rect};
 use popamp_skin::{Bitmap, CursorKind, Sheet, Skin};
@@ -399,7 +399,7 @@ impl SkinWin {
                     }
                 }
                 Kind::Marquee { area, .. } => self.draw_marquee(model, fonts, b, marquee_rect(*area, r)),
-                Kind::Clock => self.draw_clock(model, fonts, b, r),
+                Kind::Clock { align } => self.draw_clock(model, fonts, b, r, *align),
                 Kind::Vis => model.vis.draw(b, r.x, r.y, r.w, r.h, model.settings(), &skin.viscolor),
                 Kind::EqGraph => draw_eq_graph(model, b, r),
                 Kind::List => self.draw_list(model, &mut fonts.list, b, r, active),
@@ -482,7 +482,7 @@ impl SkinWin {
     }
 
     /// The big time display; paused time blinks once a second.
-    fn draw_clock(&self, model: &Model, fonts: &mut Fonts, b: &mut Canvas, r: Rect) {
+    fn draw_clock(&self, model: &Model, fonts: &mut Fonts, b: &mut Canvas, r: Rect, align: Align) {
         let sh = model.engine.shared();
         let blink_off = sh.state() == PlayState::Paused
             && (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() / 500) % 2 == 1;
@@ -494,7 +494,7 @@ impl SkinWin {
             (true, Some(l)) => (l.saturating_sub(shown) / 1000, true),
             _ => (shown / 1000, false),
         };
-        render::clock(b, &model.skin, fonts, r, secs, neg);
+        render::clock(b, &model.skin, fonts, r, secs, neg, align);
     }
 
     // --- input ---------------------------------------------------------------

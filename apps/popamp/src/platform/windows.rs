@@ -21,7 +21,8 @@ pub fn attributes(role: WindowRole) -> WindowAttributes {
     match role {
         WindowRole::Main | WindowRole::Bar => attrs,
         WindowRole::Docked => attrs.with_skip_taskbar(true),
-        WindowRole::Popup => above(attrs),
+        // Shown without taking the focus from the window it opened from.
+        WindowRole::Popup => above(attrs).with_active(false),
         WindowRole::Tooltip => above(attrs).with_active(false),
         WindowRole::Dialog => attrs.with_decorations(true).with_skip_taskbar(true),
     }
@@ -47,6 +48,10 @@ pub fn use_parent_console() {
         }
     }
 }
+
+/// Windows minimizes and restores owned windows with their owner, so only
+/// the main window is minimized or restored by hand.
+pub const OWNED_FOLLOW_OWNER: bool = true;
 
 /// Nothing to connect to: the calls go straight to the system. Holds the
 /// window registered as an application desktop toolbar, if any.
@@ -129,9 +134,32 @@ impl Platform {
         }
     }
 
-    /// Nothing to do: only the X11 window managers need telling.
-    pub fn attach(&self, _window: &Window, _owner: Option<&Window>) -> Result<(), String> {
+    /// Makes `owner` the owner of `window` (none: no owner). Windows hides
+    /// an owned window while its owner is minimized and shows it again with
+    /// the owner, so the equalizer and the playlist come back when the main
+    /// window is restored from the taskbar.
+    pub fn attach(&self, window: &Window, owner: Option<&Window>) -> Result<(), String> {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowLongPtrW, GWLP_HWNDPARENT};
+        let Some(child) = hwnd(window) else { return Ok(()) };
+        let owner = owner.and_then(hwnd).map_or(0, |h| h as isize);
+        // SAFETY: both are live windows of this thread; GWLP_HWNDPARENT of
+        // a top-level window sets its owner. The previous value is 0 on
+        // success as well as on failure, so failure is not reported.
+        unsafe { SetWindowLongPtrW(child, GWLP_HWNDPARENT, owner) };
         Ok(())
+    }
+
+    /// Keeps a menu or tooltip from taking the focus when it is clicked:
+    /// the window it opened from stays active and keeps the keyboard, and
+    /// does not close the menu for losing the focus to it.
+    pub fn no_activate(&self, window: &Window) {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE};
+        let Some(hwnd) = hwnd(window) else { return };
+        // SAFETY: plain style calls on a live window of this thread.
+        unsafe {
+            let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE as isize);
+        }
     }
 
     /// Each monitor's work area: the monitor less the taskbar and other
