@@ -1,40 +1,24 @@
 //! The tray icon on Unix: a StatusNotifierItem, which KDE, Xfce, Cinnamon,
 //! MATE and GNOME's AppIndicator extension show. A click brings Popamp up,
-//! the wheel sets the volume, and the menu has the transport buttons.
+//! a middle click plays or pauses, the wheel sets the volume, and the menu
+//! has the transport buttons.
 
-use super::Snapshot;
+use super::{now_playing, tray_menu, Sender, Snapshot};
 use crate::cli::Remote;
 use ksni::blocking::{Handle, TrayMethods};
 use ksni::menu::{CheckmarkItem, MenuItem, StandardItem};
 use popamp_core::Command;
 use std::sync::Arc;
 
-/// Sends remote commands to the UI thread.
-pub type Send = Arc<dyn Fn(Vec<Remote>) + std::marker::Send + Sync>;
-
 /// How far one notch of the wheel moves the volume, in percent.
 const WHEEL_STEP: i32 = 2;
 
 struct Item {
-    send: Send,
+    send: Sender,
     snap: Snapshot,
     icons: Arc<Vec<ksni::Icon>>,
     /// KDE sends the wheel turned up as a positive delta, GNOME as negative.
     up_is_positive: bool,
-}
-
-impl Item {
-    fn on(&self, remote: Remote) -> Box<dyn Fn(&mut Item) + std::marker::Send> {
-        Box::new(move |item: &mut Item| (item.send)(vec![remote.clone()]))
-    }
-
-    fn button(&self, label: &str, command: Command) -> MenuItem<Item> {
-        StandardItem { label: label.into(), activate: self.on(Remote::Cmd(command)), ..Default::default() }.into()
-    }
-
-    fn check(&self, label: &str, checked: bool, remote: Remote) -> MenuItem<Item> {
-        CheckmarkItem { label: label.into(), checked, activate: self.on(remote), ..Default::default() }.into()
-    }
 }
 
 impl ksni::Tray for Item {
@@ -70,34 +54,15 @@ impl ksni::Tray for Item {
     }
 
     fn menu(&self) -> Vec<MenuItem<Item>> {
-        let s = &self.snap;
-        vec![
-            StandardItem { label: "Show Popamp".into(), activate: self.on(Remote::Show), ..Default::default() }.into(),
-            MenuItem::Separator,
-            self.button("Previous", Command::Previous),
-            self.button("Play", Command::Play),
-            self.button("Pause", Command::Pause),
-            self.button("Stop", Command::Stop),
-            self.button("Next", Command::Next),
-            MenuItem::Separator,
-            self.check("Shuffle", s.shuffle, Remote::Shuffle(Some(!s.shuffle))),
-            self.check("Repeat", s.repeat, Remote::Repeat(Some(!s.repeat))),
-            MenuItem::Separator,
-            StandardItem { label: "Exit".into(), activate: self.on(Remote::Quit), ..Default::default() }.into(),
-        ]
-    }
-}
-
-/// What the tooltip says under the name.
-fn now_playing(snap: &Snapshot) -> String {
-    let Some(track) = &snap.track else { return "Stopped".into() };
-    let line = match super::byline(track) {
-        by if by.is_empty() => track.title.clone(),
-        by => format!("{}\n{by}", track.title),
-    };
-    match snap.status {
-        "Playing" => line,
-        status => format!("{line}\n({status})"),
+        let item = |entry: super::Entry| -> MenuItem<Item> {
+            let remote = entry.remote;
+            let activate = Box::new(move |item: &mut Item| (item.send)(vec![remote.clone()]));
+            match entry.checked {
+                Some(checked) => CheckmarkItem { label: entry.label.into(), checked, activate, ..Default::default() }.into(),
+                None => StandardItem { label: entry.label.into(), activate, ..Default::default() }.into(),
+            }
+        };
+        tray_menu(&self.snap).into_iter().map(|e| e.map_or(MenuItem::Separator, item)).collect()
     }
 }
 
@@ -120,65 +85,55 @@ fn argb(img: &image::RgbaImage) -> ksni::Icon {
     ksni::Icon { width: img.width() as i32, height: img.height() as i32, data }
 }
 
+/// An icon on show; it goes when dropped.
+struct Shown(Handle<Item>);
+
+impl Drop for Shown {
+    fn drop(&mut self) {
+        self.0.shutdown().wait();
+    }
+}
+
 /// The tray icon while the user wants one.
 pub struct Tray {
-    send: Send,
-    shown: Shown,
+    send: Sender,
+    shown: Option<Option<Shown>>,
     icons: Arc<Vec<ksni::Icon>>,
 }
 
-enum Shown {
-    No,
-    Yes(Handle<Item>),
-    /// No tray on this desktop: not asked again until turned off and on.
-    Refused,
+impl Tray {
+    pub fn new(send: Sender) -> Tray {
+        Tray { send, shown: None, icons: Arc::new(icons()) }
+    }
+
+    /// Shows, updates or takes down the icon to match `snap`. A desktop
+    /// with no tray is asked again only after the setting is turned off
+    /// and on.
+    pub fn update(&mut self, snap: &Snapshot) {
+        let (send, icons) = (&self.send, &self.icons);
+        crate::hold::update(&mut self.shown, snap.tray, || show(send.clone(), icons.clone()));
+        if let Some(Some(Shown(handle))) = &self.shown {
+            handle.update(|item| item.snap = snap.clone());
+        }
+    }
 }
 
-impl Tray {
-    pub fn new(send: Send) -> Tray {
-        Tray { send, shown: Shown::No, icons: Arc::new(icons()) }
-    }
-
-    /// Shows, updates or takes down the icon to match `snap`.
-    pub fn update(&mut self, snap: &Snapshot) {
-        match (&self.shown, snap.tray) {
-            (Shown::Yes(handle), true) => {
-                handle.update(|item| item.snap = snap.clone());
-            }
-            (Shown::No, true) => self.shown = self.spawn(snap),
-            (Shown::Yes(handle), false) => {
-                handle.shutdown().wait();
-                self.shown = Shown::No;
-            }
-            (Shown::Refused, false) => self.shown = Shown::No,
-            (Shown::No, false) | (Shown::Refused, true) => {}
-        }
-    }
-
-    fn spawn(&self, snap: &Snapshot) -> Shown {
-        let kde = std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.split(':').any(|d| d.eq_ignore_ascii_case("KDE")));
-        let item = Item { send: self.send.clone(), snap: snap.clone(), icons: self.icons.clone(), up_is_positive: kde };
-        match item.spawn() {
-            Ok(handle) => Shown::Yes(handle),
-            Err(e) => {
-                log::info!("no tray icon: {e}");
-                Shown::Refused
-            }
-        }
-    }
+fn show(send: Sender, icons: Arc<Vec<ksni::Icon>>) -> Option<Shown> {
+    let kde = std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.split(':').any(|d| d.eq_ignore_ascii_case("KDE")));
+    let item = Item { send, snap: Snapshot::default(), icons, up_is_positive: kde };
+    item.spawn().map(Shown).map_err(|e| log::info!("no tray icon: {e}")).ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::media::Track;
     use ksni::Tray as _;
     use parking_lot::Mutex;
 
     fn item(snap: Snapshot) -> (Item, Arc<Mutex<Vec<Remote>>>) {
         let sent = Arc::new(Mutex::new(Vec::new()));
         let log = sent.clone();
-        let send: Send = Arc::new(move |r| log.lock().extend(r));
+        let send: Sender = Arc::new(move |r| log.lock().extend(r));
         (Item { send, snap, icons: Arc::new(Vec::new()), up_is_positive: false }, sent)
     }
 
@@ -197,7 +152,6 @@ mod tests {
         let (mut item, sent) = item(Snapshot { shuffle: true, ..Snapshot::default() });
         click(&mut item, "Next");
         click(&mut item, "Shuffle");
-        click(&mut item, "Repeat");
         click(&mut item, "Exit");
         item.activate(0, 0);
         item.secondary_activate(0, 0);
@@ -207,7 +161,6 @@ mod tests {
         let want = [
             Remote::Cmd(Command::Next),
             Remote::Shuffle(Some(false)),
-            Remote::Repeat(Some(true)),
             Remote::Quit,
             Remote::Show,
             Remote::Cmd(Command::PlayPause),
@@ -222,14 +175,18 @@ mod tests {
     }
 
     #[test]
-    fn the_tooltip_says_what_plays() {
-        let track = Track { title: "Song".into(), artist: Some("Band".into()), ..Track::default() };
-        let snap = |status| Snapshot { status, track: Some(track.clone()), ..Snapshot::default() };
-        assert_eq!(now_playing(&Snapshot::default()), "Stopped");
-        assert_eq!(now_playing(&snap("Playing")), "Song\nBand");
-        assert_eq!(now_playing(&snap("Paused")), "Song\nBand\n(Paused)");
-        let bare = Snapshot { track: Some(Track { title: "Stream".into(), ..Track::default() }), status: "Playing", ..Snapshot::default() };
-        assert_eq!(now_playing(&bare), "Stream");
+    fn the_menu_has_separators_and_check_marks() {
+        let (item, _) = item(Snapshot::default());
+        let kinds: String = item
+            .menu()
+            .iter()
+            .map(|m| match m {
+                MenuItem::Separator => '-',
+                MenuItem::Checkmark(_) => 'v',
+                _ => 'o',
+            })
+            .collect();
+        assert_eq!(kinds, "o-ooooo-vv-o");
     }
 
     #[test]

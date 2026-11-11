@@ -125,14 +125,14 @@ pub struct App {
     /// `POPAMP_SNAPSHOT=<dir>`: write each window as PNG after a few frames and exit.
     snapshot: Option<(std::path::PathBuf, u32)>,
     platform: Platform,
-    media: Option<crate::media::Controls>,
+    media: crate::media::Controls,
     hotkeys: crate::hotkeys::Hotkeys,
     /// The monitor the main window is on.
     monitor: Option<Screen>,
 }
 
 impl App {
-    pub fn new(model: Model, start_minimized: bool, media: Option<crate::media::Controls>, hotkeys: crate::hotkeys::Hotkeys) -> App {
+    pub fn new(model: Model, start_minimized: bool, media: crate::media::Controls, hotkeys: crate::hotkeys::Hotkeys) -> App {
         let fonts = Fonts::for_skin(&model.skin);
         App {
             model,
@@ -1342,10 +1342,6 @@ impl App {
                 }
             }
         }
-        if let Some(m) = &mut self.media {
-            m.update(self.model.media_snapshot());
-        }
-        self.hotkeys.want(self.model.settings().global_hotkeys);
         for i in 0..self.panels.len() {
             if self.panels[i].panel.refresh(&self.model) {
                 self.render_panel(i);
@@ -1413,6 +1409,10 @@ impl App {
         } else if settings.pe_width >= 350 && state == PlayState::Playing {
             self.render(WindowKey::Playlist);
         }
+        // Here, not after each command: the engine pauses and stops on its
+        // own thread, and nothing else wakes the UI to tell the desktop.
+        self.media.update(self.model.media_snapshot());
+        self.hotkeys.want(settings.global_hotkeys);
     }
 }
 

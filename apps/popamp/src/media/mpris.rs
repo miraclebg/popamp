@@ -252,7 +252,7 @@ pub fn spawn(proxy: EventLoopProxy<AppEvent>, shared: Arc<Shared>, instance: &st
     let conn = zbus::blocking::connection::Builder::session()
         .and_then(|b| b.name(name.as_str()))
         .and_then(|b| b.serve_at(PATH, Root { ctx: ctx.clone() }))
-        .and_then(|b| b.serve_at(PATH, Player { ctx: ctx.clone() }))
+        .and_then(|b| b.serve_at(PATH, Player { ctx }))
         .and_then(|b| b.build());
     let conn = match conn {
         Ok(c) => c,
@@ -261,9 +261,7 @@ pub fn spawn(proxy: EventLoopProxy<AppEvent>, shared: Arc<Shared>, instance: &st
             return None;
         }
     };
-    let proxy = ctx.proxy.clone();
-    let tray = super::tray::Tray::new(Arc::new(move |remotes| super::send(&proxy, remotes)));
-    std::thread::Builder::new().name("popamp-mpris".into()).spawn(move || run(&conn, &rx, &snap, &art, tray)).ok()?;
+    std::thread::Builder::new().name("popamp-mpris".into()).spawn(move || run(&conn, &rx, &snap, &art)).ok()?;
     Some(tx)
 }
 
@@ -275,7 +273,6 @@ fn run(
     rx: &crossbeam_channel::Receiver<Snapshot>,
     snap: &Mutex<Snapshot>,
     art: &Mutex<Option<PathBuf>>,
-    mut tray: super::tray::Tray,
 ) {
     let iface = match conn.object_server().interface::<_, Player>(PATH) {
         Ok(i) => i,
@@ -293,7 +290,6 @@ fn run(
         if let Some(track) = news.of(&new) {
             notifier.show(track, art.lock().as_deref());
         }
-        tray.update(&new);
         let old = std::mem::replace(&mut *snap.lock(), new.clone());
         if let Err(e) = zbus::block_on(announce(&iface.get(), iface.signal_emitter(), &old, &new)) {
             log::debug!("MPRIS signal: {e}");

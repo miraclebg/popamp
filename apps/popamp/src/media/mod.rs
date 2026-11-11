@@ -20,6 +20,9 @@ mod mpris;
 mod notify;
 #[cfg(unix)]
 mod tray;
+#[cfg(windows)]
+#[path = "tray_windows.rs"]
+mod tray;
 #[cfg(unix)]
 use mpris as service;
 #[cfg(windows)]
@@ -139,13 +142,71 @@ impl News {
 }
 
 /// The line under the title: who and from what.
-#[cfg(unix)]
 fn byline(track: &Track) -> String {
     [&track.artist, &track.album].into_iter().flatten().filter(|s| !s.trim().is_empty()).cloned().collect::<Vec<_>>().join(" — ")
 }
 
+/// What the tray icon's tooltip says under the name.
+fn now_playing(snap: &Snapshot) -> String {
+    let Some(track) = &snap.track else { return "Stopped".into() };
+    let line = match byline(track) {
+        by if by.is_empty() => track.title.clone(),
+        by => format!("{}\n{by}", track.title),
+    };
+    match snap.status {
+        "Playing" => line,
+        status => format!("{line}\n({status})"),
+    }
+}
+
+/// An entry of the tray icon's menu.
+#[derive(Debug, Clone, PartialEq)]
+struct Entry {
+    label: &'static str,
+    /// Some for an entry with a check mark.
+    checked: Option<bool>,
+    remote: Remote,
+}
+
+/// The tray icon's menu; `None` is a separator.
+fn tray_menu(snap: &Snapshot) -> Vec<Option<Entry>> {
+    let button = |label, command| Some(Entry { label, checked: None, remote: Remote::Cmd(command) });
+    let check = |label, on: bool, remote| Some(Entry { label, checked: Some(on), remote });
+    vec![
+        Some(Entry { label: "Show Popamp", checked: None, remote: Remote::Show }),
+        None,
+        button("Previous", Command::Previous),
+        button("Play", Command::Play),
+        button("Pause", Command::Pause),
+        button("Stop", Command::Stop),
+        button("Next", Command::Next),
+        None,
+        check("Shuffle", snap.shuffle, Remote::Shuffle(Some(!snap.shuffle))),
+        check("Repeat", snap.repeat, Remote::Repeat(Some(!snap.repeat))),
+        None,
+        Some(Entry { label: "Exit", checked: None, remote: Remote::Quit }),
+    ]
+}
+
+/// Sends remote commands to the UI thread.
+type Sender = Arc<dyn Fn(Vec<Remote>) + Send + Sync>;
+
+/// Feeds the tray icon on a thread of its own: it may wait on the desktop.
+fn spawn_tray(send: Sender) -> Option<crossbeam_channel::Sender<Snapshot>> {
+    let (tx, rx) = crossbeam_channel::unbounded::<Snapshot>();
+    let run = move || {
+        let mut tray = tray::Tray::new(send);
+        for snap in rx {
+            tray.update(&snap);
+        }
+    };
+    std::thread::Builder::new().name("popamp-tray".into()).spawn(run).map_err(|e| log::warn!("no tray icon: {e}")).ok()?;
+    Some(tx)
+}
+
+/// Where the snapshots go: the system's media controls and the tray icon.
 pub struct Controls {
-    tx: crossbeam_channel::Sender<Snapshot>,
+    to: Vec<crossbeam_channel::Sender<Snapshot>>,
     last: Option<Snapshot>,
 }
 
@@ -154,15 +215,18 @@ impl Controls {
     pub fn update(&mut self, snap: Snapshot) {
         if self.last.as_ref() != Some(&snap) {
             self.last = Some(snap.clone());
-            let _ = self.tx.send(snap);
+            for to in &self.to {
+                let _ = to.send(snap.clone());
+            }
         }
     }
 }
 
-/// Starts the system's service; `None` if there is none or it is not
-/// running.
-pub fn spawn(proxy: EventLoopProxy<AppEvent>, shared: Arc<Shared>, instance: &str) -> Option<Controls> {
-    Some(Controls { tx: service::spawn(proxy, shared, instance)?, last: None })
+/// Starts the system's media service, if it has one running, and the tray.
+pub fn spawn(proxy: EventLoopProxy<AppEvent>, shared: Arc<Shared>, instance: &str) -> Controls {
+    let service = service::spawn(proxy.clone(), shared, instance);
+    let tray = spawn_tray(Arc::new(move |remotes| send(&proxy, remotes)));
+    Controls { to: service.into_iter().chain(tray).collect(), last: None }
 }
 
 #[cfg(test)]
@@ -221,7 +285,30 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
+    fn the_tooltip_says_what_plays() {
+        let track = Track { title: "Song".into(), artist: Some("Band".into()), ..Track::default() };
+        let snap = |status| Snapshot { status, track: Some(track.clone()), ..Snapshot::default() };
+        assert_eq!(now_playing(&Snapshot::default()), "Stopped");
+        assert_eq!(now_playing(&snap("Playing")), "Song\nBand");
+        assert_eq!(now_playing(&snap("Paused")), "Song\nBand\n(Paused)");
+        let bare = Snapshot { track: Some(Track { title: "Stream".into(), ..Track::default() }), status: "Playing", ..Snapshot::default() };
+        assert_eq!(now_playing(&bare), "Stream");
+    }
+
+    #[test]
+    fn the_tray_menu_toggles_from_the_current_modes() {
+        let menu = tray_menu(&Snapshot { shuffle: true, ..Snapshot::default() });
+        let find = |label| menu.iter().flatten().find(|e| e.label == label).cloned().unwrap();
+        assert_eq!(find("Shuffle"), Entry { label: "Shuffle", checked: Some(true), remote: Remote::Shuffle(Some(false)) });
+        assert_eq!(find("Repeat"), Entry { label: "Repeat", checked: Some(false), remote: Remote::Repeat(Some(true)) });
+        assert_eq!(find("Next").remote, Remote::Cmd(Command::Next));
+        assert_eq!(
+            (menu.first().cloned().flatten().unwrap().remote, menu.last().cloned().flatten().unwrap().remote),
+            (Remote::Show, Remote::Quit)
+        );
+    }
+
+    #[test]
     fn the_byline_has_what_is_known() {
         let t = |artist: Option<&str>, album: Option<&str>| Track {
             artist: artist.map(Into::into),
