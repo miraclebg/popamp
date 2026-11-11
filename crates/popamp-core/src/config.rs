@@ -254,6 +254,8 @@ settings! {
     // Desktop.
     /// An icon in the system tray (StatusNotifierItem on Linux).
     tray_icon: bool = true,
+    /// Minimizing hides the windows; the tray icon brings them back.
+    minimize_to_tray: bool = false,
     /// A desktop notification when the track changes.
     notify_tracks: bool = false,
     /// Ctrl+Alt+Insert/Home/End/PgUp/PgDn and arrows from any program.

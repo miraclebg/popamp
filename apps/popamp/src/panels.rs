@@ -318,6 +318,7 @@ pub enum Flag {
     ZeroPad,
     AutoAdvance,
     TrayIcon,
+    MinimizeToTray,
     NotifyTracks,
     GlobalHotkeys,
 }
@@ -325,7 +326,7 @@ pub enum Flag {
 impl Flag {
     const WINDOWS: [Flag; 6] = [Flag::Snap, Flag::EasyMove, Flag::KeepOnScreen, Flag::AlwaysOnTop, Flag::DoubleSize, Flag::SkinCursors];
     const DISPLAY: [Flag; 5] = [Flag::ScrollTitle, Flag::DimInactive, Flag::ShowNumbers, Flag::ZeroPad, Flag::AutoAdvance];
-    const DESKTOP: [Flag; 3] = [Flag::TrayIcon, Flag::NotifyTracks, Flag::GlobalHotkeys];
+    const DESKTOP: [Flag; 4] = [Flag::TrayIcon, Flag::MinimizeToTray, Flag::NotifyTracks, Flag::GlobalHotkeys];
 
     fn label(self) -> &'static str {
         match self {
@@ -341,6 +342,7 @@ impl Flag {
             Flag::ZeroPad => "Zero-pad numbers",
             Flag::AutoAdvance => "Advance to next track",
             Flag::TrayIcon => "Icon in the system tray",
+            Flag::MinimizeToTray => "Minimize to the tray",
             Flag::NotifyTracks => "Notify of each new track",
             Flag::GlobalHotkeys => "Global hotkeys (Ctrl+Alt)",
         }
@@ -373,6 +375,7 @@ impl Flag {
             Flag::ZeroPad => &mut s.zeropadplnum,
             Flag::AutoAdvance => &mut s.pladv,
             Flag::TrayIcon => &mut s.tray_icon,
+            Flag::MinimizeToTray => &mut s.minimize_to_tray,
             Flag::NotifyTracks => &mut s.notify_tracks,
             Flag::GlobalHotkeys => &mut s.global_hotkeys,
         }

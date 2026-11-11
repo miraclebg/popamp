@@ -123,6 +123,8 @@ pub struct Model {
     pub scanning: bool,
     pub vis: Vis,
     pub ui: Vec<UiReq>,
+    /// The windows are hidden; the tray icon is there to bring them back.
+    pub in_tray: bool,
     pub quit: bool,
     pub(crate) events: Events,
     meta_tx: crossbeam_channel::Sender<(u64, String)>,
@@ -258,6 +260,7 @@ impl Model {
             scanning: false,
             vis: Vis::new(),
             ui: Vec::new(),
+            in_tray: false,
             quit: false,
             events,
             meta_tx,
@@ -1336,7 +1339,11 @@ impl Model {
                 self.settings_mut().pe_open = v;
                 self.ui.push(UiReq::Layout);
             }
-            C::ToggleMainWindow => self.ui.push(UiReq::Raise),
+            C::ToggleMainWindow => self.raise(),
+            C::Minimize if self.settings().minimize_to_tray => {
+                self.in_tray = true;
+                self.ui.push(UiReq::Layout);
+            }
             C::Minimize => self.ui.push(UiReq::Minimize),
             C::Preferences => self.ui.push(UiReq::Panel(PanelKind::Preferences)),
             C::SelectVisPlugin => {
@@ -1702,12 +1709,20 @@ impl Model {
                 }
                 Remote::SeekMs(ms) => self.seek_to(ms),
                 Remote::Clear => self.exec(Command::ClearPlaylist),
-                Remote::Show => self.ui.push(UiReq::Raise),
+                Remote::Show => self.raise(),
                 Remote::Quit => self.exec(Command::Exit),
                 Remote::Status => reply = self.status_json(),
             }
         }
         reply
+    }
+
+    /// Brings the windows up, out of the tray if they are there.
+    fn raise(&mut self) {
+        if std::mem::take(&mut self.in_tray) {
+            self.ui.push(UiReq::Layout);
+        }
+        self.ui.push(UiReq::Raise);
     }
 
     pub fn media_snapshot(&self) -> crate::media::Snapshot {
@@ -1740,7 +1755,7 @@ impl Model {
             volume: s.volume as f64 / 255.0,
             track,
             notify: s.notify_tracks,
-            tray: s.tray_icon,
+            tray: s.tray_icon || self.in_tray,
         }
     }
 
@@ -1916,6 +1931,29 @@ mod tests {
         m.reload_skin_if_changed();
         assert_eq!(m.skin.name, "Second", "a broken edit keeps the skin");
         assert!(m.transient.as_ref().is_some_and(|t| t.0.starts_with("SKIN ERROR: ")));
+    }
+
+    #[test]
+    fn minimizing_to_the_tray_shows_the_icon_until_the_windows_come_back() {
+        let mut m = Model::for_tests();
+        m.settings_mut().tray_icon = false;
+        m.exec(Command::Minimize);
+        assert!(matches!(m.ui.pop(), Some(UiReq::Minimize)), "to the taskbar");
+        assert!(!m.media_snapshot().tray);
+
+        m.settings_mut().minimize_to_tray = true;
+        m.exec(Command::Minimize);
+        assert!(m.in_tray && matches!(m.ui.pop(), Some(UiReq::Layout)), "the windows hide");
+        assert!(m.media_snapshot().tray, "the icon comes for them");
+
+        m.on_remote(vec![Remote::Show]);
+        assert!(!m.in_tray && !m.media_snapshot().tray, "back up, the icon goes");
+        assert!(matches!(m.ui[..], [UiReq::Layout, UiReq::Raise]));
+
+        m.settings_mut().tray_icon = true;
+        m.exec(Command::Minimize);
+        m.exec(Command::ToggleMainWindow);
+        assert!(m.media_snapshot().tray, "an icon asked for stays");
     }
 
     #[test]

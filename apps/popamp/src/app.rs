@@ -177,7 +177,7 @@ impl App {
     }
 
     fn wanted_visible(&self, k: WindowKey) -> bool {
-        crate::bind::shown(&self.model, k)
+        !self.model.in_tray && crate::bind::shown(&self.model, k)
     }
 
     fn saved_pos(&self, k: WindowKey) -> (i32, i32) {
@@ -250,7 +250,7 @@ impl App {
         self.attach_docked();
         self.apply_layout(WindowKey::Main);
         if self.start_minimized {
-            self.set_minimized(true);
+            self.model.exec(Command::Minimize);
         }
     }
 

@@ -91,7 +91,9 @@
   - A tray icon, on Windows and on Linux (StatusNotifierItem: KDE, Xfce,
     GNOME with the AppIndicator extension): a click brings Popamp up, a
     middle click plays or pauses, the wheel sets the volume (Linux), and
-    its menu has the transport buttons. On Linux, notifications of each
+    its menu has the transport buttons. With "Minimize to the tray",
+    minimizing hides the windows and shows the icon until they come back,
+    even when the icon is otherwise off. On Linux, notifications of each
     new track with its cover, off by default. Both are in Preferences >
     Desktop.
   - Global hotkeys, as in Winamp (off by default, Preferences > Desktop):
@@ -110,5 +112,5 @@
   in the menus and `popamp.ini`.
 - Tags can be changed in MP3, FLAC, Ogg Vorbis, Opus and MP4 files only, one
   file at a time.
-- No tray icon, media library or Modern (`.wal`) skins yet. See [ROADMAP.md](ROADMAP.md).
+- No media library or Modern (`.wal`) skins yet. See [ROADMAP.md](ROADMAP.md).
 
