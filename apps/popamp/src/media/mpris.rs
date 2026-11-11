@@ -252,7 +252,7 @@ pub fn spawn(proxy: EventLoopProxy<AppEvent>, shared: Arc<Shared>, instance: &st
     let conn = zbus::blocking::connection::Builder::session()
         .and_then(|b| b.name(name.as_str()))
         .and_then(|b| b.serve_at(PATH, Root { ctx: ctx.clone() }))
-        .and_then(|b| b.serve_at(PATH, Player { ctx }))
+        .and_then(|b| b.serve_at(PATH, Player { ctx: ctx.clone() }))
         .and_then(|b| b.build());
     let conn = match conn {
         Ok(c) => c,
@@ -261,17 +261,21 @@ pub fn spawn(proxy: EventLoopProxy<AppEvent>, shared: Arc<Shared>, instance: &st
             return None;
         }
     };
-    std::thread::Builder::new().name("popamp-mpris".into()).spawn(move || run(&conn, &rx, &snap, &art)).ok()?;
+    let proxy = ctx.proxy.clone();
+    let tray = super::tray::Tray::new(Arc::new(move |remotes| super::send(&proxy, remotes)));
+    std::thread::Builder::new().name("popamp-mpris".into()).spawn(move || run(&conn, &rx, &snap, &art, tray)).ok()?;
     Some(tx)
 }
 
 /// Takes each snapshot from `rx` into `snap`, and the cover of a new track
-/// into `art`, and tells the bus what changed, until the UI thread is gone.
+/// into `art`, and tells the bus what changed, and the user what plays,
+/// until the UI thread is gone.
 fn run(
     conn: &zbus::blocking::Connection,
     rx: &crossbeam_channel::Receiver<Snapshot>,
     snap: &Mutex<Snapshot>,
     art: &Mutex<Option<PathBuf>>,
+    mut tray: super::tray::Tray,
 ) {
     let iface = match conn.object_server().interface::<_, Player>(PATH) {
         Ok(i) => i,
@@ -281,10 +285,15 @@ fn run(
         }
     };
     let mut covers = super::Covers::default();
+    let (mut news, mut notifier) = (super::News::default(), super::notify::Notifier::new(conn.clone()));
     for new in rx {
         if snap.lock().track != new.track {
             *art.lock() = new.track.as_ref().and_then(|t| covers.of(t));
         }
+        if let Some(track) = news.of(&new) {
+            notifier.show(track, art.lock().as_deref());
+        }
+        tray.update(&new);
         let old = std::mem::replace(&mut *snap.lock(), new.clone());
         if let Err(e) = zbus::block_on(announce(&iface.get(), iface.signal_emitter(), &old, &new)) {
             log::debug!("MPRIS signal: {e}");

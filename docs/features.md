@@ -88,6 +88,11 @@
   - Media keys and the desktop's player controls, with the track's cover:
     MPRIS2 on Linux (desktop widgets, `playerctl`), the media overlay on
     Windows.
+  - A tray icon on Linux (StatusNotifierItem: KDE, Xfce, GNOME with the
+    AppIndicator extension): a click brings Popamp up, a middle click
+    plays or pauses, the wheel sets the volume, and its menu has the
+    transport buttons. Notifications of each new track, with its cover,
+    are off by default. Both are in Preferences > Desktop.
   - Bar skins reserve their strip of the screen, like a taskbar.
 
 ## Known limitations

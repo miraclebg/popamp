@@ -17,6 +17,10 @@ use winit::event_loop::EventLoopProxy;
 #[cfg(unix)]
 mod mpris;
 #[cfg(unix)]
+mod notify;
+#[cfg(unix)]
+mod tray;
+#[cfg(unix)]
 use mpris as service;
 #[cfg(windows)]
 mod smtc;
@@ -102,12 +106,42 @@ pub struct Snapshot {
     pub shuffle: bool,
     pub volume: f64,
     pub track: Option<Track>,
+    /// Whether the user wants a notification for each new track.
+    pub notify: bool,
+    /// Whether the user wants an icon in the system tray.
+    pub tray: bool,
 }
 
 impl Default for Snapshot {
     fn default() -> Self {
-        Self { status: "Stopped", repeat: false, shuffle: false, volume: 1.0, track: None }
+        Self { status: "Stopped", repeat: false, shuffle: false, volume: 1.0, track: None, notify: false, tray: false }
     }
+}
+
+/// Picks the tracks worth a notification: each new track, or new stream
+/// title, once, when it plays. Pausing and resuming is no news.
+#[derive(Default)]
+#[cfg(unix)] // Windows shows its own media flyout.
+struct News {
+    told: Option<(u64, String)>,
+}
+
+#[cfg(unix)]
+impl News {
+    fn of<'a>(&mut self, snap: &'a Snapshot) -> Option<&'a Track> {
+        let track = snap.track.as_ref().filter(|_| snap.notify && snap.status == "Playing")?;
+        let key = (track.id, track.title.clone());
+        (self.told.as_ref() != Some(&key)).then(|| {
+            self.told = Some(key);
+            track
+        })
+    }
+}
+
+/// The line under the title: who and from what.
+#[cfg(unix)]
+fn byline(track: &Track) -> String {
+    [&track.artist, &track.album].into_iter().flatten().filter(|s| !s.trim().is_empty()).cloned().collect::<Vec<_>>().join(" — ")
 }
 
 pub struct Controls {
@@ -159,6 +193,45 @@ mod tests {
         assert_eq!(covers.of(&track(8, "http://radio.example/stream")), None);
         assert!(!written.exists(), "gone with its track");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    fn playing(id: u64, title: &str) -> Snapshot {
+        Snapshot {
+            status: "Playing",
+            notify: true,
+            track: Some(Track { id, title: title.into(), ..track(id, "/a.mp3") }),
+            ..Snapshot::default()
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn each_new_track_is_news_once() {
+        let mut news = News::default();
+        let title = |s: &Snapshot, news: &mut News| news.of(s).map(|t| t.title.clone());
+        assert_eq!(title(&playing(1, "One"), &mut news).as_deref(), Some("One"));
+        assert_eq!(title(&playing(1, "One"), &mut news), None, "told already");
+        assert_eq!(title(&Snapshot { status: "Paused", ..playing(1, "One") }, &mut news), None);
+        assert_eq!(title(&playing(1, "One"), &mut news), None, "resumed is not new");
+        assert_eq!(title(&playing(1, "Next song on the radio"), &mut news).as_deref(), Some("Next song on the radio"));
+        assert_eq!(title(&Snapshot { status: "Paused", ..playing(2, "Two") }, &mut news), None, "not while paused");
+        assert_eq!(title(&Snapshot { notify: false, ..playing(2, "Two") }, &mut news), None, "not when turned off");
+        assert_eq!(title(&playing(2, "Two"), &mut news).as_deref(), Some("Two"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn the_byline_has_what_is_known() {
+        let t = |artist: Option<&str>, album: Option<&str>| Track {
+            artist: artist.map(Into::into),
+            album: album.map(Into::into),
+            ..Track::default()
+        };
+        assert_eq!(byline(&t(Some("Artist"), Some("Album"))), "Artist — Album");
+        assert_eq!(byline(&t(None, Some("Album"))), "Album");
+        assert_eq!(byline(&t(Some("Artist"), Some(" "))), "Artist");
+        assert_eq!(byline(&t(None, None)), "");
     }
 
     #[test]

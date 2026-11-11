@@ -317,11 +317,15 @@ pub enum Flag {
     ShowNumbers,
     ZeroPad,
     AutoAdvance,
+    TrayIcon,
+    NotifyTracks,
+    GlobalHotkeys,
 }
 
 impl Flag {
     const WINDOWS: [Flag; 6] = [Flag::Snap, Flag::EasyMove, Flag::KeepOnScreen, Flag::AlwaysOnTop, Flag::DoubleSize, Flag::SkinCursors];
     const DISPLAY: [Flag; 5] = [Flag::ScrollTitle, Flag::DimInactive, Flag::ShowNumbers, Flag::ZeroPad, Flag::AutoAdvance];
+    const DESKTOP: [Flag; 3] = [Flag::TrayIcon, Flag::NotifyTracks, Flag::GlobalHotkeys];
 
     fn label(self) -> &'static str {
         match self {
@@ -336,6 +340,9 @@ impl Flag {
             Flag::ShowNumbers => "Show playlist numbers",
             Flag::ZeroPad => "Zero-pad numbers",
             Flag::AutoAdvance => "Advance to next track",
+            Flag::TrayIcon => "Icon in the system tray",
+            Flag::NotifyTracks => "Notify of each new track",
+            Flag::GlobalHotkeys => "Global hotkeys (Ctrl+Alt)",
         }
     }
 
@@ -365,6 +372,9 @@ impl Flag {
             Flag::ShowNumbers => &mut s.shownumsinpl,
             Flag::ZeroPad => &mut s.zeropadplnum,
             Flag::AutoAdvance => &mut s.pladv,
+            Flag::TrayIcon => &mut s.tray_icon,
+            Flag::NotifyTracks => &mut s.notify_tracks,
+            Flag::GlobalHotkeys => &mut s.global_hotkeys,
         }
     }
 
@@ -501,7 +511,9 @@ impl Preferences {
         let w = 480;
         let mut form = Form::new(w, 0);
         let mut y = 10;
-        for (title, flags) in [("Windows", &Flag::WINDOWS[..]), ("Display and playback", &Flag::DISPLAY[..])] {
+        for (title, flags) in
+            [("Windows", &Flag::WINDOWS[..]), ("Display and playback", &Flag::DISPLAY[..]), ("Desktop", &Flag::DESKTOP[..])]
+        {
             let rows = flags.len().div_ceil(2) as i32;
             form.add(Rect::new(10, y, w - 20, 22 + rows * 22), Widget::Group { label: title.into() });
             for (n, &f) in flags.iter().enumerate() {

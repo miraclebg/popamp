@@ -251,6 +251,13 @@ settings! {
     replaygain_mode: i32 = 0,
     replaygain_preamp: f32 = 0.0,
     replaygain_non_rg_gain: f32 = -6.0,
+    // Desktop.
+    /// An icon in the system tray (StatusNotifierItem on Linux).
+    tray_icon: bool = true,
+    /// A desktop notification when the track changes.
+    notify_tracks: bool = false,
+    /// Ctrl+Alt+Insert/Home/End/PgUp/PgDn and arrows from any program.
+    global_hotkeys: bool = false,
     // Network.
     proxy: String = String::new(),
     // MIDI.

@@ -1733,7 +1733,15 @@ impl Model {
                 length_ms: e.length_ms,
             }
         });
-        crate::media::Snapshot { status, repeat: s.repeat, shuffle: s.shuffle, volume: s.volume as f64 / 255.0, track }
+        crate::media::Snapshot {
+            status,
+            repeat: s.repeat,
+            shuffle: s.shuffle,
+            volume: s.volume as f64 / 255.0,
+            track,
+            notify: s.notify_tracks,
+            tray: s.tray_icon,
+        }
     }
 
     pub fn status_json(&self) -> String {

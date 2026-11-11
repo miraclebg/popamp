@@ -89,6 +89,7 @@ All playback checks ran at volume 0 through the real ALSA/PipeWire output.
 | Skins | `popamp Base.wsz` | `.wsz` is installed to the skins folder and applied; loading the archive matches loading the unpacked folder |
 | Remote control | `/PLAY /PAUSE /PLAYPAUSE /NEXT /STOP /VOL= /SHUFFLE= /COMMAND= /STATUS /QUIT` against a running instance | all work |
 | MPRIS | `gdbus call --session -d org.mpris.MediaPlayer2.popamp …` (Play, Next, Properties.GetAll, Quit) | all work; metadata and position correct |
+| Tray and notifications | `popamp /NEW /INIDIR=<tmp>` with `tray_icon=1` and `notify_tracks=1`, then `busctl` (the item's ToolTip, Scroll; MPRIS Next) and `dbus-monitor` | the item registers with the watcher, its tooltip follows the track; each new track gives one notification with its cover, replacing the last |
 | Window icon | `xprop -name Popamp _NET_WM_ICON` | 64×64 icon set |
 | Session persistence | quit, inspect `popamp.ini` / `popamp.m3u8` | settings, positions and playlist saved |
 
@@ -105,6 +106,7 @@ All playback checks ran at volume 0 through the real ALSA/PipeWire output.
 - ReplayGain-tagged files, and the ReplayGain scanner by ear.
 - Crossfade by ear, and the History window.
 - Media keys through the desktop.
+- The tray icon's clicks and menu on screen.
 
 Please report problems with these first.
 
