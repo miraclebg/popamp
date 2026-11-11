@@ -55,8 +55,10 @@
   band set and an optional limiter. Reads and writes `.eqf` and `.q1`
   presets, and can auto-load presets per file.
 - **Plug-ins** (in a build with `--features plugins`): WebAssembly
-  sources such as [YouTube](https://github.com/popamp/plugin-youtube) and
+  sources such as [YouTube](https://github.com/popamp/plugin-youtube),
   sound effects such as [Crossfeed](https://github.com/popamp/plugin-crossfeed),
+  and decoders of more formats such as
+  [Monkey's Audio](https://github.com/popamp/plugin-ape),
   each allowed by you in Options > Plug-ins…. In a build with
   `--features visualizers`, also GPU visualizers such as
   [Spectrum](https://github.com/popamp/plugin-spectrum), in a window that

@@ -1,10 +1,11 @@
 # Plug-ins: design
 
-Status: **agreed 2026-11-05**. Steps 1 to 5 of the order of work are
+Status: **agreed 2026-11-05**. Steps 1 to 7 of the order of work are
 built; the plug-ins are
-[plugin-youtube](https://github.com/popamp/plugin-youtube) (`source`)
-and [plugin-crossfeed](https://github.com/popamp/plugin-crossfeed)
-(`dsp`).
+[plugin-youtube](https://github.com/popamp/plugin-youtube) (`source`),
+[plugin-crossfeed](https://github.com/popamp/plugin-crossfeed) (`dsp`),
+[plugin-spectrum](https://github.com/popamp/plugin-spectrum) (`visual`)
+and [plugin-ape](https://github.com/popamp/plugin-ape) (`decoder`).
 
 Popamp's core plays local files, HTTP streams and playlists, and draws
 skins. Everything else that only some users want, such as YouTube, more
@@ -464,8 +465,9 @@ With the YouTube plug-in:
 6. Visualizers. Done: kind `visual`, the crate
    [popamp-visual](https://github.com/popamp/popamp-visual) and
    [plugin-spectrum](https://github.com/popamp/plugin-spectrum).
-7. Decoders. Done: kind `decoder`, API 1.1, `host::Decoding` and
-   `popamp_audio::formats::Decoders`.
+7. Decoders. Done: kind `decoder`, API 1.1, `host::Decoding`,
+   `popamp_audio::formats::Decoders` and
+   [plugin-ape](https://github.com/popamp/plugin-ape).
 
 ## Decisions
 
