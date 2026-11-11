@@ -34,7 +34,7 @@ Winamp DLLs.
 | `source` | Takes links it recognises; lists them, describes them and tells the core how to play them | YouTube, SoundCloud, radio directories | 1 |
 | `dsp` | Changes decoded samples, block by block | crossfeed, compressor, pitch | 1 |
 | `decoder` | Turns bytes of a format the core lacks into samples | Opus, tracker modules, MIDI | 2 |
-| `vis` | Draws from the spectrum and wave data into a pixel buffer | MilkDrop through projectM | later |
+| `vis` | Draws from the spectrum and wave data into a pixel buffer | spectrum, MilkDrop-style scenes | later |
 
 Version 1 has `source` and `dsp` only: YouTube needs the first, and the
 second tests the hot path. A plug-in may be of one kind only.

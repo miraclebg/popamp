@@ -11,7 +11,7 @@ Contributions are welcome. Please open an issue first for larger items.
 - **Playback extras:** crossfade, a ReplayGain scanner, history (Ctrl+H).
 - **Desktop integration:** tray icon (StatusNotifierItem), track-change
   notifications, global hotkeys through the XDG portal.
-- **MilkDrop-compatible visualizer window** through libprojectM.
+- **MilkDrop-style visualizers** of our own, as visual plug-ins.
 
 ## 1.0: The whole player
 
