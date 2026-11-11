@@ -16,6 +16,7 @@ mod filetypes;
 mod font;
 mod gallery;
 mod headless;
+mod history;
 mod ipc;
 #[cfg(feature = "visualizers")]
 mod keep_awake;

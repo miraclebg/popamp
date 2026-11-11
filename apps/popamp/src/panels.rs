@@ -27,6 +27,7 @@ pub enum PanelKind {
     Gallery,
     AlbumArt,
     SkinBrowser,
+    History,
 }
 
 /// What a button or check box in a panel stands for.
@@ -70,6 +71,7 @@ pub enum Panel {
     Gallery(crate::gallery::GalleryPanel),
     Art(AlbumArt),
     Skins(SkinBrowser),
+    History(crate::history::HistoryPanel),
 }
 
 impl Panel {
@@ -86,6 +88,7 @@ impl Panel {
             PanelKind::Gallery => Panel::Gallery(crate::gallery::GalleryPanel::new(model)),
             PanelKind::AlbumArt => Panel::Art(AlbumArt::new(model)),
             PanelKind::SkinBrowser => Panel::Skins(SkinBrowser::new(model)),
+            PanelKind::History => Panel::History(crate::history::HistoryPanel::new(model)),
         }
     }
 
@@ -100,6 +103,7 @@ impl Panel {
             Panel::Gallery(_) => PanelKind::Gallery,
             Panel::Art(_) => PanelKind::AlbumArt,
             Panel::Skins(_) => PanelKind::SkinBrowser,
+            Panel::History(_) => PanelKind::History,
         }
     }
 
@@ -114,6 +118,7 @@ impl Panel {
             Panel::Gallery(_) => "Popamp Gallery",
             Panel::Art(_) => "Album art",
             Panel::Skins(_) => "Skin browser",
+            Panel::History(_) => "History",
         }
     }
 
@@ -128,6 +133,7 @@ impl Panel {
             Panel::Gallery(p) => &p.form,
             Panel::Art(p) => &p.form,
             Panel::Skins(p) => &p.form,
+            Panel::History(p) => &p.form,
         }
     }
 
@@ -142,6 +148,7 @@ impl Panel {
             Panel::Gallery(p) => &mut p.form,
             Panel::Art(p) => &mut p.form,
             Panel::Skins(p) => &mut p.form,
+            Panel::History(p) => &mut p.form,
         }
     }
 
@@ -158,6 +165,7 @@ impl Panel {
             Panel::Gallery(p) => p.handle(ev, model),
             Panel::Art(p) => p.handle(ev),
             Panel::Skins(p) => p.handle(ev, model),
+            Panel::History(p) => p.handle(ev, model),
         }
     }
 
@@ -204,6 +212,7 @@ impl Panel {
         match self {
             Panel::Art(p) => p.refresh(model),
             Panel::Skins(p) => p.refresh(model),
+            Panel::History(p) => p.refresh(model),
             _ => false,
         }
     }
@@ -857,7 +866,7 @@ pub(crate) mod tests {
     use crate::widgets::Key;
     use popamp_core::plformats::Item;
 
-    fn songs(titles: &[&str]) -> Model {
+    pub(crate) fn songs(titles: &[&str]) -> Model {
         let mut m = Model::for_tests();
         let items = titles.iter().enumerate().map(|(i, t)| Item {
             location: format!("/music/{i}.mp3"),

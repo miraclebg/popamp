@@ -1200,6 +1200,7 @@ impl App {
             K::KeyE if ctrl => Some(C::ToggleEasyMove),
             K::KeyT if ctrl => Some(C::ToggleTimeMode),
             K::KeyJ if ctrl => Some(C::JumpToTime),
+            K::KeyH if ctrl => Some(C::History),
             K::KeyP if ctrl => Some(C::Preferences),
             K::KeyK if ctrl && shift => Some(C::ToggleVis),
             K::KeyK if ctrl || alt => Some(C::SelectVisPlugin),

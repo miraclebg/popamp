@@ -31,6 +31,7 @@ sha2.workspace = true
 zip.workspace = true
 log.workspace = true
 env_logger.workspace = true
+jiff.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 x11rb = { version = "0.13", features = ["shape"] }

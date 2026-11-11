@@ -11,6 +11,7 @@ use popamp_audio::{Engine, EngineCmd, EngineEvent, EqSettings, PlayState, Replay
 use popamp_core::atf::Format;
 use popamp_core::config::{BarEdge, Config, Paths, Settings};
 use popamp_core::eqf::{self, Preset};
+use popamp_core::history::{self, History, Played};
 use popamp_core::meta::TrackMeta;
 use popamp_core::playlist::{is_url, Entry, Playlist, SortKey};
 use popamp_core::plformats::{self, Item};
@@ -111,6 +112,8 @@ pub struct Model {
     pub eq_auto: Vec<Preset>,
     /// Favourite files and streams, kept in `bookmarks.m3u8`.
     pub bookmarks: Vec<Item>,
+    /// What was played, kept in `history.txt`.
+    pub history: History,
     pub vis: Vis,
     pub ui: Vec<UiReq>,
     pub quit: bool,
@@ -224,6 +227,7 @@ impl Model {
         let eq_presets = eqf::read_file(&paths.eq_library()).unwrap_or_else(|_| eqf::builtin_presets());
         let eq_auto = eqf::read_file(&paths.eq_auto_library()).unwrap_or_default();
         let bookmarks = plformats::read_file(&paths.bookmarks_file()).unwrap_or_default();
+        let history = History::load(&paths.history_file());
         let format = Format::cached(&config.settings.titlefmt);
         let mut m = Model {
             paths,
@@ -241,6 +245,7 @@ impl Model {
             eq_presets,
             eq_auto,
             bookmarks,
+            history,
             vis: Vis::new(),
             ui: Vec::new(),
             quit: false,
@@ -633,6 +638,8 @@ impl Model {
                 e.refresh_display(&fmt);
             }
             file_name = Some(e.location.rsplit('/').next().unwrap_or("").to_string());
+            let played = Played { at: history::now(), location: e.location.clone(), title: e.display.clone() };
+            self.history.record(&self.paths.history_file(), played);
         }
         if autoload {
             if let Some(name) = file_name {
@@ -682,6 +689,18 @@ impl Model {
 
     pub fn current_preset(&self, name: &str) -> Preset {
         Preset { name: name.to_string(), bands: self.settings().eq_bands(), preamp: self.settings().preamp as u8 }
+    }
+
+    /// Plays a track from the history: from the playlist when it is there,
+    /// else added to its end.
+    pub fn play_again(&mut self, played: &Played) {
+        let at = self.playlist.entries().iter().position(|e| e.location == played.location);
+        let at = at.unwrap_or_else(|| {
+            let item = Item { location: played.location.clone(), title: Some(played.title.clone()), length_ms: None };
+            self.on_expanded(vec![item], AddMode::Append);
+            self.playlist.len() - 1
+        });
+        self.play_index(at);
     }
 
     // --- bookmarks ---------------------------------------------------------------
@@ -1152,6 +1171,7 @@ impl Model {
             C::SkinMuseum => self.ui.push(UiReq::Panel(PanelKind::SkinMuseum)),
             C::Gallery => self.ui.push(UiReq::Panel(PanelKind::Gallery)),
             C::AlbumArt => self.ui.push(UiReq::Panel(PanelKind::AlbumArt)),
+            C::History => self.ui.push(UiReq::Panel(PanelKind::History)),
             #[cfg(feature = "plugins")]
             C::Plugins => self.ui.push(UiReq::Panel(PanelKind::Plugins)),
             #[cfg(not(feature = "plugins"))]
@@ -1411,6 +1431,7 @@ impl Model {
             ),
             MenuItem::cmd("View file info…", "Alt+3", C::FileInfo),
             MenuItem::cmd("Album art", "Alt+A", C::AlbumArt),
+            MenuItem::cmd("History…", "Ctrl+H", C::History),
             MenuItem::sub("Bookmarks", self.bookmarks_menu()),
             MenuItem::sep(),
             MenuItem::cmd("Main Window", "Alt+W", C::ToggleMainWindow),
