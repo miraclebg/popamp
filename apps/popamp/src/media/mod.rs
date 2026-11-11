@@ -28,7 +28,7 @@ mod smtc;
 use smtc as service;
 
 /// Sends `remotes` to the UI thread, as a remote control would.
-fn send(proxy: &EventLoopProxy<AppEvent>, remotes: Vec<Remote>) {
+pub(crate) fn send(proxy: &EventLoopProxy<AppEvent>, remotes: Vec<Remote>) {
     let (tx, _rx) = crossbeam_channel::bounded(1);
     let _ = proxy.send_event(AppEvent::Remote(Request { remotes, reply: tx }));
 }

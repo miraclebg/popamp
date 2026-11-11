@@ -17,6 +17,8 @@ mod font;
 mod gallery;
 mod headless;
 mod history;
+mod hold;
+mod hotkeys;
 mod ipc;
 #[cfg(feature = "visualizers")]
 mod keep_awake;
@@ -143,7 +145,9 @@ fn main() {
     }
 
     let media = media::spawn(proxy.clone(), model.engine.shared().clone(), &class);
-    let mut app = app::App::new(model, opts.start_minimized, media);
+    let hotkeys_proxy = proxy.clone();
+    let hotkeys = hotkeys::Hotkeys::new(std::sync::Arc::new(move |c| media::send(&hotkeys_proxy, vec![cli::Remote::Cmd(c)])));
+    let mut app = app::App::new(model, opts.start_minimized, media, hotkeys);
     if let Err(e) = event_loop.run_app(&mut app) {
         log::error!("event loop: {e}");
     }

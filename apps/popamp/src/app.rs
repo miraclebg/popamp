@@ -126,12 +126,13 @@ pub struct App {
     snapshot: Option<(std::path::PathBuf, u32)>,
     platform: Platform,
     media: Option<crate::media::Controls>,
+    hotkeys: crate::hotkeys::Hotkeys,
     /// The monitor the main window is on.
     monitor: Option<Screen>,
 }
 
 impl App {
-    pub fn new(model: Model, start_minimized: bool, media: Option<crate::media::Controls>) -> App {
+    pub fn new(model: Model, start_minimized: bool, media: Option<crate::media::Controls>, hotkeys: crate::hotkeys::Hotkeys) -> App {
         let fonts = Fonts::for_skin(&model.skin);
         App {
             model,
@@ -158,6 +159,7 @@ impl App {
             snapshot: std::env::var_os("POPAMP_SNAPSHOT").map(|d| (std::path::PathBuf::from(d), 0)),
             platform: Platform::connect(),
             media,
+            hotkeys,
             monitor: None,
         }
     }
@@ -1343,6 +1345,7 @@ impl App {
         if let Some(m) = &mut self.media {
             m.update(self.model.media_snapshot());
         }
+        self.hotkeys.want(self.model.settings().global_hotkeys);
         for i in 0..self.panels.len() {
             if self.panels[i].panel.refresh(&self.model) {
                 self.render_panel(i);

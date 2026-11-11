@@ -93,6 +93,11 @@
     plays or pauses, the wheel sets the volume, and its menu has the
     transport buttons. Notifications of each new track, with its cover,
     are off by default. Both are in Preferences > Desktop.
+  - Global hotkeys, as in Winamp (off by default, Preferences > Desktop):
+    Ctrl+Alt+Insert play, Home pause, End stop, Page Up/Down previous and
+    next, Up/Down volume, Left/Right 5 seconds back and forward. On X11
+    and Windows; not yet under Wayland. GNOME keeps Ctrl+Alt+Left/Right
+    for its workspaces.
   - Bar skins reserve their strip of the screen, like a taskbar.
 
 ## Known limitations
