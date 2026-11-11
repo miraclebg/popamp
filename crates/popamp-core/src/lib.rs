@@ -3,6 +3,7 @@
 pub mod atf;
 pub mod command;
 pub mod config;
+pub mod cue;
 pub mod eqf;
 pub mod ini;
 pub mod meta;

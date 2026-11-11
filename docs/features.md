@@ -62,6 +62,8 @@
   can go full screen. See [plugins.md](plugins.md).
 - **Playlist:**
   - M3U, M3U8, PLS and XSPF.
+  - CUE sheets: an album in one file opens as its tracks, each with its
+    title, performer and length, and seeking stays inside the track.
   - Sort, reverse, randomize, crop, remove dead entries.
   - Drag to reorder, jump to time.
   - Bookmarks for favourite files and streams (`Alt+I`, main menu).

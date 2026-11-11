@@ -56,9 +56,14 @@ impl Group {
                 "audio/x-it",
                 "audio/x-stm",
             ],
-            Group::Playlists => {
-                &["audio/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl", "audio/x-scpls", "application/xspf+xml"]
-            }
+            Group::Playlists => &[
+                "audio/x-mpegurl",
+                "audio/mpegurl",
+                "application/vnd.apple.mpegurl",
+                "audio/x-scpls",
+                "application/xspf+xml",
+                "application/x-cue",
+            ],
             Group::Skins => &["application/x-popamp-skin", "application/x-popamp-vector-skin"],
         }
     }

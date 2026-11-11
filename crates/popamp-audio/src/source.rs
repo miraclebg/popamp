@@ -8,6 +8,7 @@
 
 use crate::pipe::Pipe;
 use parking_lot::{Condvar, Mutex};
+use popamp_core::cue;
 use popamp_core::meta::TrackMeta;
 use popamp_core::playlist::is_url;
 use popamp_core::plformats::{self, is_playlist, Item};
@@ -29,6 +30,14 @@ pub struct Context {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Playback {
     File(PathBuf),
+    /// From `start_ms` to `end_ms` (or the end) of a local file, with
+    /// the tags of that part rather than the file's.
+    Part {
+        path: PathBuf,
+        start_ms: u64,
+        end_ms: Option<u64>,
+        meta: Box<TrackMeta>,
+    },
     Http(String),
     Pipe(Box<Pipe>),
 }
@@ -105,7 +114,7 @@ impl Default for Sources {
         Sources {
             plugins: Mutex::new(Some(Vec::new())),
             loaded: Condvar::new(),
-            built_in: vec![Arc::new(HttpSource), Arc::new(FileSource)],
+            built_in: vec![Arc::new(HttpSource), Arc::new(CueSource), Arc::new(FileSource)],
         }
     }
 }
@@ -139,6 +148,80 @@ impl Source for HttpSource {
 
     fn open(&self, location: &str, _cx: &Context) -> Result<Playback, String> {
         Ok(Playback::Http(location.to_string()))
+    }
+}
+
+/// CUE sheets: a sheet lists its tracks, and each plays a part of a file.
+pub struct CueSource;
+
+impl CueSource {
+    fn track(location: &str) -> Result<(cue::Sheet, cue::Track), String> {
+        let (sheet_path, number) = cue::split_location(location).ok_or("not a track of a CUE sheet")?;
+        let sheet = cue::read(Path::new(sheet_path)).map_err(|e| format!("{sheet_path}: {e}"))?;
+        let track = sheet.track(number).cloned().ok_or_else(|| format!("{sheet_path} has no track {number}"))?;
+        Ok((sheet, track))
+    }
+
+    /// The track's length; the last one of a file runs to the file's end.
+    fn length_ms(track: &cue::Track, file_length_ms: Option<u64>) -> Option<u64> {
+        track.end_ms.or(file_length_ms).map(|end| end.saturating_sub(track.start_ms))
+    }
+
+    fn file_length_ms(track: &cue::Track) -> Option<u64> {
+        crate::formats::read_meta(&track.file).ok().and_then(|m| m.length_ms)
+    }
+
+    /// The file's tags and stream, with what the sheet says of the track.
+    fn meta(sheet: &cue::Sheet, track: &cue::Track) -> TrackMeta {
+        let mut meta = crate::formats::read_meta(&track.file).unwrap_or_default();
+        meta.length_ms = Self::length_ms(track, meta.length_ms);
+        meta.title = track.title.clone().or(meta.title);
+        meta.artist = track.performer.clone().or(sheet.performer.clone()).or(meta.artist);
+        meta.album = sheet.title.clone().or(meta.album);
+        meta.album_artist = sheet.performer.clone().or(meta.album_artist);
+        meta.track = Some(track.number.to_string());
+        // The file's own track gain is the whole file's.
+        meta.replaygain_track_gain = None;
+        meta.replaygain_track_peak = None;
+        meta
+    }
+}
+
+impl Source for CueSource {
+    fn id(&self) -> &str {
+        "cue"
+    }
+
+    fn handles(&self, location: &str) -> bool {
+        !is_url(location) && (cue::is_cue(location) || cue::split_location(location).is_some())
+    }
+
+    fn expand(&self, location: &str, _cx: &Context) -> Result<Option<Vec<Item>>, String> {
+        if !cue::is_cue(location) {
+            return Ok(None);
+        }
+        let sheet = cue::read(Path::new(location)).map_err(|e| format!("{location}: {e}"))?;
+        let items = sheet.tracks.iter().map(|t| {
+            let performer = t.performer.as_ref().or(sheet.performer.as_ref());
+            let title = match (performer, &t.title) {
+                (Some(p), Some(t)) => Some(format!("{p} - {t}")),
+                (None, t) => t.clone(),
+                (Some(_), None) => None,
+            };
+            let file_length = if t.end_ms.is_none() { Self::file_length_ms(t) } else { None };
+            Item { location: cue::track_location(location, t.number), title, length_ms: Self::length_ms(t, file_length) }
+        });
+        Ok(Some(items.collect()))
+    }
+
+    fn describe(&self, location: &str) -> Option<Result<TrackMeta, String>> {
+        Some(Self::track(location).map(|(sheet, track)| Self::meta(&sheet, &track)))
+    }
+
+    fn open(&self, location: &str, _cx: &Context) -> Result<Playback, String> {
+        let (sheet, track) = Self::track(location)?;
+        let meta = Box::new(Self::meta(&sheet, &track));
+        Ok(Playback::Part { path: track.file, start_ms: track.start_ms, end_ms: track.end_ms, meta })
     }
 }
 
@@ -232,6 +315,8 @@ mod tests {
             ("https://example.com/list.m3u", "http"),
             ("/music/a.mp3", "file"),
             ("relative/b.flac", "file"),
+            ("/music/live.cue", "cue"),
+            ("/music/live.cue#2", "cue"),
         ] {
             assert_eq!(sources.of(loc).id(), id, "{loc}");
         }
@@ -263,6 +348,35 @@ mod tests {
         let names: Vec<_> = items.iter().map(|i| Path::new(&i.location).strip_prefix(&dir).unwrap().to_path_buf()).collect();
         assert_eq!(names, [Path::new("9.mp3"), Path::new("10.mp3"), &Path::new("sub").join("1.flac")]);
         assert_eq!(FileSource.expand(&dir.join("9.mp3").to_string_lossy(), &Context::default()), Ok(None));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_cue_sheet_lists_its_tracks_and_each_plays_its_part() {
+        let dir = std::env::temp_dir().join(format!("popamp-cue-src-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/silence.wav");
+        std::fs::copy(&fixture, dir.join("album.wav")).unwrap();
+        let file_ms = crate::read_meta(&dir.join("album.wav")).unwrap().length_ms.unwrap();
+        let sheet = "PERFORMER \"Band\"\nTITLE \"Album\"\nFILE \"album.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"One\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"Two\"\n    INDEX 01 00:00:15\n";
+        let cue = dir.join("album.cue");
+        std::fs::write(&cue, sheet).unwrap();
+        let cue = cue.to_string_lossy().into_owned();
+        let items = CueSource.expand(&cue, &Context::default()).unwrap().unwrap();
+        let second = format!("{cue}#2");
+        assert_eq!(items.iter().map(|i| i.location.as_str()).collect::<Vec<_>>(), [format!("{cue}#1").as_str(), second.as_str()]);
+        assert_eq!((items[0].title.as_deref(), items[0].length_ms), (Some("Band - One"), Some(200)));
+        assert_eq!(items[1].length_ms, Some(file_ms - 200), "the last track runs to the end");
+        let meta = CueSource.describe(&second).unwrap().unwrap();
+        assert_eq!(
+            (meta.title.as_deref(), meta.artist.as_deref(), meta.album.as_deref(), meta.track.as_deref()),
+            (Some("Two"), Some("Band"), Some("Album"), Some("2"))
+        );
+        assert_eq!(
+            CueSource.open(&second, &Context::default()),
+            Ok(Playback::Part { path: dir.join("album.wav"), start_ms: 200, end_ms: None, meta: Box::new(meta) })
+        );
+        assert!(CueSource.open(&format!("{cue}#9"), &Context::default()).is_err());
         std::fs::remove_dir_all(dir).unwrap();
     }
 

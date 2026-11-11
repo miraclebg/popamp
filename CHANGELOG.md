@@ -20,6 +20,11 @@ All notable changes to this project are documented here. The format follows
 - **Tracker modules:** MOD, XM, S3M, IT, MPTM and the other common module
   types play through the system's libopenmpt, loaded at run time, with
   their title, artist and message. The packages recommend it.
+- **CUE sheets:** opening a `.cue` adds its tracks, each one a part of the
+  album file with the sheet's title and performer. A track plays, seeks
+  and ends within its part; a sheet that names `album.wav` finds
+  `album.flac` beside it. Tracks are kept in playlists as
+  `album.cue#3`.
 
 ## [0.8.0] - 2026-11-11
 

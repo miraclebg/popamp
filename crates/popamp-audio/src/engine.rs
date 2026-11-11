@@ -868,6 +868,10 @@ fn open_location(sources: &Sources, location: &str, start_ms: u64, cx: &Context)
             }
             Ok((Box::new(dec), meta, Some(title), Some(headers), 0))
         }
+        Playback::Part { path, start_ms, end_ms, meta } => {
+            let (dec, _) = crate::formats::open_part(&path, start_ms, end_ms, cx)?;
+            Ok((dec, *meta, None, None, 0))
+        }
         Playback::File(path) => {
             let (dec, meta) = crate::formats::open(&path, cx)?;
             Ok((dec, meta, None, None, 0))
