@@ -33,11 +33,12 @@ Winamp DLLs.
 |---|---|---|---|
 | `source` | Takes links it recognises; lists them, describes them and tells the core how to play them | YouTube, SoundCloud, radio directories | 1 |
 | `dsp` | Changes decoded samples, block by block | crossfeed, compressor, pitch | 1 |
-| `decoder` | Turns bytes of a format the core lacks into samples | Opus, tracker modules, MIDI | 2 |
+| `decoder` | Plays local files of a format the core lacks | Monkey's Audio, WavPack, chiptunes | 1.1 |
 | `vis` | Draws from the spectrum and wave data into a pixel buffer | spectrum, MilkDrop-style scenes | later |
 
-Version 1 has `source` and `dsp` only: YouTube needs the first, and the
-second tests the hot path. A plug-in may be of one kind only.
+Version 1.0 had `source` and `dsp`: YouTube needs the first, and the
+second tests the hot path; `visual` came next, and `decoder` with 1.1.
+A plug-in may be of one kind only.
 
 ## Runtime: Extism
 
@@ -139,6 +140,18 @@ default = "bestaudio[ext=m4a]/bestaudio"
 A `dsp` plug-in has `kind = "dsp"`, no `[source]` table and no
 permissions: it runs on every block of sound, so it may not start
 programs or reach the network. It may have settings.
+
+A `decoder` has `kind = "decoder"`, `api = "1.1"` or newer, no
+permissions, and a `[decoder]` table instead of `[source]`:
+
+```toml
+[decoder]
+extensions = ["ape", "mac"]    # lowercase, without the dot
+```
+
+An extension Popamp plays itself (`flac`, `mid`, `cue` and the rest) is
+refused: the built-in decoders always come first, so a plug-in adds
+formats and replaces none.
 
 The core checks the manifest strictly, like `skin.toml`: an unknown key
 or a missing file keeps the plug-in off, and the error is shown.
@@ -272,6 +285,31 @@ engine runs dsp plug-ins in folder order, after the equalizer and
 before the visualizer, volume and balance. Each one has an instance of
 its own, called only by the engine, so it may keep state in statics.
 
+## How a decoder plug-in plays
+
+The engine asks the decoder for the sound of a local file whose
+extension it lists, in a folder, a playlist or a CUE sheet alike; the
+Open dialog offers those files too. Each file gets an instance of the
+plug-in of its own, so it may keep the open file in statics.
+
+| Call | Input | Output |
+|---|---|---|
+| `api_version` | none | `"1.1"` |
+| `open_file` | `{"extension": "ape", "size": 1234}` | the stream, JSON |
+| `decode` | none | the next block, raw bytes; none at the end |
+| `seek` | the position in ms | the position reached |
+
+The stream says `rate`, and may say `length_ms`, `seekable` and `tags`
+(as a source's `describe`, with `channels` and `sample_rate` as the file
+has them). A block is interleaved stereo 32-bit float samples,
+little-endian, at that rate. Reading a playlist's tags only opens the
+file.
+
+A decoder reads its file with `popamp_input` (`{"offset", "length"}` in,
+at most 1 MiB out) and can read nothing else: the call reads the file of
+the instance it came from, and any other plug-in that calls it gets an
+error.
+
 ## Visualizer plug-ins
 
 The code that draws them is the
@@ -369,6 +407,11 @@ disturb the whole screen for a moment.
   than half its playing time plays unchanged; three in a row switch the
   plug-in off until the user presses OK in "Plug-ins…". A call that
   hangs is stopped after 250 ms.
+- A `decoder` runs on the thread that asks: the engine's when it plays,
+  a worker's when it reads tags. A call that hangs is stopped after 1 s;
+  a call that fails ends the track. Three crashes in a row switch the
+  plug-in off; only a block decoded clears them, so a decoder that opens
+  every file and crashes on each one stops too.
 
 ## Versions
 
@@ -379,10 +422,10 @@ only add calls or optional fields. A plug-in built for another major
 version stays off, with a message naming both versions.
 
 **The API is under development: until Popamp 1.0 it can change with no
-compatibility with older plug-ins.** It stays 1.0 and changes in place:
-dependents follow the crate's `main` branch, and `Cargo.lock` pins the
-commit. A plug-in's package names the oldest Popamp it runs on. The API
-version starts to move with Popamp 1.0.
+compatibility with older plug-ins.** A new kind of plug-in moves the
+minor version (1.1 brought `decoder`); other changes are made in place.
+Dependents follow the crate's `main` branch, and `Cargo.lock` pins the
+commit. A plug-in's package names the oldest Popamp it runs on.
 
 ## What left the core
 
@@ -421,7 +464,8 @@ With the YouTube plug-in:
 6. Visualizers. Done: kind `visual`, the crate
    [popamp-visual](https://github.com/popamp/popamp-visual) and
    [plugin-spectrum](https://github.com/popamp/plugin-spectrum).
-7. Later: `decoder`.
+7. Decoders. Done: kind `decoder`, API 1.1, `host::Decoding` and
+   `popamp_audio::formats::Decoders`.
 
 ## Decisions
 
@@ -431,6 +475,7 @@ Agreed with the project owner on 2026-11-05:
 2. `exec` as described: only programs named in the manifest, confirmed by
    the user.
 3. Version 1 has `source` and `dsp`; `decoder` comes in version 2.
+   Changed on 2026-11-11: `decoder` is API 1.1, since it only adds.
 4. Each plug-in, examples included, lives in a repository of its own,
    like the skins; the core keeps only a minimal test plug-in for its
    own tests.

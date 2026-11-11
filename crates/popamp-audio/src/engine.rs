@@ -1064,7 +1064,7 @@ mod tests {
     #[test]
     fn plays_what_an_added_source_says_to_play() {
         let sources = Sources::default();
-        sources.set_plugins(vec![Arc::new(ShellSource)]);
+        sources.set_plugins(vec![Arc::new(ShellSource)], Default::default());
         let (engine, events) = engine_with(sources);
         // 0.2 s of stereo f32 silence at 48 kHz.
         engine.send(EngineCmd::Open { id: 1, location: "pipe:head -c 76800 /dev/zero".into(), start_ms: 0 });
@@ -1075,7 +1075,7 @@ mod tests {
     #[cfg(unix)]
     fn worker_playing(location: &str) -> Worker {
         let sources = Sources::default();
-        sources.set_plugins(vec![Arc::new(ShellSource)]);
+        sources.set_plugins(vec![Arc::new(ShellSource)], Default::default());
         let (_, rx) = crossbeam_channel::unbounded();
         let mut w = Worker::new("null".into(), Arc::new(sources), rx, Arc::new(Shared::new()), Box::new(|_| {}));
         let opened = open_location(&w.sources, location, 0, &w.cx);
@@ -1155,7 +1155,7 @@ mod tests {
     #[test]
     fn seeks_while_paused_show_the_last_one() {
         let sources = Sources::default();
-        sources.set_plugins(vec![Arc::new(ShellSource)]);
+        sources.set_plugins(vec![Arc::new(ShellSource)], Default::default());
         let (engine, events) = engine_with(sources);
         engine.send(EngineCmd::Open { id: 1, location: "pipe:head -c 40000000 /dev/zero".into(), start_ms: 0 });
         assert!(matches!(events.recv_timeout(Duration::from_secs(2)), Ok(EngineEvent::Started { id: 1, .. })));

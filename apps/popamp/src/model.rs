@@ -5,6 +5,7 @@ use crate::dialogs::{DialogKind, DialogResult, Request};
 use crate::menu::{MenuAction, MenuItem};
 use crate::panels::PanelKind;
 use crate::vis::Vis;
+use popamp_audio::formats::Decoders;
 use popamp_audio::source::{Context, Sources};
 use popamp_audio::{Engine, EngineCmd, EngineEvent, EqSettings, PlayState, ReplayGainSettings, StreamInfo};
 use popamp_core::atf::Format;
@@ -116,6 +117,8 @@ pub struct Model {
     pub(crate) events: Events,
     meta_tx: crossbeam_channel::Sender<(u64, String)>,
     pub(crate) sources: Arc<Sources>,
+    /// The decoder plug-ins that are on; `sources` has them too.
+    pub(crate) decoders: Decoders,
     #[cfg(feature = "plugins")]
     pub plugins: crate::plugins::Plugins,
     error_skips: usize,
@@ -244,6 +247,7 @@ impl Model {
             events,
             meta_tx,
             sources,
+            decoders: Decoders::default(),
             #[cfg(feature = "plugins")]
             plugins: Default::default(),
             error_skips: 0,
@@ -275,7 +279,7 @@ impl Model {
 
     /// What sources need from the settings.
     pub(crate) fn source_context(&self) -> Context {
-        Context { proxy: self.settings().proxy.clone(), soundfont: self.settings().soundfont.clone() }
+        Context { proxy: self.settings().proxy.clone(), soundfont: self.settings().soundfont.clone(), decoders: self.decoders.clone() }
     }
 
     pub fn push_engine_settings(&mut self) {
@@ -782,8 +786,8 @@ impl Model {
     }
 
     pub fn request_dialog(&mut self, kind: DialogKind) {
-        let media_filter: Vec<String> =
-            popamp_core::audio_extensions().chain(["m3u", "m3u8", "pls", "xspf", "cue"]).map(|e| format!("*.{e}")).collect();
+        let own = popamp_core::audio_extensions().chain(["m3u", "m3u8", "pls", "xspf", "cue"]).map(|e| format!("*.{e}"));
+        let media_filter: Vec<String> = own.chain(self.decoders.extensions().iter().map(|e| format!("*.{e}"))).collect();
         let start = self.start_dir();
         let req = match &kind {
             DialogKind::OpenFiles { .. } => Request::Files { title: "Open file(s)".into(), multiple: true, filter: media_filter, start },
