@@ -45,6 +45,9 @@ All notable changes to this project are documented here. The format follows
   and the next write waited for room forever. Since 0.5.0.
 - Windows: the media card by the volume flyout kept the cover of the
   last track that had one; a track without a cover now shows the logo.
+- The cover picture from a track's tags, written to the temporary folder
+  for the desktop's media controls, stayed there after Popamp closed.
+  The next start removes the ones left behind.
 
 ## [0.8.0] - 2026-11-11
 

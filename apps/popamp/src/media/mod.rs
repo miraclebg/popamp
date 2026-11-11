@@ -44,10 +44,53 @@ fn pause(status: &str) -> Option<Command> {
 
 /// The cover of the track on show as a file the desktop can read: an
 /// image beside the track, or the picture from its tags written out to a
-/// file of ours, kept until the next track.
-#[derive(Default)]
+/// file of ours, kept until the next track. The files a Popamp left when
+/// it ended go when the next one starts.
 struct Covers {
     written: Option<PathBuf>,
+}
+
+impl Default for Covers {
+    fn default() -> Self {
+        sweep(&std::env::temp_dir());
+        Self { written: None }
+    }
+}
+
+/// Removes the cover files in `dir` of Popamps no longer running: one
+/// that exits ends its threads before their [`Covers`] are dropped.
+fn sweep(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let pid = name.to_str().and_then(|n| n.strip_prefix("popamp-cover-")?.split('-').next()?.parse::<u32>().ok());
+        if pid.is_some_and(|pid| pid != std::process::id() && !running(pid)) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// Whether a process `pid` is running.
+#[cfg(windows)]
+fn running(pid: u32) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ACCESS_DENIED, STILL_ACTIVE};
+    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    // SAFETY: the handle is checked, read and closed once.
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if process.is_null() {
+            return GetLastError() == ERROR_ACCESS_DENIED;
+        }
+        let mut code = 0;
+        let alive = GetExitCodeProcess(process, &mut code) == 0 || code == STILL_ACTIVE as u32;
+        CloseHandle(process);
+        alive
+    }
+}
+
+#[cfg(unix)]
+fn running(pid: u32) -> bool {
+    Path::new(&format!("/proc/{pid}")).exists()
 }
 
 impl Covers {
@@ -256,6 +299,23 @@ mod tests {
         assert_eq!(std::fs::read(&written).unwrap(), b"png");
         assert_eq!(covers.of(&track(8, "http://radio.example/stream")), None);
         assert!(!written.exists(), "gone with its track");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn covers_of_popamps_gone_are_swept() {
+        let dir = std::env::temp_dir().join(format!("popamp-sweep-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // A pid no process has: they are multiples of 4 on Windows.
+        let gone = dir.join("popamp-cover-4294967293-3.jpg");
+        let ours = dir.join(format!("popamp-cover-{}-1.png", std::process::id()));
+        let other = dir.join("popamp-cover-notes.txt");
+        for f in [&gone, &ours, &other] {
+            std::fs::write(f, b"x").unwrap();
+        }
+        sweep(&dir);
+        assert!(!gone.exists());
+        assert!(ours.exists() && other.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

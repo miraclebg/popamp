@@ -146,4 +146,5 @@ Per item:
 
 Also seen: `%TEMP%` holds a dozen `popamp-cover-<pid>-<id>.jpg` left by
 earlier runs. A tagged cover is written there for the media card and
-removed on the next track, but not when Popamp exits. Not fixed yet.
+removed on the next track, but not when Popamp exits. Fixed afterwards:
+a start removes those of Popamps no longer running.
