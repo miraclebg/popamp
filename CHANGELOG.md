@@ -33,6 +33,13 @@ All notable changes to this project are documented here. The format follows
   CUE sheets and the Open dialog. It reads only the file it plays and
   may ask for no permissions. Popamp's own formats always come first.
 
+### Fixed
+
+- Windows: Popamp could stop responding a few minutes after start, on
+  Play or when files were dropped on it from Explorer. The media
+  controls' hidden window lived on a thread that never answered window
+  messages, and whatever sent it one, the UI with it, waited for good.
+
 ## [0.8.0] - 2026-11-11
 
 ### Added

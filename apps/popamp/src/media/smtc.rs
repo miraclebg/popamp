@@ -2,21 +2,22 @@
 //! media keys and the player card by the volume flyout.
 //!
 //! The controls are those of a media player object of our own with its
-//! own handling off: it plays nothing and needs no window. A thread of
-//! ours makes them, shows each [`Snapshot`] and, while a track plays, its
-//! position; what is asked of them arrives on the system's threads and
-//! goes to the UI thread as remote commands.
+//! own handling off: it plays nothing. A thread of ours makes them, shows
+//! each [`Snapshot`] and, while a track plays, its position; what is asked
+//! of them arrives on the system's threads and goes to the UI thread as
+//! remote commands. The player puts a hidden window on that thread, so
+//! the thread answers window messages while it waits.
 
 use super::{Covers, Snapshot, Track};
 use crate::cli::Remote;
 use crate::model::AppEvent;
-use crossbeam_channel::RecvTimeoutError;
+use crossbeam_channel::{RecvTimeoutError, TryRecvError};
 use parking_lot::Mutex;
 use popamp_audio::Shared;
 use popamp_core::Command;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use windows::core::{Interface, Ref, Result, RuntimeType, HSTRING};
 use windows::Foundation::{TimeSpan, TypedEventHandler};
 use windows::Media::Playback::MediaPlayer;
@@ -33,6 +34,9 @@ use winit::event_loop::EventLoopProxy;
 
 /// How often the position of a playing track is shown again.
 const TICK: Duration = Duration::from_secs(1);
+
+/// The longest a new snapshot waits to be shown.
+const POLL: Duration = Duration::from_millis(50);
 
 /// A [`TimeSpan`] counts 100-nanosecond ticks.
 const TICKS_PER_MS: i64 = 10_000;
@@ -82,7 +86,7 @@ struct Card {
 fn run(card: &mut Card, rx: &crossbeam_channel::Receiver<Snapshot>, status: &Status, shared: &Shared) {
     let mut snap = Snapshot::default();
     loop {
-        let res = match rx.recv_timeout(TICK) {
+        let res = match recv(rx, TICK) {
             Ok(new) => {
                 *status.lock() = new.status;
                 snap = new;
@@ -96,6 +100,43 @@ fn run(card: &mut Card, rx: &crossbeam_channel::Receiver<Snapshot>, status: &Sta
         let res = res.and_then(|()| if card.more { timeline(&card.controls, length, shared.position_ms()) } else { Ok(()) });
         if let Err(e) = res {
             log::debug!("media controls: {e}");
+        }
+    }
+}
+
+/// Waits up to `timeout` for a snapshot, answering this thread's window
+/// messages meanwhile. A window whose thread does not answer holds up
+/// whoever sends it a message: Explorer dropping files, the input method,
+/// and with them the UI thread.
+fn recv(rx: &crossbeam_channel::Receiver<Snapshot>, timeout: Duration) -> std::result::Result<Snapshot, RecvTimeoutError> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MsgWaitForMultipleObjectsEx, MWMO_INPUTAVAILABLE, QS_ALLINPUT};
+    let until = Instant::now() + timeout;
+    loop {
+        pump();
+        match rx.try_recv() {
+            Ok(snap) => return Ok(snap),
+            Err(TryRecvError::Disconnected) => return Err(RecvTimeoutError::Disconnected),
+            Err(TryRecvError::Empty) => {}
+        }
+        let left = until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(RecvTimeoutError::Timeout);
+        }
+        let wait = left.min(POLL).as_millis() as u32;
+        // SAFETY: no handles to wait on, only this thread's message queue.
+        unsafe { MsgWaitForMultipleObjectsEx(0, std::ptr::null(), wait, QS_ALLINPUT, MWMO_INPUTAVAILABLE) };
+    }
+}
+
+/// Handles the messages waiting for this thread's windows.
+fn pump() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE};
+    // SAFETY: `msg` is ours to fill; a null window takes every message of this thread.
+    unsafe {
+        let mut msg: MSG = std::mem::zeroed();
+        while PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
         }
     }
 }
