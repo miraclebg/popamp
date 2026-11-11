@@ -39,6 +39,10 @@ All notable changes to this project are documented here. The format follows
   Play or when files were dropped on it from Explorer. The media
   controls' hidden window lived on a thread that never answered window
   messages, and whatever sent it one, the UI with it, waited for good.
+- Windows: after a pause, starting another track (or seeking or
+  stopping) could leave the sound stuck, and closing Popamp then hung.
+  Emptying the output kept it marked paused, so it never started again
+  and the next write waited for room forever. Since 0.5.0.
 
 ## [0.8.0] - 2026-11-11
 
