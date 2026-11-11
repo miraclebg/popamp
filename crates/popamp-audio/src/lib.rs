@@ -4,7 +4,7 @@ pub mod cover;
 pub mod decoder;
 pub mod dsp;
 pub mod engine;
-mod formats;
+pub mod formats;
 mod midi;
 mod opus;
 pub mod output;

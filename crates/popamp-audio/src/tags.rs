@@ -382,7 +382,7 @@ mod tests {
             assert!(editable(&path), "{ext}");
             let changes = all("x");
             write(&path, &changes).unwrap_or_else(|e| panic!("{ext}: {e}"));
-            let meta = crate::read_meta(&path).unwrap();
+            let meta = crate::read_meta(&path, &Default::default()).unwrap();
             for (f, v) in &changes.fields {
                 assert_eq!(f.get(&meta), Some(v.as_str()), "{ext}: {f:?}");
             }
@@ -397,7 +397,7 @@ mod tests {
             write(&path, &all("x")).unwrap();
             let changes = Changes { fields: vec![(Field::Artist, String::new()), (Field::Title, "Kept".into())], cover: CoverChange::Keep };
             write(&path, &changes).unwrap();
-            let meta = crate::read_meta(&path).unwrap();
+            let meta = crate::read_meta(&path, &Default::default()).unwrap();
             assert_eq!((meta.artist.as_deref(), meta.title.as_deref()), (None, Some("Kept")), "{ext}");
             assert_eq!(meta.album.as_deref(), Some("Album x"), "{ext}: the rest stays");
         }

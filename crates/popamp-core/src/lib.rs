@@ -34,7 +34,3 @@ pub const MODULE_EXTENSIONS: &[&str] = &[
 pub fn audio_extensions() -> impl Iterator<Item = &'static str> {
     COMMON_EXTENSIONS.iter().chain(MIDI_EXTENSIONS).chain(MODULE_EXTENSIONS).copied()
 }
-
-pub fn is_audio_file(path: &str) -> bool {
-    path.rsplit_once('.').is_some_and(|(_, ext)| audio_extensions().any(|e| e.eq_ignore_ascii_case(ext)))
-}

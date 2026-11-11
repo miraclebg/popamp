@@ -28,6 +28,10 @@ All notable changes to this project are documented here. The format follows
 - The Windows downloads carry what these need: `opus.dll`, libopenmpt and
   the GeneralUser GS SoundFont for MIDI, with their licences (see
   THIRD_PARTY.md). The installer offers Popamp for the new file types.
+- **Decoder plug-ins** (plug-in API 1.1): a plug-in of `kind = "decoder"`
+  plays local files of the extensions it lists, in folders, playlists,
+  CUE sheets and the Open dialog. It reads only the file it plays and
+  may ask for no permissions. Popamp's own formats always come first.
 
 ## [0.8.0] - 2026-11-11
 

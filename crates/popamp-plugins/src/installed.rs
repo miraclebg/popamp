@@ -5,11 +5,12 @@
 
 use crate::command::Command;
 use crate::files::{self, Closed};
-use crate::host::{Access, Plugin};
+use crate::host::{Access, DecoderPlugin, Plugin};
 use crate::journal::Journal;
 use crate::manifest::{Kind, Manifest, Permissions};
 use crate::net::NetEntry;
 use popamp_audio::dsp::Effect;
+use popamp_audio::formats::FileDecoder;
 use popamp_audio::source::{Context, Source};
 use popamp_core::config::PluginConfig;
 use std::collections::HashMap;
@@ -220,6 +221,11 @@ pub fn visuals(list: &[Installed]) -> Vec<Arc<Plugin>> {
 /// The sources of the plug-ins that are on, in folder order.
 pub fn sources(list: &[Installed]) -> Vec<Arc<dyn Source>> {
     on(list, |k| matches!(k, Kind::Source(_))).map(|p| p.clone() as Arc<dyn Source>).collect()
+}
+
+/// The decoder plug-ins that are on, in folder order.
+pub fn decoders(list: &[Installed]) -> Vec<Arc<dyn FileDecoder>> {
+    on(list, |k| matches!(k, Kind::Decoder(_))).map(|p| Arc::new(DecoderPlugin(p.clone())) as Arc<dyn FileDecoder>).collect()
 }
 
 /// An instance of each dsp plug-in that is on, in folder order, for the

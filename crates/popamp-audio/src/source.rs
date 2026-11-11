@@ -6,13 +6,14 @@
 //! Every call but `handles` may be slow (a network or a program) and runs
 //! on a worker thread, never on the engine or UI thread.
 
+use crate::formats::Decoders;
 use crate::pipe::Pipe;
 use parking_lot::{Condvar, Mutex};
 use popamp_core::cue;
 use popamp_core::meta::TrackMeta;
 use popamp_core::playlist::is_url;
 use popamp_core::plformats::{self, is_playlist, Item};
-use popamp_core::{is_audio_file, text};
+use popamp_core::text;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,6 +25,8 @@ pub struct Context {
     pub proxy: String,
     /// The SoundFont that plays MIDI, empty for the system's.
     pub soundfont: String,
+    /// The decoder plug-ins that are on.
+    pub decoders: Decoders,
 }
 
 /// How the engine plays a track.
@@ -59,15 +62,14 @@ pub trait Source: Send + Sync {
     }
 }
 
-/// The sources in the order they are asked: plug-ins, then HTTP and
-/// files. Shared by every thread that asks; plug-ins can be swapped while
-/// it runs.
+/// The sources in the order they are asked: plug-ins, then HTTP, CUE
+/// sheets and files, which play the formats of the decoder plug-ins too.
+/// Shared by every thread that asks; plug-ins can be swapped while it runs.
 pub struct Sources {
     /// `None` until the plug-ins are known: they load on a thread of their
     /// own while the player starts.
-    plugins: Mutex<Option<Vec<Arc<dyn Source>>>>,
+    all: Mutex<Option<Vec<Arc<dyn Source>>>>,
     loaded: Condvar,
-    built_in: Vec<Arc<dyn Source>>,
 }
 
 /// How long a worker waits for the plug-ins before it does without them.
@@ -77,45 +79,46 @@ impl Sources {
     /// Sources whose plug-ins are still loading: [`Sources::of`] waits
     /// for them, so a track given at startup goes to its plug-in.
     pub fn waiting() -> Sources {
-        Sources { plugins: Mutex::new(None), ..Sources::default() }
+        Sources { all: Mutex::new(None), loaded: Condvar::new() }
     }
 
-    /// Replaces the plug-ins asked before the built-in sources.
-    pub fn set_plugins(&self, plugins: Vec<Arc<dyn Source>>) {
-        *self.plugins.lock() = Some(plugins);
+    /// Replaces the plug-ins: the sources asked before the built-in ones,
+    /// and the decoders the built-in ones play files with.
+    pub fn set_plugins(&self, plugins: Vec<Arc<dyn Source>>, decoders: Decoders) {
+        *self.all.lock() = Some(Self::chain(plugins, decoders));
         self.loaded.notify_all();
+    }
+
+    fn chain(plugins: Vec<Arc<dyn Source>>, decoders: Decoders) -> Vec<Arc<dyn Source>> {
+        let built_in: [Arc<dyn Source>; 3] = [Arc::new(HttpSource), Arc::new(CueSource(decoders.clone())), Arc::new(FileSource(decoders))];
+        plugins.into_iter().chain(built_in).collect()
     }
 
     /// The source that takes `location`; anything not a URL is a file.
     /// Waits while the plug-ins load, so call it on a worker thread.
     pub fn of(&self, location: &str) -> Arc<dyn Source> {
-        let mut plugins = self.plugins.lock();
-        if plugins.is_none() && self.loaded.wait_while_for(&mut plugins, |p| p.is_none(), PLUGINS_WAIT).timed_out() {
+        let mut all = self.all.lock();
+        if all.is_none() && self.loaded.wait_while_for(&mut all, |p| p.is_none(), PLUGINS_WAIT).timed_out() {
             log::warn!("plug-ins did not load in {PLUGINS_WAIT:?}; going on without them");
-            *plugins = Some(Vec::new());
+            *all = Some(Self::chain(Vec::new(), Decoders::default()));
         }
-        self.pick(plugins.as_deref().unwrap_or_default(), location)
+        Self::pick(all.as_deref().unwrap_or_default(), location)
     }
 
     /// Like [`Sources::of`], without waiting for the plug-ins: for the UI
     /// thread, which only asks how a location behaves.
     pub fn of_now(&self, location: &str) -> Arc<dyn Source> {
-        self.pick(self.plugins.lock().as_deref().unwrap_or_default(), location)
+        Self::pick(self.all.lock().as_deref().unwrap_or_default(), location)
     }
 
-    fn pick(&self, plugins: &[Arc<dyn Source>], location: &str) -> Arc<dyn Source> {
-        let plugin = plugins.iter().find(|s| s.handles(location)).cloned();
-        plugin.or_else(|| self.built_in.iter().find(|s| s.handles(location)).cloned()).unwrap_or_else(|| Arc::new(FileSource))
+    fn pick(all: &[Arc<dyn Source>], location: &str) -> Arc<dyn Source> {
+        all.iter().find(|s| s.handles(location)).cloned().unwrap_or_else(|| Arc::new(FileSource::default()))
     }
 }
 
 impl Default for Sources {
     fn default() -> Self {
-        Sources {
-            plugins: Mutex::new(Some(Vec::new())),
-            loaded: Condvar::new(),
-            built_in: vec![Arc::new(HttpSource), Arc::new(CueSource), Arc::new(FileSource)],
-        }
+        Sources { all: Mutex::new(Some(Self::chain(Vec::new(), Decoders::default()))), loaded: Condvar::new() }
     }
 }
 
@@ -152,7 +155,8 @@ impl Source for HttpSource {
 }
 
 /// CUE sheets: a sheet lists its tracks, and each plays a part of a file.
-pub struct CueSource;
+#[derive(Default)]
+pub struct CueSource(pub Decoders);
 
 impl CueSource {
     fn track(location: &str) -> Result<(cue::Sheet, cue::Track), String> {
@@ -167,13 +171,13 @@ impl CueSource {
         track.end_ms.or(file_length_ms).map(|end| end.saturating_sub(track.start_ms))
     }
 
-    fn file_length_ms(track: &cue::Track) -> Option<u64> {
-        crate::formats::read_meta(&track.file).ok().and_then(|m| m.length_ms)
+    fn file_length_ms(&self, track: &cue::Track) -> Option<u64> {
+        crate::formats::read_meta(&track.file, &self.0).ok().and_then(|m| m.length_ms)
     }
 
     /// The file's tags and stream, with what the sheet says of the track.
-    fn meta(sheet: &cue::Sheet, track: &cue::Track) -> TrackMeta {
-        let mut meta = crate::formats::read_meta(&track.file).unwrap_or_default();
+    fn meta(&self, sheet: &cue::Sheet, track: &cue::Track) -> TrackMeta {
+        let mut meta = crate::formats::read_meta(&track.file, &self.0).unwrap_or_default();
         meta.length_ms = Self::length_ms(track, meta.length_ms);
         meta.title = track.title.clone().or(meta.title);
         meta.artist = track.performer.clone().or(sheet.performer.clone()).or(meta.artist);
@@ -208,25 +212,26 @@ impl Source for CueSource {
                 (None, t) => t.clone(),
                 (Some(_), None) => None,
             };
-            let file_length = if t.end_ms.is_none() { Self::file_length_ms(t) } else { None };
+            let file_length = if t.end_ms.is_none() { self.file_length_ms(t) } else { None };
             Item { location: cue::track_location(location, t.number), title, length_ms: Self::length_ms(t, file_length) }
         });
         Ok(Some(items.collect()))
     }
 
     fn describe(&self, location: &str) -> Option<Result<TrackMeta, String>> {
-        Some(Self::track(location).map(|(sheet, track)| Self::meta(&sheet, &track)))
+        Some(Self::track(location).map(|(sheet, track)| self.meta(&sheet, &track)))
     }
 
     fn open(&self, location: &str, _cx: &Context) -> Result<Playback, String> {
         let (sheet, track) = Self::track(location)?;
-        let meta = Box::new(Self::meta(&sheet, &track));
+        let meta = Box::new(self.meta(&sheet, &track));
         Ok(Playback::Part { path: track.file, start_ms: track.start_ms, end_ms: track.end_ms, meta })
     }
 }
 
 /// Local files, folders and playlist files.
-pub struct FileSource;
+#[derive(Default)]
+pub struct FileSource(pub Decoders);
 
 impl Source for FileSource {
     fn id(&self) -> &str {
@@ -241,7 +246,7 @@ impl Source for FileSource {
         let path = Path::new(location);
         if path.is_dir() {
             let mut files = Vec::new();
-            walk(path, &mut files, 0);
+            walk(path, &mut files, 0, &self.0);
             files.sort_by(|a, b| text::natural_cmp(a, b));
             return Ok(Some(files.into_iter().map(|f| Item { location: f, title: None, length_ms: None }).collect()));
         }
@@ -252,7 +257,7 @@ impl Source for FileSource {
     }
 
     fn describe(&self, location: &str) -> Option<Result<TrackMeta, String>> {
-        Some(crate::formats::read_meta(Path::new(location)))
+        Some(crate::formats::read_meta(Path::new(location), &self.0))
     }
 
     fn open(&self, location: &str, _cx: &Context) -> Result<Playback, String> {
@@ -260,7 +265,7 @@ impl Source for FileSource {
     }
 }
 
-fn walk(dir: &Path, out: &mut Vec<String>, depth: usize) {
+fn walk(dir: &Path, out: &mut Vec<String>, depth: usize, decoders: &Decoders) {
     if depth > 32 {
         return;
     }
@@ -269,10 +274,10 @@ fn walk(dir: &Path, out: &mut Vec<String>, depth: usize) {
         let p = e.path();
         let Ok(ft) = e.file_type() else { continue };
         if ft.is_dir() || (ft.is_symlink() && p.is_dir()) {
-            walk(&p, out, depth + 1);
+            walk(&p, out, depth + 1, decoders);
         } else {
             let s = p.to_string_lossy().into_owned();
-            if is_audio_file(&s) {
+            if decoders.plays(&s) {
                 out.push(s);
             }
         }
@@ -308,7 +313,7 @@ mod tests {
     fn each_location_goes_to_its_source_and_added_ones_are_asked_first() {
         let sources = Sources::default();
         assert_eq!(sources.of("test:1").id(), "file");
-        sources.set_plugins(vec![Arc::new(Test)]);
+        sources.set_plugins(vec![Arc::new(Test)], Decoders::default());
         for (loc, id) in [
             ("test:1", "test"),
             ("http://radio:8000/stream", "http"),
@@ -320,7 +325,7 @@ mod tests {
         ] {
             assert_eq!(sources.of(loc).id(), id, "{loc}");
         }
-        sources.set_plugins(Vec::new());
+        sources.set_plugins(Vec::new(), Decoders::default());
         assert_eq!(sources.of("test:1").id(), "file");
     }
 
@@ -333,7 +338,7 @@ mod tests {
             std::thread::spawn(move || sources.of("test:1").id().to_string())
         };
         std::thread::sleep(std::time::Duration::from_millis(100));
-        sources.set_plugins(vec![Arc::new(Test)]);
+        sources.set_plugins(vec![Arc::new(Test)], Decoders::default());
         assert_eq!(asker.join().unwrap(), "test");
     }
 
@@ -344,10 +349,10 @@ mod tests {
         for f in ["10.mp3", "9.mp3", "notes.txt", "sub/1.flac"] {
             std::fs::write(dir.join(f), b"").unwrap();
         }
-        let items = FileSource.expand(&dir.to_string_lossy(), &Context::default()).unwrap().unwrap();
+        let items = FileSource::default().expand(&dir.to_string_lossy(), &Context::default()).unwrap().unwrap();
         let names: Vec<_> = items.iter().map(|i| Path::new(&i.location).strip_prefix(&dir).unwrap().to_path_buf()).collect();
         assert_eq!(names, [Path::new("9.mp3"), Path::new("10.mp3"), &Path::new("sub").join("1.flac")]);
-        assert_eq!(FileSource.expand(&dir.join("9.mp3").to_string_lossy(), &Context::default()), Ok(None));
+        assert_eq!(FileSource::default().expand(&dir.join("9.mp3").to_string_lossy(), &Context::default()), Ok(None));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -357,26 +362,26 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/silence.wav");
         std::fs::copy(&fixture, dir.join("album.wav")).unwrap();
-        let file_ms = crate::read_meta(&dir.join("album.wav")).unwrap().length_ms.unwrap();
+        let file_ms = crate::read_meta(&dir.join("album.wav"), &Decoders::default()).unwrap().length_ms.unwrap();
         let sheet = "PERFORMER \"Band\"\nTITLE \"Album\"\nFILE \"album.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"One\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"Two\"\n    INDEX 01 00:00:15\n";
         let cue = dir.join("album.cue");
         std::fs::write(&cue, sheet).unwrap();
         let cue = cue.to_string_lossy().into_owned();
-        let items = CueSource.expand(&cue, &Context::default()).unwrap().unwrap();
+        let items = CueSource::default().expand(&cue, &Context::default()).unwrap().unwrap();
         let second = format!("{cue}#2");
         assert_eq!(items.iter().map(|i| i.location.as_str()).collect::<Vec<_>>(), [format!("{cue}#1").as_str(), second.as_str()]);
         assert_eq!((items[0].title.as_deref(), items[0].length_ms), (Some("Band - One"), Some(200)));
         assert_eq!(items[1].length_ms, Some(file_ms - 200), "the last track runs to the end");
-        let meta = CueSource.describe(&second).unwrap().unwrap();
+        let meta = CueSource::default().describe(&second).unwrap().unwrap();
         assert_eq!(
             (meta.title.as_deref(), meta.artist.as_deref(), meta.album.as_deref(), meta.track.as_deref()),
             (Some("Two"), Some("Band"), Some("Album"), Some("2"))
         );
         assert_eq!(
-            CueSource.open(&second, &Context::default()),
+            CueSource::default().open(&second, &Context::default()),
             Ok(Playback::Part { path: dir.join("album.wav"), start_ms: 200, end_ms: None, meta: Box::new(meta) })
         );
-        assert!(CueSource.open(&format!("{cue}#9"), &Context::default()).is_err());
+        assert!(CueSource::default().open(&format!("{cue}#9"), &Context::default()).is_err());
         std::fs::remove_dir_all(dir).unwrap();
     }
 

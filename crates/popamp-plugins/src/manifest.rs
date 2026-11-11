@@ -32,7 +32,21 @@ pub enum Kind {
     /// Draws to the sound with its own shaders. It may not run programs,
     /// reach the network or read files; the player makes every GPU call.
     Visual,
+    /// Plays local files of formats Popamp lacks. It reads the file it
+    /// plays and nothing else.
+    Decoder(DecoderSpec),
 }
+
+/// The files a decoder plays.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DecoderSpec {
+    /// Lowercase, without the dot; none that Popamp plays itself.
+    pub extensions: Vec<String>,
+}
+
+/// The first plug-in API with decoders.
+const DECODER_API: Version = Version { major: 1, minor: 1 };
 
 /// Which locations a source takes, so the player can tell without
 /// calling the plug-in.
@@ -121,6 +135,7 @@ struct File {
     #[serde(default)]
     description: String,
     source: Option<SourceSpec>,
+    decoder: Option<DecoderSpec>,
     #[serde(default)]
     permissions: Permissions,
     #[serde(default, rename = "setting")]
@@ -159,7 +174,10 @@ impl Manifest {
         let f: File = toml::from_str(text).map_err(|e| format!("{FILE}: {}", e.to_string().trim_end()))?;
         check_id(&f.id)?;
         let api = check_api(&f.api)?;
-        let kind = kind_of(&f.kind, f.source)?;
+        let kind = kind_of(&f.kind, f.source, f.decoder)?;
+        if matches!(kind, Kind::Decoder(_)) && !api.loads(DECODER_API) {
+            return Err(format!("a decoder needs plug-in API {DECODER_API}, this one says {api}"));
+        }
         if !matches!(kind, Kind::Source(_)) && f.permissions != Permissions::default() {
             return Err(format!("a {} plug-in may not run programs, reach the network or read files", f.kind));
         }
@@ -194,16 +212,32 @@ fn check_api(api: &str) -> Result<Version, String> {
     }
 }
 
-fn kind_of(kind: &str, source: Option<SourceSpec>) -> Result<Kind, String> {
-    match (kind, source) {
-        ("source", Some(spec)) => Ok(Kind::Source(check_hosts(spec)?)),
-        ("source", None) => Err("a source needs a [source] table with its hosts".into()),
-        ("dsp", None) => Ok(Kind::Dsp),
-        ("dsp", Some(_)) => Err("a dsp plug-in has no [source] table".into()),
-        ("visual", None) => Ok(Kind::Visual),
-        ("visual", Some(_)) => Err("a visual plug-in has no [source] table".into()),
-        (other, _) => Err(format!("unknown kind {other:?}; this Popamp knows \"source\", \"dsp\" and \"visual\"")),
+fn kind_of(kind: &str, source: Option<SourceSpec>, decoder: Option<DecoderSpec>) -> Result<Kind, String> {
+    let extra = |table: &str| Err(format!("a {kind} plug-in has no [{table}] table"));
+    match kind {
+        "source" | "dsp" | "visual" if decoder.is_some() => extra("decoder"),
+        "decoder" | "dsp" | "visual" if source.is_some() => extra("source"),
+        "source" => Ok(Kind::Source(check_hosts(source.ok_or("a source needs a [source] table with its hosts")?)?)),
+        "decoder" => Ok(Kind::Decoder(check_extensions(decoder.ok_or("a decoder needs a [decoder] table with its extensions")?)?)),
+        "dsp" => Ok(Kind::Dsp),
+        "visual" => Ok(Kind::Visual),
+        other => Err(format!("unknown kind {other:?}; this Popamp knows \"source\", \"dsp\", \"visual\" and \"decoder\"")),
     }
+}
+
+fn check_extensions(spec: DecoderSpec) -> Result<DecoderSpec, String> {
+    if spec.extensions.is_empty() {
+        return Err("[decoder] extensions is empty".into());
+    }
+    for e in &spec.extensions {
+        if e.is_empty() || !e.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) {
+            return Err(format!("extension {e:?} must be [a-z0-9], without the dot"));
+        }
+        if popamp_core::audio_extensions().any(|own| own == e) || e == "cue" {
+            return Err(format!("Popamp plays .{e} files itself"));
+        }
+    }
+    Ok(spec)
 }
 
 fn check_exec(p: &Permissions, settings: &[Setting]) -> Result<(), String> {
@@ -332,7 +366,10 @@ min_popamp = \"{}\"",
             (("api = \"1.0\"", "api = \"2.0\""), too_new.as_str()),
             (("api = \"1.0\"", "api = \"1\""), "bad API version \"1\", expected MAJOR.MINOR"),
             (("id = \"youtube\"", "id = \"You Tube\""), "id \"You Tube\" must be [a-z0-9-]"),
-            (("kind = \"source\"", "kind = \"vis\""), "unknown kind \"vis\"; this Popamp knows \"source\", \"dsp\" and \"visual\""),
+            (
+                ("kind = \"source\"", "kind = \"vis\""),
+                "unknown kind \"vis\"; this Popamp knows \"source\", \"dsp\", \"visual\" and \"decoder\"",
+            ),
             (("[source]", "[other]"), "unknown field"),
             (("program = \"yt-dlp\"", "program = \"/usr/bin/yt-dlp\""), "must be a program name, not a path"),
             (("program = \"yt-dlp\"", "program = \"sh\""), "would run anything it is told"),
@@ -377,6 +414,38 @@ min_popamp = \"{}\"",
             "a dsp plug-in may not run programs, reach the network or read files"
         );
         assert_eq!(with("[permissions]\nnet = [\"a.b\"]\n"), "a dsp plug-in may not run programs, reach the network or read files");
+    }
+
+    #[test]
+    fn a_decoder_names_formats_popamp_lacks_and_may_do_nothing_else() {
+        let head = "id = \"ape\"\nname = \"APE\"\nversion = \"1\"\napi = \"1.1\"\nkind = \"decoder\"\n";
+        let with = |extra: &str| Manifest::parse(&format!("{head}{extra}"));
+        let m = with("[decoder]\nextensions = [\"ape\", \"mac\"]\n").unwrap();
+        assert_eq!(m.kind, Kind::Decoder(DecoderSpec { extensions: vec!["ape".into(), "mac".into()] }));
+        assert_eq!(with("").unwrap_err(), "a decoder needs a [decoder] table with its extensions");
+        assert_eq!(with("[decoder]\nextensions = []\n").unwrap_err(), "[decoder] extensions is empty");
+        assert_eq!(with("[decoder]\nextensions = [\".ape\"]\n").unwrap_err(), "extension \".ape\" must be [a-z0-9], without the dot");
+        assert_eq!(with("[decoder]\nextensions = [\"APE\"]\n").unwrap_err(), "extension \"APE\" must be [a-z0-9], without the dot");
+        assert_eq!(with("[decoder]\nextensions = [\"flac\"]\n").unwrap_err(), "Popamp plays .flac files itself");
+        assert_eq!(with("[decoder]\nextensions = [\"cue\"]\n").unwrap_err(), "Popamp plays .cue files itself");
+        assert_eq!(
+            with("[decoder]\nextensions = [\"ape\"]\n[permissions]\nfiles = \"read\"\n").unwrap_err(),
+            "a decoder plug-in may not run programs, reach the network or read files"
+        );
+        assert_eq!(
+            with("[decoder]\nextensions = [\"ape\"]\n[source]\nhosts = [\"a.b\"]\n").unwrap_err(),
+            "a decoder plug-in has no [source] table"
+        );
+        let old = head.replace("1.1", "1.0");
+        assert_eq!(
+            Manifest::parse(&format!("{old}[decoder]\nextensions = [\"ape\"]\n")).unwrap_err(),
+            "a decoder needs plug-in API 1.1, this one says 1.0"
+        );
+        let dsp = head.replace("\"decoder\"", "\"dsp\"");
+        assert_eq!(
+            Manifest::parse(&format!("{dsp}[decoder]\nextensions = [\"ape\"]\n")).unwrap_err(),
+            "a dsp plug-in has no [decoder] table"
+        );
     }
 
     #[test]
