@@ -356,7 +356,9 @@ impl Model {
         let local: Vec<(u64, String)> =
             self.playlist.entries().iter().filter(|e| !e.is_url()).map(|e| (e.id, e.location.clone())).collect();
         for (id, path) in local {
-            self.on_meta(id, popamp_audio::read_meta(Path::new(&path)));
+            if let Some(res) = self.sources.of_now(&path).describe(&path) {
+                self.on_meta(id, res);
+            }
         }
     }
 
