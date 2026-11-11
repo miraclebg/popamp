@@ -42,7 +42,7 @@ BuildRequires:  rust >= 1.96
 BuildRequires:  gcc
 BuildRequires:  hicolor-icon-theme
 
-# ALSA, X11 and xkbcommon are loaded at run time (dlopen), so rpm cannot
+# ALSA, X11, xkbcommon and Opus are loaded at run time (dlopen), so rpm cannot
 # see them in the binary; fonts are found with fc-match.
 Requires:       libasound.so.2()(64bit)
 Requires:       libX11.so.6()(64bit)
@@ -51,6 +51,7 @@ Requires:       libXcursor.so.1()(64bit)
 Requires:       libXi.so.6()(64bit)
 Requires:       libxkbcommon.so.0()(64bit)
 Requires:       libxkbcommon-x11.so.0()(64bit)
+Requires:       libopus.so.0()(64bit)
 Requires:       fontconfig
 Requires:       hicolor-icon-theme
 Recommends:     (zenity or kdialog)

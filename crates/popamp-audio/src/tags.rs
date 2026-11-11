@@ -10,7 +10,7 @@ use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::flac::FlacFile;
 use lofty::mp4::Mp4File;
 use lofty::mpeg::MpegFile;
-use lofty::ogg::{OggPictureStorage, VorbisFile};
+use lofty::ogg::{OggPictureStorage, OpusFile, VorbisFile};
 use lofty::picture::{MimeType, PictureInformation, PictureType};
 use lofty::tag::items::Timestamp;
 use lofty::tag::{ItemKey, MergeTag, SplitTag, Tag, TagType};
@@ -121,7 +121,7 @@ pub struct Changes {
 /// Symphonia 0.5 misjudges the length of a bare AAC file with a tag.
 pub fn editable(path: &Path) -> bool {
     use lofty::file::FileType as T;
-    lofty::read_from_path(path).is_ok_and(|f| matches!(f.file_type(), T::Mpeg | T::Flac | T::Vorbis | T::Mp4))
+    lofty::read_from_path(path).is_ok_and(|f| matches!(f.file_type(), T::Mpeg | T::Flac | T::Vorbis | T::Opus | T::Mp4))
 }
 
 /// The fields as lofty reads them from the file at `path`, which is what
@@ -201,6 +201,7 @@ fn write_copy(path: &Path, copy: &Path, changes: &Changes) -> Result<(), String>
         Some(T::Mpeg) => write_mpeg(&mut io, changes),
         Some(T::Flac) => write_flac(&mut io, changes),
         Some(T::Vorbis) => write_vorbis(&mut io, changes),
+        Some(T::Opus) => write_opus(&mut io, changes),
         Some(T::Mp4) => write_mp4(&mut io, changes),
         _ => Err("Popamp cannot change the tags of this file".into()),
     }
@@ -235,6 +236,13 @@ fn write_flac(io: &mut std::fs::File, changes: &Changes) -> Result<(), String> {
 
 fn write_vorbis(io: &mut std::fs::File, changes: &Changes) -> Result<(), String> {
     let mut file = VorbisFile::read_from(io, ParseOptions::new()).map_err(|e| e.to_string())?;
+    let comments = std::mem::take(file.vorbis_comments_mut());
+    *file.vorbis_comments_mut() = edited(comments, changes);
+    save(&file, io)
+}
+
+fn write_opus(io: &mut std::fs::File, changes: &Changes) -> Result<(), String> {
+    let mut file = OpusFile::read_from(io, ParseOptions::new()).map_err(|e| e.to_string())?;
     let comments = std::mem::take(file.vorbis_comments_mut());
     *file.vorbis_comments_mut() = edited(comments, changes);
     save(&file, io)
@@ -344,7 +352,7 @@ mod tests {
     use super::*;
     use crate::cover;
 
-    const FORMATS: [&str; 4] = ["mp3", "flac", "ogg", "m4a"];
+    const FORMATS: [&str; 5] = ["mp3", "flac", "ogg", "opus", "m4a"];
 
     /// A copy of the silent fixture of type `ext` in a directory of its own.
     fn fixture(ext: &str, name: &str) -> PathBuf {

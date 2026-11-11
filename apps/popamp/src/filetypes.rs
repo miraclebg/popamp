@@ -39,6 +39,8 @@ impl Group {
                 "audio/ogg",
                 "audio/x-vorbis+ogg",
                 "audio/vorbis",
+                "audio/x-opus+ogg",
+                "audio/opus",
                 "audio/mp4",
                 "audio/x-m4a",
                 "audio/aac",

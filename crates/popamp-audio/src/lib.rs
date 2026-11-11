@@ -4,6 +4,7 @@ pub mod cover;
 pub mod decoder;
 pub mod dsp;
 pub mod engine;
+mod opus;
 pub mod output;
 pub mod pipe;
 pub mod source;

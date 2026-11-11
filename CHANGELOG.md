@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Opus:** `.opus` files (and Opus in Matroska and WebM) play, seek and
+  have their tags read and changed. Decoding goes through the system's
+  libopus, loaded when the first Opus track opens, so building needs no
+  Opus headers; the packages depend on it.
+
 ## [0.8.0] - 2026-11-11
 
 ### Added
