@@ -290,6 +290,7 @@ impl Model {
             device: s.output_device.clone(),
             buffer_ms: s.buffer_ms,
             fade_ms: s.fade_ms,
+            crossfade_ms: s.crossfade_ms,
             cx: self.source_context(),
         });
         self.engine.send(EngineCmd::ReplayGain(ReplayGainSettings {

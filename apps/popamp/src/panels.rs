@@ -388,19 +388,22 @@ pub enum Field {
     FontSize,
     TitleFormat,
     FadeMs,
+    CrossfadeMs,
     BufferMs,
     Proxy,
     SoundFont,
 }
 
 impl Field {
-    const ALL: [Field; 6] = [Field::FontSize, Field::TitleFormat, Field::FadeMs, Field::BufferMs, Field::Proxy, Field::SoundFont];
+    const ALL: [Field; 7] =
+        [Field::FontSize, Field::TitleFormat, Field::FadeMs, Field::CrossfadeMs, Field::BufferMs, Field::Proxy, Field::SoundFont];
 
     fn label(self) -> &'static str {
         match self {
             Field::FontSize => "Playlist font size",
             Field::TitleFormat => "Title format",
             Field::FadeMs => "Fade-out (ms)",
+            Field::CrossfadeMs => "Crossfade (ms)",
             Field::BufferMs => "Output buffer (ms)",
             Field::Proxy => "HTTP proxy",
             Field::SoundFont => "MIDI SoundFont",
@@ -412,6 +415,7 @@ impl Field {
             Field::FontSize => s.pe_fontsize.to_string(),
             Field::TitleFormat => s.titlefmt.clone(),
             Field::FadeMs => s.fade_ms.to_string(),
+            Field::CrossfadeMs => s.crossfade_ms.to_string(),
             Field::BufferMs => s.buffer_ms.to_string(),
             Field::Proxy => s.proxy.clone(),
             Field::SoundFont => s.soundfont.clone(),
@@ -424,6 +428,7 @@ impl Field {
         match self {
             Field::FontSize => number("Font size"),
             Field::FadeMs => number("Fade-out"),
+            Field::CrossfadeMs => number("Crossfade"),
             Field::BufferMs => number("Output buffer"),
             Field::TitleFormat if text.trim().is_empty() => Err("Title format: must not be empty".into()),
             Field::SoundFont if !text.trim().is_empty() && !std::path::Path::new(text.trim()).is_file() => {
@@ -439,6 +444,7 @@ impl Field {
         match self {
             Field::FontSize => model.settings_mut().pe_fontsize = n().min(1000) as i32,
             Field::FadeMs => model.settings_mut().fade_ms = n(),
+            Field::CrossfadeMs => model.settings_mut().crossfade_ms = n(),
             Field::BufferMs => model.settings_mut().buffer_ms = n(),
             Field::Proxy => model.settings_mut().proxy = text.trim().to_string(),
             Field::SoundFont => model.settings_mut().soundfont = text.trim().to_string(),
@@ -1055,8 +1061,10 @@ pub(crate) mod tests {
         assert!(matches!(status, Widget::Label { text, .. } if text.contains("Fade-out")));
         retype(&mut p, &mut m, Field::FadeMs, "500");
         retype(&mut p, &mut m, Field::TitleFormat, "%title%!");
+        retype(&mut p, &mut m, Field::CrossfadeMs, "60000");
         assert!(!press(&mut p, &mut m, Key::Enter));
         assert_eq!((m.settings().pe_fontsize, m.settings().fade_ms), (14, 500));
+        assert_eq!(m.settings().crossfade_ms, 10_000, "kept to ten seconds");
         assert_eq!(m.settings().titlefmt, "%title%!");
     }
 

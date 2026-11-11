@@ -63,6 +63,8 @@ pub enum EngineCmd {
         device: String,
         buffer_ms: u32,
         fade_ms: u32,
+        /// How long tracks overlap when one follows another; 0 = off.
+        crossfade_ms: u32,
         /// What opening a track needs from the settings.
         cx: Context,
     },
@@ -276,6 +278,77 @@ enum Start {
     Now { start_ms: u64 },
     /// Continue with it when the current track ends, without a gap.
     Gapless,
+    /// Open it before the current track ends, to crossfade into it.
+    Ahead,
+}
+
+/// How long before the crossfade the next track starts opening.
+const LOOK_AHEAD_MS: u64 = 5000;
+
+/// The next track, opened while the current one still plays.
+struct Upcoming {
+    id: u64,
+    result: Result<Opened, String>,
+}
+
+/// Tracks of one album flow into each other as they were mastered; any
+/// other pair crossfades.
+fn crossfades(prev_album: Option<&str>, next_album: Option<&str>) -> bool {
+    let album = |a: Option<&str>| a.map(|a| a.trim().to_lowercase()).filter(|a| !a.is_empty());
+    match (album(prev_album), album(next_album)) {
+        (Some(a), Some(b)) => a != b,
+        _ => true,
+    }
+}
+
+/// The end of the previous track fading out under the start of the new
+/// one, with equal-power curves so the loudness holds through the overlap.
+struct Blend {
+    /// None once the old track has run out.
+    out: Option<Box<dyn AudioSource>>,
+    out_gain: f32,
+    /// Old-track samples decoded but not yet mixed.
+    queue: Vec<f32>,
+    left: u64,
+    total: u64,
+}
+
+impl Blend {
+    fn new(out: Box<dyn AudioSource>, out_gain: f32, frames: u64) -> Blend {
+        let frames = frames.max(1);
+        Blend { out: Some(out), out_gain, queue: Vec::new(), left: frames, total: frames }
+    }
+
+    /// Mixes the old track into `block` of the new one; true when done.
+    fn mix(&mut self, block: &mut [f32]) -> bool {
+        self.fill(block.len());
+        let mut used = 0;
+        for frame in block.as_chunks_mut::<2>().0 {
+            if self.left == 0 {
+                break;
+            }
+            let t = 1.0 - self.left as f32 / self.total as f32;
+            let (fade_in, fade_out) = (t * std::f32::consts::FRAC_PI_2).sin_cos();
+            let fade_out = fade_out * self.out_gain;
+            let old = [self.queue.get(used).copied().unwrap_or(0.0), self.queue.get(used + 1).copied().unwrap_or(0.0)];
+            frame[0] = frame[0] * fade_in + old[0] * fade_out;
+            frame[1] = frame[1] * fade_in + old[1] * fade_out;
+            used += 2;
+            self.left -= 1;
+        }
+        self.queue.drain(..used.min(self.queue.len()));
+        self.left == 0
+    }
+
+    /// Decodes the old track until `samples` are queued or it ends.
+    fn fill(&mut self, samples: usize) {
+        while self.queue.len() < samples {
+            let Some(out) = &mut self.out else { return };
+            if !matches!(out.next(&mut self.queue), Ok(Status::Data)) {
+                self.out = None; // its end, broken or not, is silence
+            }
+        }
+    }
 }
 
 /// A track opened on a thread of its own. `ticket` tells which request
@@ -293,6 +366,7 @@ struct Track {
     gain: f32,
     title: Option<TitleSlot>,
     last_title: Option<String>,
+    album: Option<String>,
 }
 
 struct PendingSwitch {
@@ -318,6 +392,7 @@ struct Worker {
     rg: ReplayGainSettings,
     buffer_ms: u32,
     fade_ms: u32,
+    crossfade_ms: u32,
     sources: Arc<Sources>,
     cx: Context,
     /// Remaining/total frames of a stop-fade.
@@ -330,6 +405,11 @@ struct Worker {
     /// Paused by dropping the buffer (device can't pause): reseek on resume.
     resume_seek: Option<u64>,
     pending: Option<PendingSwitch>,
+    /// The next track opened ahead for a crossfade, the ticket and id of
+    /// such an open still running, and a crossfade under way.
+    upcoming: Option<Upcoming>,
+    ahead: Option<(u64, u64)>,
+    blend: Option<Blend>,
     buf: Vec<f32>,
     /// Opening a track can take seconds (a stream connecting), so it runs
     /// on its own thread and answers here; commands are handled meanwhile.
@@ -365,6 +445,7 @@ impl Worker {
             rg: ReplayGainSettings::default(),
             buffer_ms: 150,
             fade_ms: 1000,
+            crossfade_ms: 0,
             sources,
             cx: Context::default(),
             fade: None,
@@ -373,6 +454,9 @@ impl Worker {
             seek_base_ms: 0,
             resume_seek: None,
             pending: None,
+            upcoming: None,
+            ahead: None,
+            blend: None,
             buf: Vec::with_capacity(8192),
             opened_tx,
             opened_rx,
@@ -461,7 +545,7 @@ impl Worker {
     fn handle(&mut self, cmd: EngineCmd) {
         match cmd {
             EngineCmd::Open { id, location, start_ms } => self.open(id, location, start_ms),
-            EngineCmd::SetNext(n) => self.next = n,
+            EngineCmd::SetNext(n) => self.set_next(n),
             EngineCmd::Pause(on) => self.pause(on),
             EngineCmd::Stop => self.stop(true),
             EngineCmd::StopFade => {
@@ -485,9 +569,10 @@ impl Worker {
                 self.rg = rg;
                 // Takes effect from the next track.
             }
-            EngineCmd::Config { device, buffer_ms, fade_ms, cx } => {
+            EngineCmd::Config { device, buffer_ms, fade_ms, crossfade_ms, cx } => {
                 self.buffer_ms = buffer_ms;
                 self.fade_ms = fade_ms;
+                self.crossfade_ms = crossfade_ms;
                 self.cx = cx;
                 self.set_device(device);
             }
@@ -517,6 +602,28 @@ impl Worker {
         }
     }
 
+    /// What to continue with. A track already opened ahead stays unless
+    /// the next one is another.
+    fn set_next(&mut self, next: Option<(u64, String)>) {
+        let ahead_id = self.upcoming.as_ref().map(|u| u.id).or(self.ahead.map(|(_, id)| id));
+        if ahead_id.is_some() && ahead_id == next.as_ref().map(|n| n.0) {
+            return;
+        }
+        if self.track.is_some() {
+            self.drop_ahead();
+        }
+        self.next = next;
+    }
+
+    fn drop_ahead(&mut self) {
+        self.upcoming = None;
+        if let Some((ticket, _)) = self.ahead.take() {
+            if self.opening == Some(ticket) {
+                self.opening = None;
+            }
+        }
+    }
+
     /// Opens `location` on a new thread; the answer comes to `opened`.
     fn request_open(&mut self, id: u64, location: String, start: Start) {
         self.tickets += 1;
@@ -525,8 +632,11 @@ impl Worker {
         let (tx, sources, cx) = (self.opened_tx.clone(), self.sources.clone(), self.cx.clone());
         let start_ms = match start {
             Start::Now { start_ms } => start_ms,
-            Start::Gapless => 0,
+            Start::Gapless | Start::Ahead => 0,
         };
+        if let Start::Ahead = start {
+            self.ahead = Some((ticket, id));
+        }
         let spawned = std::thread::Builder::new().name("popamp-open".into()).spawn(move || {
             let result = open_location(&sources, &location, start_ms, &cx);
             let _ = tx.send(OpenDone { ticket, id, start, result });
@@ -542,9 +652,13 @@ impl Worker {
             return; // stopped or replaced meanwhile; dropping it closes it
         }
         self.opening = None;
+        self.ahead = None;
         match done.start {
             Start::Now { start_ms } => self.start_now(done.id, start_ms, done.result),
             Start::Gapless => self.continue_with(done.id, done.result),
+            // The current track ran out while this one opened.
+            Start::Ahead if self.track.is_none() => self.continue_with(done.id, done.result),
+            Start::Ahead => self.upcoming = Some(Upcoming { id: done.id, result: done.result }),
         }
     }
 
@@ -556,6 +670,7 @@ impl Worker {
         }
         self.written = played;
         self.pending = None;
+        self.blend = None;
     }
 
     fn ensure_pcm(&mut self, rate: u32) -> Result<(), String> {
@@ -617,6 +732,7 @@ impl Worker {
         self.fade = None;
         self.resume_seek = None;
         self.next = None;
+        self.drop_ahead();
         // Playing while it connects: Next, Prev and Stop act on it.
         self.track_start = self.written;
         self.seek_base_ms = start_ms;
@@ -644,7 +760,7 @@ impl Worker {
                 let gain = self.track_gain(&meta);
                 let info = dec.info().clone();
                 self.shared.channels.store(info.channels as u32, Ordering::Relaxed);
-                self.track = Some(Track { id, dec, gain, title, last_title: None });
+                self.track = Some(Track { id, dec, gain, title, last_title: None, album: meta.album.clone() });
                 self.set_state(PlayState::Playing);
                 (self.emit)(EngineEvent::Started { id, info, meta, stream: headers });
             }
@@ -663,7 +779,7 @@ impl Worker {
                 }
                 let info = dec.info().clone();
                 let gain = self.track_gain(&meta);
-                self.track = Some(Track { id, dec, gain, title, last_title: None });
+                self.track = Some(Track { id, dec, gain, title, last_title: None, album: meta.album.clone() });
                 self.track_start = self.written;
                 self.seek_base_ms = 0;
                 self.pending = Some(PendingSwitch { at_frame: self.written, id, info, meta });
@@ -760,6 +876,8 @@ impl Worker {
         self.fade = None;
         self.pending = None;
         self.resume_seek = None;
+        self.drop_ahead();
+        self.blend = None;
         self.opening = None;
         self.set_state(PlayState::Stopped);
         self.shared.position_ms.store(0, Ordering::Relaxed);
@@ -796,6 +914,9 @@ impl Worker {
         if gain != 1.0 {
             buf.iter_mut().for_each(|s| *s *= gain);
         }
+        if self.blend.as_mut().is_some_and(|b| b.mix(&mut buf)) {
+            self.blend = None;
+        }
         self.eq.process(&mut buf);
         self.effects.process(&mut buf);
         // Vis sees the signal before volume, like the original.
@@ -829,12 +950,66 @@ impl Worker {
             if let Some(p) = &mut self.pcm {
                 p.drain();
             }
-            self.stop(true);
+            return self.stop(true);
         }
+        self.look_ahead();
+        self.start_blend();
+    }
+
+    /// Frames of the current track not yet decoded, when its length is known.
+    fn frames_left(&self) -> Option<u64> {
+        let length_ms = self.track.as_ref()?.dec.info().length_ms?;
+        let rate = self.rate();
+        let decoded = self.seek_base_ms * rate / 1000 + self.written.saturating_sub(self.track_start);
+        Some((length_ms * rate / 1000).saturating_sub(decoded))
+    }
+
+    /// Starts opening the next track when a crossfade into it is near.
+    fn look_ahead(&mut self) {
+        let busy = self.opening.is_some() || self.upcoming.is_some() || self.blend.is_some();
+        if self.crossfade_ms == 0 || busy || self.next.is_none() {
+            return;
+        }
+        let near = self.rate() * (self.crossfade_ms as u64 + LOOK_AHEAD_MS) / 1000;
+        if self.frames_left().is_some_and(|left| left <= near) {
+            let (id, location) = self.next.take().expect("checked above");
+            self.request_open(id, location, Start::Ahead);
+        }
+    }
+
+    /// Switches to the track opened ahead once the current one is within
+    /// the crossfade of its end. A pair that does not crossfade waits for
+    /// the end and continues gaplessly.
+    fn start_blend(&mut self) {
+        let (Some(up), Some(track), Some(left)) = (&self.upcoming, &self.track, self.frames_left()) else { return };
+        let Ok((dec, meta, ..)) = &up.result else { return };
+        let fits = dec.info().sample_rate as u64 == self.rate() && crossfades(track.album.as_deref(), meta.album.as_deref());
+        if !fits || self.pending.is_some() || left > self.rate() * self.crossfade_ms as u64 / 1000 {
+            return;
+        }
+        let Some(Upcoming { id, result: Ok((dec, meta, title, _, _)) }) = self.upcoming.take() else { return };
+        let info = dec.info().clone();
+        let gain = self.track_gain(&meta);
+        let new = Track { id, dec, gain, title, last_title: None, album: meta.album.clone() };
+        let old = self.track.replace(new).expect("checked above");
+        self.blend = Some(Blend::new(old.dec, old.gain, left));
+        self.track_start = self.written;
+        self.seek_base_ms = 0;
+        self.pending = Some(PendingSwitch { at_frame: self.written, id, info, meta });
     }
 
     fn end_of_track(&mut self) {
         let finished_id = self.track.as_ref().map(|t| t.id).unwrap_or(0);
+        self.blend = None;
+        if let Some(up) = self.upcoming.take() {
+            self.track = None;
+            return self.continue_with(up.id, up.result);
+        }
+        if self.ahead.is_some() {
+            // The device still plays its buffer; the answer continues.
+            self.track = None;
+            return;
+        }
         if let Some((id, location)) = self.next.take() {
             // The device still plays its buffer while the next track opens.
             self.track = None;
@@ -977,6 +1152,11 @@ mod tests {
 
     /// A WAV file of `ms` milliseconds of silence, 44.1 kHz 16-bit stereo.
     fn silent_wav(name: &str, ms: u32) -> std::path::PathBuf {
+        level_wav(name, ms, 0)
+    }
+
+    /// A WAV file holding one sample value, `level`, for `ms` milliseconds.
+    fn level_wav(name: &str, ms: u32, level: i16) -> std::path::PathBuf {
         let data_len = 44_100 * 4 * ms / 1000;
         let mut wav = Vec::new();
         wav.extend_from_slice(b"RIFF");
@@ -987,7 +1167,9 @@ mod tests {
         }
         wav.extend_from_slice(b"data");
         wav.extend_from_slice(&data_len.to_le_bytes());
-        wav.resize(wav.len() + data_len as usize, 0);
+        for _ in 0..data_len / 2 {
+            wav.extend_from_slice(&level.to_le_bytes());
+        }
         let path = std::env::temp_dir().join(format!("popamp-engine-{}-{name}.wav", std::process::id()));
         std::fs::write(&path, wav).unwrap();
         path
@@ -1029,6 +1211,60 @@ mod tests {
         assert_eq!(seen.first().map(String::as_str), Some("reset 44100"), "{seen:?}");
         let resets_then_blocks = seen.iter().skip_while(|s| *s == "reset 44100").all(|s| s == "process 0");
         assert!(resets_then_blocks && seen.last().is_some_and(|s| s == "process 0"), "{seen:?}");
+    }
+
+    /// Counts the frames it is given and keeps the loudest sample.
+    struct Meter(Arc<parking_lot::Mutex<(u64, f32)>>);
+
+    impl crate::dsp::Effect for Meter {
+        fn reset(&mut self, _: u32) {}
+        fn process(&mut self, block: &mut [f32]) {
+            let mut m = self.0.lock();
+            m.0 += block.len() as u64 / 2;
+            m.1 = block.iter().fold(m.1, |peak, s| peak.max(s.abs()));
+        }
+    }
+
+    /// Plays 1 s then 0.5 s at half scale, overlapping by `crossfade_ms`;
+    /// the events, the frames played and the loudest sample.
+    fn play_two_halves(crossfade_ms: u32) -> (Vec<String>, u64, f32) {
+        let (engine, events) = engine_with(Sources::default());
+        let meter = Arc::new(parking_lot::Mutex::new((0, 0.0)));
+        engine.send(EngineCmd::Config { device: "null".into(), buffer_ms: 150, fade_ms: 1000, crossfade_ms, cx: Context::default() });
+        engine.send(EngineCmd::Effects(vec![Box::new(Meter(meter.clone()))]));
+        let name = format!("xfade{crossfade_ms}");
+        let (a, b) = (level_wav(&format!("{name}a"), 1000, 16_384), level_wav(&format!("{name}b"), 500, 16_384));
+        engine.send(EngineCmd::Open { id: 1, location: a.to_string_lossy().into(), start_ms: 0 });
+        engine.send(EngineCmd::SetNext(Some((2, b.to_string_lossy().into()))));
+        let seen = events_until_finished(&events);
+        let _ = (std::fs::remove_file(a), std::fs::remove_file(b));
+        let (frames, peak) = *meter.lock();
+        (seen, frames, peak)
+    }
+
+    #[test]
+    fn tracks_overlap_by_the_crossfade() {
+        let (seen, frames, peak) = play_two_halves(300);
+        assert_eq!(seen, ["started 1", "changed 2", "finished 2"]);
+        // The overlap starts at a decoded block's edge, so up to a block late.
+        let overlap_ms = 1500 - frames * 1000 / 44_100;
+        assert!((280..=300).contains(&overlap_ms), "overlap {overlap_ms} ms");
+        // Equal power: two equal levels add up to sqrt(2) of one midway.
+        assert!((peak - 0.5 * std::f32::consts::SQRT_2).abs() < 0.01, "peak {peak}");
+    }
+
+    #[test]
+    fn without_a_crossfade_tracks_follow_each_other_whole() {
+        let (seen, frames, peak) = play_two_halves(0);
+        assert_eq!(seen, ["started 1", "changed 2", "finished 2"]);
+        assert_eq!((frames, peak), (44_100 * 1500 / 1000, 0.5));
+    }
+
+    #[test]
+    fn only_tracks_of_different_albums_crossfade() {
+        assert!(!crossfades(Some("Kind of Blue"), Some(" kind of blue ")));
+        assert!(crossfades(Some("Kind of Blue"), Some("Blue Train")));
+        assert!(crossfades(None, Some("Blue Train")) && crossfades(Some(""), Some("")));
     }
 
     /// Takes `pipe:` locations and plays them through a shell script;

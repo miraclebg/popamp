@@ -188,6 +188,8 @@ settings! {
     output_device: String = "default".to_string(),
     buffer_ms: u32 = 150,
     fade_ms: u32 = 1000,
+    /// How long one track fades into the next, 0 = gapless.
+    crossfade_ms: u32 = 0,
     enqueuedef: bool = false,
     // Window behaviour.
     snap: bool = true,
@@ -271,6 +273,7 @@ impl Settings {
         self.vis_fps = self.vis_fps.clamp(1, 70);
         self.sa = self.sa.clamp(0, 2);
         self.buffer_ms = self.buffer_ms.clamp(40, 2000);
+        self.crossfade_ms = self.crossfade_ms.min(10_000);
         if self.output_device.trim().is_empty() {
             self.output_device = "default".to_string();
         }
