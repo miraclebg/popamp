@@ -22,3 +22,10 @@ Contributions are welcome. Please open an issue first for larger items.
 - **Hands-on testing before the release:** mouse interaction, docking,
   menus, dialogs, drag & drop and double size across desktops (GNOME,
   KDE, Xfce, i3), distributions, and Windows 10 and 11.
+
+## Later
+
+- **MilkDrop presets:** a `plugin-milkdrop` visual plug-in that reads
+  `.milk` presets the user downloads and draws them as scenes, starting
+  with MilkDrop 1 presets. The plug-in API needs a preset folder to read,
+  scene changes while running, textures and keys for it.
