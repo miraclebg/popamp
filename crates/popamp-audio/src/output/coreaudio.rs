@@ -27,7 +27,12 @@ use objc2_core_foundation::{CFRetained, CFString};
 use parking_lot::Mutex;
 use std::ffi::c_void;
 use std::ptr::NonNull;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
+
+/// How long a device may go without asking for sound, while sound waits,
+/// before it counts as gone.
+const STALLED: Duration = Duration::from_secs(1);
 
 /// An open, blocking, interleaved playback stream.
 pub struct CoreAudioPcm {
@@ -68,7 +73,7 @@ impl CoreAudioPcm {
 
     /// Discards queued audio; the next write starts afresh.
     pub fn discard(&mut self) {
-        if let Some(s) = &self.stream {
+        if let Some(s) = &mut self.stream {
             s.discard();
         }
     }
@@ -83,9 +88,11 @@ impl CoreAudioPcm {
 
 /// What the render callback reads: the queue's far end. `discard` locks it
 /// to empty the queue; the callback only tries the lock, and plays silence
-/// while it is taken, so it never waits.
+/// while it is taken, so it never waits. `calls` counts the callbacks, so
+/// `write` can tell a device that stopped asking for sound.
 struct Shared {
     consumer: Mutex<rtrb::Consumer<f32>>,
+    calls: AtomicU32,
 }
 
 /// A device's output unit and the queue it plays from.
@@ -138,7 +145,7 @@ impl Stream {
             .unwrap_or(512);
         let capacity = ring_capacity(rate, channels, latency_ms, buffer);
         let (producer, consumer) = rtrb::RingBuffer::new(capacity);
-        let shared = NonNull::from(Box::leak(Box::new(Shared { consumer: Mutex::new(consumer) })));
+        let shared = NonNull::from(Box::leak(Box::new(Shared { consumer: Mutex::new(consumer), calls: AtomicU32::new(0) })));
         let nap = match device_rate {
             r if r > 0.0 => Duration::from_secs_f64(buffer as f64 / r / 4.0).clamp(Duration::from_millis(1), Duration::from_millis(10)),
             _ => Duration::from_millis(5),
@@ -207,14 +214,25 @@ impl Stream {
         Ok(stream)
     }
 
-    /// Queues `samples`, napping while the queue is full.
+    /// Queues `samples`, napping while the queue is full. A device that has
+    /// stopped asking for sound for a second (unplugged, asleep) is an
+    /// error, as ALSA and WASAPI report one, so the engine can move on.
     fn write(&mut self, samples: &[f32]) -> Result<(), String> {
+        // SAFETY: `shared` lives as long as the stream.
+        let calls = &unsafe { self.shared.as_ref() }.calls;
+        let (mut seen, mut since) = (calls.load(Ordering::Relaxed), Instant::now());
         let mut rest = samples;
         while !rest.is_empty() {
             let room = self.producer.slots().min(rest.len());
             if room == 0 {
                 if self.paused {
                     return Err("cannot queue sound on a paused device".into());
+                }
+                let now = calls.load(Ordering::Relaxed);
+                if now != seen {
+                    (seen, since) = (now, Instant::now());
+                } else if since.elapsed() >= STALLED {
+                    return Err("the sound device stopped playing".into());
                 }
                 std::thread::sleep(self.nap);
                 continue;
@@ -254,12 +272,19 @@ impl Stream {
         status == 0
     }
 
-    fn discard(&self) {
-        // SAFETY: `shared` lives as long as the stream.
-        let mut consumer = unsafe { self.shared.as_ref() }.consumer.lock();
-        let all = consumer.slots();
-        if let Ok(chunk) = consumer.read_chunk(all) {
-            chunk.commit_all();
+    /// Empties the queue and, like ALSA's drop and prepare, ends a pause:
+    /// what is written next plays.
+    fn discard(&mut self) {
+        {
+            // SAFETY: `shared` lives as long as the stream.
+            let mut consumer = unsafe { self.shared.as_ref() }.consumer.lock();
+            let all = consumer.slots();
+            if let Ok(chunk) = consumer.read_chunk(all) {
+                chunk.commit_all();
+            }
+        }
+        if self.paused {
+            self.pause(false);
         }
     }
 
@@ -303,6 +328,7 @@ unsafe extern "C-unwind" fn render(
     // SAFETY: `shared` is the `Shared` the stream gave the unit, alive
     // until the unit is disposed; `data` is the unit's own buffer list.
     let shared = unsafe { shared.cast::<Shared>().as_ref() };
+    shared.calls.fetch_add(1, Ordering::Relaxed);
     let Some(list) = (unsafe { data.as_mut() }) else { return 0 };
     // SAFETY: the list holds `mNumberBuffers` buffers.
     let buffers = unsafe { std::slice::from_raw_parts_mut(list.mBuffers.as_mut_ptr(), list.mNumberBuffers as usize) };
@@ -568,5 +594,21 @@ mod tests {
         pcm.drain();
         assert!(started.elapsed() >= std::time::Duration::from_millis(50), "{:?}", started.elapsed());
         assert_eq!(pcm.delay(), 0);
+    }
+
+    // A device that goes away stops calling back; writing must not wait for it for ever.
+    #[test]
+    fn a_device_that_stops_playing_is_reported() {
+        if !speakers() {
+            return;
+        }
+        let mut pcm = CoreAudioPcm::open(super::super::DEFAULT, 48_000, 2, 100).unwrap();
+        let stream = pcm.stream.as_ref().unwrap();
+        // SAFETY: stops our own unit behind the stream's back, as a lost device would.
+        unsafe { AudioOutputUnitStop(stream.unit) };
+        let started = Instant::now();
+        let e = pcm.write(&silence(48_000, 300)).err().unwrap();
+        assert!(e.contains("stopped playing"), "{e}");
+        assert!(started.elapsed() < Duration::from_secs(3), "{:?}", started.elapsed());
     }
 }
