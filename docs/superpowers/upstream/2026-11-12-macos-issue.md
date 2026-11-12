@@ -12,7 +12,7 @@ The baseline is macOS 12 or newer, Apple Silicon first, Intel later.
 
 ## Stages
 
-Each stage is one small PR, or a few for stage 3. A macOS CI job comes with the first PR.
+Each stage is one small PR, or a few for stage 3. A macOS CI job, run after each merge, comes with the first PR.
 
 1. **It builds.** The cfg split; macOS modules that do nothing yet; a macOS job in CI.
 2. **It plays.** Sound through CoreAudio, behind the same `Pcm` interface as ALSA and WASAPI.
@@ -46,9 +46,12 @@ Linux and Windows keep their keys and labels.
 1. Do you want macOS as a supported platform? I plan to keep it working, and I'd like to know what you expect from whoever does.
 2. The cfg split: is a build-script cfg (`linux_like`, every Unix but macOS) all right, or would you rather see `all(unix, not(target_os = "macos"))` written out?
 3. Settings and skins in `~/Library/Application Support/popamp`?
-4. A bundle identifier for `Popamp.app`, for example `app.popamp.Popamp`?
-5. Signing and notarisation need an Apple Developer account ($99 a year), which belongs to whoever publishes releases. Until there is one, releases would be ad-hoc signed, with instructions for opening them past Gatekeeper.
-6. Is a macOS CI job on every PR acceptable? macOS runners are slower.
-7. The Mac keymap above, and ⌘V paste.
+4. The Mac keymap above, and ⌘V paste.
+
+## What I can offer
+
+- **Bundle identifier:** `app.popamp.popamp`, from popamp.app.
+- **Signing and notarisation:** a downloaded Mac app needs an Apple Developer account behind it, or Gatekeeper blocks it. Until Popamp has a non-profit organisation with its own account, releases can be signed and notarised under the Apple Developer account of my company, Nimasystems, free of charge.
+- **CI:** the macOS job runs only after a merge to `main`, not on every pull request, so PRs don't wait for the slower macOS runners. GitHub's hosted macOS runners are free for public repositories. If you'd rather not use them, we have our own Mac build servers and can run the checks ourselves.
 
 The first PR (stage 1) is nearly ready: it builds and passes the tests on macOS, with CI green on all three systems. I'll wait for your answer before sending it.

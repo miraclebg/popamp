@@ -192,7 +192,8 @@ so it never drifts far.
   `popamp-audio/src/engine.rs`) are gated to Linux-like systems, or made to
   use a second device name the macOS backend accepts.
 - **CI:** a `macos` job on an Apple Silicon runner (`macos-15`), matching
-  the Windows job: clippy and tests, all three feature sets.
+  the Windows job (clippy and tests, all three feature sets), run only
+  after a merge to `main`, not on pull requests.
   `brew install opus libopenmpt` for the tests that load them. Because
   those tests load the libraries, the macOS library names and lookup
   (Stage 3, item 6) move into this PR.
@@ -389,15 +390,22 @@ skins, radio from `.pls` in Finder and from Open URL.
 1. Do they want macOS as a supported platform, and with what expectation of
    who keeps it working?
 2. The cfg split: an alias via `cfg_aliases`, or spelled-out cfgs? Alias
-   name?
+   name? (Stage 1 uses a build-script cfg, `linux_like`.)
 3. `~/Library/Application Support/popamp` for settings and skins.
-4. The bundle identifier (for example derived from `popamp.app`).
-5. Signing and notarisation: an Apple Developer account costs $99 a year and
-   belongs to whoever publishes releases.
-6. Whether a macOS CI job on every PR is acceptable (macOS runners are
-   slower).
-7. The Mac keymap (Stage 3, item 2) and ⌘V paste: macOS follows Mac
+4. The Mac keymap (Stage 3, item 2) and ⌘V paste: macOS follows Mac
    conventions rather than Winamp's Windows keys.
+
+## Decided by the contributor, offered in the issue
+
+- **Bundle identifier:** `app.popamp.popamp`.
+- **Signing and notarisation:** under the Apple Developer account of the
+  contributor's company, Nimasystems, free of charge, until a non-profit
+  organisation for Popamp exists with its own account.
+- **CI:** the macOS job runs only after a merge to `main` (push), not on
+  every pull request. GitHub's hosted macOS runners are free for public
+  repositories and are the first choice; otherwise the contributor's own
+  build servers run the checks. No server or network details go in the
+  repository or its documents.
 
 ## Left to the builder
 
