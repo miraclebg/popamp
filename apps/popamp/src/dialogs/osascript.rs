@@ -84,7 +84,14 @@ pub fn execute(req: &Request) -> Vec<String> {
     let (source, args) = script(req);
     match Command::new("osascript").arg("-e").arg(source).args(&args).output() {
         Ok(out) if out.status.success() => answer(req, &String::from_utf8_lossy(&out.stdout)),
-        Ok(_) => Vec::new(),
+        Ok(out) => {
+            // Cancel is error -128; anything else is worth knowing about.
+            let err = String::from_utf8_lossy(&out.stderr);
+            if !err.contains("-128") {
+                log::warn!("dialog failed: {}", err.trim());
+            }
+            Vec::new()
+        }
         Err(e) => {
             log::warn!("cannot run osascript: {e}");
             Vec::new()
@@ -94,7 +101,10 @@ pub fn execute(req: &Request) -> Vec<String> {
 
 /// The script for `req` and the arguments it reads.
 fn script(req: &Request) -> (&'static str, Vec<String>) {
-    let dir = |p: &Option<std::path::PathBuf>| p.as_deref().map(Path::to_string_lossy).unwrap_or_default().into_owned();
+    // A start folder that went away (an unplugged drive) would keep the
+    // dialog from opening at all: then there is none.
+    let dir =
+        |p: &Option<std::path::PathBuf>| p.as_deref().filter(|p| p.is_dir()).map(Path::to_string_lossy).unwrap_or_default().into_owned();
     match req {
         Request::Files { title, multiple, filter, start } => {
             let mut args = vec![title.clone(), if *multiple { "1" } else { "0" }.into(), dir(start)];
@@ -179,5 +189,13 @@ mod tests {
             assert!(run.status.success(), "{name}: {}", String::from_utf8_lossy(&run.stderr));
         }
         let _ = std::fs::remove_file(out);
+    }
+
+    // A folder that went away (an unplugged drive) would stop the dialog
+    // from opening at all.
+    #[test]
+    fn a_start_folder_that_is_gone_is_left_out() {
+        let req = Request::Folder { title: "Add folder".into(), start: Some("/Volumes/popamp-gone/Music".into()) };
+        assert_eq!(script(&req).1, ["Add folder", ""]);
     }
 }
