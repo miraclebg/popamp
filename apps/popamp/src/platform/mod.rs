@@ -2,20 +2,86 @@
 //! Linux, Win32 on Windows, AppKit on macOS. The rest of the program sees
 //! only this module.
 
+use crate::bar::Screen;
 use crate::scale::Scale;
+use winit::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Position, Size};
+use winit::monitor::MonitorHandle;
 
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use windows::{attributes, use_parent_console, Platform, OWNED_FOLLOW_OWNER};
+pub use windows::{attributes, use_parent_console, Platform, MINIMIZE_HIDES_COMPANIONS, OWNED_FOLLOW_OWNER};
 #[cfg(linux_like)]
 mod x11;
 #[cfg(linux_like)]
-pub use x11::{attributes, Platform, OWNED_FOLLOW_OWNER};
+pub use x11::{attributes, Platform, MINIMIZE_HIDES_COMPANIONS, OWNED_FOLLOW_OWNER};
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::{attributes, Platform, OWNED_FOLLOW_OWNER};
+pub use macos::{attributes, Platform, MINIMIZE_HIDES_COMPANIONS, OWNED_FOLLOW_OWNER};
+
+/// Whether the desktop counts in points rather than screen pixels. macOS
+/// lays its screens out in points, two pixels each on a Retina screen, so a
+/// pixel position means something else on each screen there; window
+/// positions and sizes go to it in points, and each window draws at its own
+/// screen's pixels per point. X11 and Windows have one grid of pixels.
+pub const DESKTOP_IN_POINTS: bool = cfg!(target_os = "macos");
+
+/// A window position in the desktop's units.
+pub fn position(x: i32, y: i32) -> Position {
+    if DESKTOP_IN_POINTS {
+        LogicalPosition::new(x as f64, y as f64).into()
+    } else {
+        PhysicalPosition::new(x, y).into()
+    }
+}
+
+/// A window size in the desktop's units.
+pub fn size(w: i32, h: i32) -> Size {
+    let (w, h) = (w.max(1) as u32, h.max(1) as u32);
+    if DESKTOP_IN_POINTS {
+        LogicalSize::new(w as f64, h as f64).into()
+    } else {
+        PhysicalSize::new(w, h).into()
+    }
+}
+
+/// The size of a window drawn `w` x `h` screen pixels big at `pct` (a menu,
+/// a tooltip, a dialog drawn at the display scaling), in the desktop's units.
+pub fn drawn_size(w: i32, h: i32, pct: i32) -> Size {
+    if DESKTOP_IN_POINTS {
+        let pt = |v: i32| (v * 100 + pct - 1) / pct.max(1);
+        size(pt(w), pt(h))
+    } else {
+        size(w, h)
+    }
+}
+
+/// A length of `px` screen pixels in something drawn at `pct` (a menu, a
+/// dialog), in the desktop's units: where a submenu opens, how wide a menu
+/// is when it is placed.
+pub fn from_drawn(px: i32, pct: i32) -> i32 {
+    if DESKTOP_IN_POINTS {
+        px * 100 / pct.max(1)
+    } else {
+        px
+    }
+}
+
+/// A point winit gives in screen pixels (a window's position, the cursor in
+/// it), in the desktop's units; `factor` is the window's pixels per point.
+pub fn from_screen(x: f64, y: f64, factor: f64) -> (i32, i32) {
+    let f = if DESKTOP_IN_POINTS && factor > 0.0 { factor } else { 1.0 };
+    ((x / f).floor() as i32, (y / f).floor() as i32)
+}
+
+/// A monitor's rectangle in the desktop's units.
+pub fn monitor(m: &MonitorHandle) -> Screen {
+    let (p, s) = (m.position(), m.size());
+    let f = if DESKTOP_IN_POINTS { m.scale_factor() } else { 1.0 };
+    let unit = |v: f64| (v / f).round() as i32;
+    Screen { x: unit(p.x as f64), y: unit(p.y as f64), w: unit(s.width as f64), h: unit(s.height as f64) }
+}
 
 /// What a window is for, which decides how the window manager treats it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +143,24 @@ fn shape_rects(mask: Option<&Mask>, size: (i32, i32)) -> Vec<(i16, i16, u16, u16
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_mac_desktop_counts_in_points() {
+        assert_eq!(from_screen(301.0, 99.0, 2.0), (150, 49));
+        assert_eq!(from_drawn(600, 200), 300, "a menu drawn at 200%: 600 pixels are 300 points");
+        assert!(matches!(position(10, 20), Position::Logical(p) if (p.x, p.y) == (10.0, 20.0)));
+        assert!(matches!(size(275, 116), Size::Logical(s) if (s.width, s.height) == (275.0, 116.0)));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn elsewhere_the_desktop_counts_in_pixels() {
+        assert_eq!(from_screen(301.0, 99.0, 2.0), (301, 99));
+        assert_eq!(from_drawn(600, 200), 600);
+        assert!(matches!(position(10, 20), Position::Physical(p) if (p.x, p.y) == (10, 20)));
+        assert!(matches!(size(275, 116), Size::Physical(s) if (s.width, s.height) == (275, 116)));
+    }
     use popamp_core::config::Scaling;
 
     fn region(polys: &[Vec<(i32, i32)>], w: i32, h: i32, scale: Scale) -> Mask {

@@ -236,6 +236,7 @@ pub fn resize(model: &mut Model, key: WindowKey, start: (i32, i32), dx: i32, dy:
 
 /// The scale a window is shown at: a bar's own size for a bar, the
 /// window size for the rest.
+/// In the desktop's units: screen pixels, or points on macOS.
 pub fn scale(model: &Model, key: WindowKey) -> Scale {
     let s = model.settings();
     match key {

@@ -256,8 +256,17 @@ fn open_journal(model: &mut Model, n: usize) {
         .parent()
         .map_or(Ok(()), std::fs::create_dir_all)
         .and_then(|()| std::fs::OpenOptions::new().create(true).append(true).open(&path));
-    let viewer = if cfg!(windows) { "notepad" } else { "xdg-open" };
-    if let Err(e) = made.and_then(|_| std::process::Command::new(viewer).arg(&path).spawn()) {
+    // The system's text viewer: TextEdit (or the user's choice) through `open -t` on macOS.
+    let mut viewer = match () {
+        _ if cfg!(windows) => std::process::Command::new("notepad"),
+        _ if cfg!(target_os = "macos") => {
+            let mut open = std::process::Command::new("open");
+            open.arg("-t");
+            open
+        }
+        _ => std::process::Command::new("xdg-open"),
+    };
+    if let Err(e) = made.and_then(|_| viewer.arg(&path).spawn()) {
         log::warn!("{}: {e}", path.display());
         model.flash(format!("CANNOT OPEN JOURNAL: {}", path.display()));
     }
