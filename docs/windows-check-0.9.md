@@ -148,3 +148,59 @@ Also seen: `%TEMP%` holds a dozen `popamp-cover-<pid>-<id>.jpg` left by
 earlier runs. A tagged cover is written there for the media card and
 removed on the next track, but not when Popamp exits. Fixed afterwards:
 a start removes those of Popamps no longer running.
+
+## The same list on Linux
+
+2026-11-12, Zorin OS (GNOME, X11), PipeWire. A local release build of
+`playback-extras` at 9fdd3a3 (`--features plus`, version set to 0.9.0
+for the build), started with `/NEW /INIDIR=<scratch>`. The windows ran
+on a virtual screen (Xvfb, no window manager) and the sound went to a
+null sink, recorded and checked by frequency rather than by ear; tray,
+MPRIS and notifications were driven over D-Bus. Test files were made
+with ffmpeg (tones, Opus in `.opus`/`.webm`/`.mka`, a CUE album) and by
+a script (`.mid`, `.kar`, `.mod`); the `.ape` files are plugin-ape's
+fixtures. `cargo test --workspace --features popamp/plus`: 423 passed.
+
+1. **Opus:** works and seeks in `.opus`, `.webm` and `.mka`. The title
+   of `.webm` and `.mka` is not read from their tags (the file name
+   shows); see below.
+2. **MIDI:** works and seeks (`.mid`, `.kar`), with the system's
+   SoundFont.
+3. **Tracker modules:** works and seeks (`.mod`).
+4. **CUE sheets:** works: three tracks listed, next goes to the next
+   one, seeking stays inside the track.
+5. **Decoder plug-in:** works once allowed in Plug-ins…; all four `.ape`
+   fixtures play the right tone. Without the plug-in `.ape` does not
+   play (no noise, unlike Windows). Seeking not checked: the files are
+   1-3 s long.
+6. **Crossfade:** 3000 ms: same album and different albums overlap; a
+   44.1 kHz to 48 kHz pair switches without overlap and without a gap.
+7. **History:** works: plays listed, search, `history.txt` written.
+8. **ReplayGain scanner:** works for one and for six selected tracks,
+   album gain per album; hashes and modified times of the files did not
+   change.
+9. **Tray icon:** works: middle click plays and pauses, the tooltip
+   follows at once, the menu has Show, the transport, Shuffle, Repeat
+   and Exit, and its Next works.
+10. **Minimize to the tray:** works with the icon off (hidden, icon
+    appears, a click or `/STARTMAX` brings the windows back and the icon
+    goes), with both on (the icon stays) and with `/STARTMIN`. Icon
+    only, minimizing to the taskbar, was not checked: there was no
+    window manager.
+11. **Global hotkeys (X11):** works; every key, with the focus away
+    from Popamp. The Wayland portal was not checked.
+12. **MPRIS:** title, length and cover follow the track (a track
+    without a cover has no `artUrl`); Pause, PlayPause, Next, Previous,
+    Seek and Shuffle work. A leftover cover of a dead process is
+    removed at start; a normal exit leaves none.
+13. **Track notifications:** one per track, with the cover when there
+    is one.
+
+Also seen:
+
+- Matroska tags are not read: a `.webm` or `.mka` with a title shows its
+  file name, on both systems. Symphonia's MKV reader does not pass the
+  `Tags` element on.
+- A `.mid` or `.mod` logs `ERROR symphonia_core::probe] probe reach
+  EOF` each time it opens: Symphonia is asked first and gives up. It
+  plays fine; only the log is alarming.
