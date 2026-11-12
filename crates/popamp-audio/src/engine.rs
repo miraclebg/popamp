@@ -1351,6 +1351,29 @@ mod tests {
         assert!(started.elapsed() >= Duration::from_millis(800), "{:?}", started.elapsed());
     }
 
+    // Picking another track while paused: the new one plays, as on Linux.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_track_opened_while_paused_plays() {
+        if crate::output::available().is_err() {
+            eprintln!("no sound output device: skipped");
+            return;
+        }
+        let (first, second) = (silent_wav("macos-paused-1", 2000), silent_wav("macos-paused-2", 300));
+        let (tx, events) = crossbeam_channel::unbounded();
+        let engine = Engine::spawn(crate::output::DEFAULT.into(), Arc::new(Sources::default()), move |e| {
+            let _ = tx.send(e);
+        });
+        engine.send(EngineCmd::Open { id: 1, location: first.to_string_lossy().into(), start_ms: 0 });
+        assert!(matches!(events.recv_timeout(Duration::from_secs(2)), Ok(EngineEvent::Started { id: 1, .. })));
+        engine.send(EngineCmd::Pause(true));
+        engine.send(EngineCmd::Open { id: 2, location: second.to_string_lossy().into(), start_ms: 0 });
+        let seen = events_until_finished(&events);
+        let _ = (std::fs::remove_file(first), std::fs::remove_file(second));
+        assert_eq!(seen.last().map(String::as_str), Some("finished 2"), "{seen:?}");
+        assert!(seen.iter().all(|s| !s.contains("Error")), "{seen:?}");
+    }
+
     // The program is a shell script.
     #[cfg(unix)]
     #[test]
