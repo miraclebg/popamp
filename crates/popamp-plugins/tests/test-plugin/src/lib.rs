@@ -1,14 +1,16 @@
 //! A plug-in for the host's tests: a source with `fixtures/test`, where
 //! the path of a location under `https://test.invalid/` says what to do,
-//! and a dsp with `fixtures/test-dsp`, where its `mode` setting does.
+//! a dsp with `fixtures/test-dsp`, where its `mode` setting does, a
+//! visual with `fixtures/test-visual` and a decoder with
+//! `fixtures/test-decoder`.
 
 use extism_pdk::*;
 use popamp_plugin_api::{
-    bytes_of, config as keys, samples_of, ExecOutput, ExecRequest, FileData, Format, HttpResponse, Listing, Play, ReadRequest, Tags, Track,
-    VERSION,
+    bytes_of, config as keys, samples_of, ExecOutput, ExecRequest, FileData, FileInfo, Format, HttpResponse, Listing, Play, Range,
+    ReadRequest, Stream, Tags, Track, VERSION,
 };
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 #[host_fn]
 extern "ExtismHost" {
@@ -17,6 +19,7 @@ extern "ExtismHost" {
     fn popamp_http(req: Json<popamp_plugin_api::HttpRequest>) -> Json<HttpResponse>;
     fn popamp_list(path: Json<String>) -> Json<Listing>;
     fn popamp_read(req: Json<ReadRequest>) -> Json<FileData>;
+    fn popamp_input(req: Json<Range>) -> Vec<u8>;
 }
 
 fn path(location: &str) -> &str {
@@ -117,6 +120,8 @@ pub fn open(Json(location): Json<String>) -> FnResult<Json<Play>> {
             let e = http::request::<()>(&req, None).err().unwrap_or_else(|| Error::msg("it was let through"));
             return Err(WithReturnCode::new(e, 1));
         }
+        // A source has no file to read.
+        "/input" => return Err(WithReturnCode::new(input(0, 4).unwrap_err(), 1)),
         "/trap" => panic!("a bug in the plug-in"),
         "/loop" => loop {
             std::hint::black_box(());
@@ -170,4 +175,56 @@ pub fn frame(input: Vec<u8>) -> FnResult<Vec<u8>> {
         }
     }
     Ok(input[..4].to_vec())
+}
+
+// The decoder plays `.ptest` files: a u32 rate, then mono f32 samples,
+// all little-endian. Its `mode` setting says how it misbehaves.
+
+/// Frames of the file, and the next one to give.
+static FRAMES: AtomicU64 = AtomicU64::new(0);
+static POS: AtomicU64 = AtomicU64::new(0);
+
+fn input(offset: u64, length: u32) -> Result<Vec<u8>, Error> {
+    unsafe { popamp_input(Json(Range { offset, length })) }
+}
+
+#[plugin_fn]
+pub fn open_file(Json(file): Json<FileInfo>) -> FnResult<Json<Stream>> {
+    let head = input(0, 4)?;
+    let rate = u32::from_le_bytes(head.try_into().map_err(|_| Error::msg("no rate"))?);
+    let frames = file.size.saturating_sub(4) / 4;
+    FRAMES.store(frames, Ordering::Relaxed);
+    POS.store(0, Ordering::Relaxed);
+    let tags = Tags {
+        title: Some(format!("A .{} file", file.extension)),
+        codec: Some("TEST".into()),
+        channels: Some(1),
+        sample_rate: Some(rate),
+        ..Default::default()
+    };
+    Ok(Json(Stream { rate, length_ms: Some(frames * 1000 / rate as u64), seekable: true, tags }))
+}
+
+#[plugin_fn]
+pub fn decode(_: Vec<u8>) -> FnResult<Vec<u8>> {
+    match config::get("mode")?.unwrap_or_default().as_str() {
+        "trap" => panic!("a bug in the plug-in"),
+        "loop" => loop {
+            std::hint::black_box(());
+        },
+        _ => {}
+    }
+    let pos = POS.load(Ordering::Relaxed);
+    let n = FRAMES.load(Ordering::Relaxed).saturating_sub(pos).min(1024);
+    let mono = samples_of(&input(4 + pos * 4, n as u32 * 4)?);
+    POS.store(pos + mono.len() as u64, Ordering::Relaxed);
+    Ok(bytes_of(&mono.iter().flat_map(|&s| [s, s]).collect::<Vec<f32>>()))
+}
+
+#[plugin_fn]
+pub fn seek(Json(ms): Json<u64>) -> FnResult<Json<u64>> {
+    let rate = u32::from_le_bytes(input(0, 4)?.try_into().map_err(|_| Error::msg("no rate"))?) as u64;
+    let pos = (ms * rate / 1000).min(FRAMES.load(Ordering::Relaxed));
+    POS.store(pos, Ordering::Relaxed);
+    Ok(Json(pos * 1000 / rate))
 }

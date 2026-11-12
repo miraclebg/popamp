@@ -183,7 +183,8 @@ fn editable(e: &Entry) -> Option<Writable> {
         return None;
     }
     let values = tags::read(&path).ok()?;
-    let rows = popamp_audio::read_meta(&path).map(|m| crate::model::meta_rows(&m)).unwrap_or_default();
+    // A file Popamp edits is of a format of its own, not a plug-in's.
+    let rows = popamp_audio::read_meta(&path, &Default::default()).map(|m| crate::model::meta_rows(&m)).unwrap_or_default();
     Some(Writable { path, values, rows })
 }
 
@@ -337,7 +338,7 @@ mod tests {
         set(&mut p, &mut m, Field::Title, "New title");
         set(&mut p, &mut m, Field::Track, "2/9");
         assert!(!press(&mut p, &mut m, Key::Enter), "Save closes the window");
-        let meta = popamp_audio::read_meta(&path).unwrap();
+        let meta = popamp_audio::read_meta(&path, &Default::default()).unwrap();
         assert_eq!((meta.title.as_deref(), meta.track.as_deref()), (Some("New title"), Some("2")));
         assert!(m.playlist.entry(0).unwrap().meta.is_none(), "the entry reads its tags again");
         assert_eq!(m.tags_generation, 1);

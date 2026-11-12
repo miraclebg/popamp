@@ -89,6 +89,8 @@ All playback checks ran at volume 0 through the real ALSA/PipeWire output.
 | Skins | `popamp Base.wsz` | `.wsz` is installed to the skins folder and applied; loading the archive matches loading the unpacked folder |
 | Remote control | `/PLAY /PAUSE /PLAYPAUSE /NEXT /STOP /VOL= /SHUFFLE= /COMMAND= /STATUS /QUIT` against a running instance | all work |
 | MPRIS | `gdbus call --session -d org.mpris.MediaPlayer2.popamp …` (Play, Next, Properties.GetAll, Quit) | all work; metadata and position correct |
+| Tray and notifications | `popamp /NEW /INIDIR=<tmp>` with `tray_icon=1` and `notify_tracks=1`, then `busctl` (the item's ToolTip, Scroll; MPRIS Next) and `dbus-monitor` | the item registers with the watcher, its tooltip follows the track; each new track gives one notification with its cover, replacing the last |
+| Global hotkeys (X11) | `global_hotkeys=1`, `xdotool key ctrl+alt+<key>` for each key, state through MPRIS | all work but Left/Right, which GNOME's workspace switching takes first |
 | Window icon | `xprop -name Popamp _NET_WM_ICON` | 64×64 icon set |
 | Session persistence | quit, inspect `popamp.ini` / `popamp.m3u8` | settings, positions and playlist saved |
 
@@ -102,8 +104,14 @@ All playback checks ran at volume 0 through the real ALSA/PipeWire output.
 - Saving tags of the track that is playing, on Windows.
 - Double size.
 - A skin with a `region.txt` window shape.
-- ReplayGain-tagged files.
+- ReplayGain-tagged files, and the ReplayGain scanner by ear.
+- Crossfade by ear, and the History window.
 - Media keys through the desktop.
+- The tray icon's clicks and menu on screen.
+- Global hotkeys under Wayland with a real portal (tested against a fake
+  one on the session bus).
+- Global hotkeys and the tray icon on Windows (their threads are covered
+  by tests in Proton, where the icon is added; its menu is not seen yet).
 
 Please report problems with these first.
 

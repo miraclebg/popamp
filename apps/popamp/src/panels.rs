@@ -27,6 +27,8 @@ pub enum PanelKind {
     Gallery,
     AlbumArt,
     SkinBrowser,
+    History,
+    ReplayGainScan,
 }
 
 /// What a button or check box in a panel stands for.
@@ -70,6 +72,8 @@ pub enum Panel {
     Gallery(crate::gallery::GalleryPanel),
     Art(AlbumArt),
     Skins(SkinBrowser),
+    History(crate::history::HistoryPanel),
+    Scan(crate::scan::ScanPanel),
 }
 
 impl Panel {
@@ -86,6 +90,8 @@ impl Panel {
             PanelKind::Gallery => Panel::Gallery(crate::gallery::GalleryPanel::new(model)),
             PanelKind::AlbumArt => Panel::Art(AlbumArt::new(model)),
             PanelKind::SkinBrowser => Panel::Skins(SkinBrowser::new(model)),
+            PanelKind::History => Panel::History(crate::history::HistoryPanel::new(model)),
+            PanelKind::ReplayGainScan => Panel::Scan(crate::scan::ScanPanel::new(model)),
         }
     }
 
@@ -100,6 +106,8 @@ impl Panel {
             Panel::Gallery(_) => PanelKind::Gallery,
             Panel::Art(_) => PanelKind::AlbumArt,
             Panel::Skins(_) => PanelKind::SkinBrowser,
+            Panel::History(_) => PanelKind::History,
+            Panel::Scan(_) => PanelKind::ReplayGainScan,
         }
     }
 
@@ -114,6 +122,8 @@ impl Panel {
             Panel::Gallery(_) => "Popamp Gallery",
             Panel::Art(_) => "Album art",
             Panel::Skins(_) => "Skin browser",
+            Panel::History(_) => "History",
+            Panel::Scan(_) => "ReplayGain scan",
         }
     }
 
@@ -128,6 +138,8 @@ impl Panel {
             Panel::Gallery(p) => &p.form,
             Panel::Art(p) => &p.form,
             Panel::Skins(p) => &p.form,
+            Panel::History(p) => &p.form,
+            Panel::Scan(p) => &p.form,
         }
     }
 
@@ -142,6 +154,8 @@ impl Panel {
             Panel::Gallery(p) => &mut p.form,
             Panel::Art(p) => &mut p.form,
             Panel::Skins(p) => &mut p.form,
+            Panel::History(p) => &mut p.form,
+            Panel::Scan(p) => &mut p.form,
         }
     }
 
@@ -158,6 +172,8 @@ impl Panel {
             Panel::Gallery(p) => p.handle(ev, model),
             Panel::Art(p) => p.handle(ev),
             Panel::Skins(p) => p.handle(ev, model),
+            Panel::History(p) => p.handle(ev, model),
+            Panel::Scan(p) => p.handle(ev, model),
         }
     }
 
@@ -204,8 +220,15 @@ impl Panel {
         match self {
             Panel::Art(p) => p.refresh(model),
             Panel::Skins(p) => p.refresh(model),
+            Panel::History(p) => p.refresh(model),
+            Panel::Scan(p) => p.refresh(model),
             _ => false,
         }
+    }
+
+    /// The panel's work is over and it closes by itself.
+    pub fn wants_close(&self) -> bool {
+        matches!(self, Panel::Scan(p) if p.wants_close())
     }
 
     /// The picture the user chose for a cover.
@@ -308,11 +331,18 @@ pub enum Flag {
     ShowNumbers,
     ZeroPad,
     AutoAdvance,
+    TrayIcon,
+    MinimizeToTray,
+    NotifyTracks,
+    GlobalHotkeys,
+    KeepScanOpen,
 }
 
 impl Flag {
     const WINDOWS: [Flag; 6] = [Flag::Snap, Flag::EasyMove, Flag::KeepOnScreen, Flag::AlwaysOnTop, Flag::DoubleSize, Flag::SkinCursors];
-    const DISPLAY: [Flag; 5] = [Flag::ScrollTitle, Flag::DimInactive, Flag::ShowNumbers, Flag::ZeroPad, Flag::AutoAdvance];
+    const DISPLAY: [Flag; 6] =
+        [Flag::ScrollTitle, Flag::DimInactive, Flag::ShowNumbers, Flag::ZeroPad, Flag::AutoAdvance, Flag::KeepScanOpen];
+    const DESKTOP: [Flag; 4] = [Flag::TrayIcon, Flag::MinimizeToTray, Flag::NotifyTracks, Flag::GlobalHotkeys];
 
     fn label(self) -> &'static str {
         match self {
@@ -327,6 +357,11 @@ impl Flag {
             Flag::ShowNumbers => "Show playlist numbers",
             Flag::ZeroPad => "Zero-pad numbers",
             Flag::AutoAdvance => "Advance to next track",
+            Flag::TrayIcon => "Icon in the system tray",
+            Flag::MinimizeToTray => "Minimize to the tray",
+            Flag::NotifyTracks => "Notify of each new track",
+            Flag::GlobalHotkeys => "Global hotkeys (Ctrl+Alt)",
+            Flag::KeepScanOpen => "Keep the scan window open",
         }
     }
 
@@ -356,6 +391,11 @@ impl Flag {
             Flag::ShowNumbers => &mut s.shownumsinpl,
             Flag::ZeroPad => &mut s.zeropadplnum,
             Flag::AutoAdvance => &mut s.pladv,
+            Flag::TrayIcon => &mut s.tray_icon,
+            Flag::MinimizeToTray => &mut s.minimize_to_tray,
+            Flag::NotifyTracks => &mut s.notify_tracks,
+            Flag::GlobalHotkeys => &mut s.global_hotkeys,
+            Flag::KeepScanOpen => &mut s.rg_scan_keep_open,
         }
     }
 
@@ -388,19 +428,22 @@ pub enum Field {
     FontSize,
     TitleFormat,
     FadeMs,
+    CrossfadeMs,
     BufferMs,
     Proxy,
     SoundFont,
 }
 
 impl Field {
-    const ALL: [Field; 6] = [Field::FontSize, Field::TitleFormat, Field::FadeMs, Field::BufferMs, Field::Proxy, Field::SoundFont];
+    const ALL: [Field; 7] =
+        [Field::FontSize, Field::TitleFormat, Field::FadeMs, Field::CrossfadeMs, Field::BufferMs, Field::Proxy, Field::SoundFont];
 
     fn label(self) -> &'static str {
         match self {
             Field::FontSize => "Playlist font size",
             Field::TitleFormat => "Title format",
             Field::FadeMs => "Fade-out (ms)",
+            Field::CrossfadeMs => "Crossfade (ms)",
             Field::BufferMs => "Output buffer (ms)",
             Field::Proxy => "HTTP proxy",
             Field::SoundFont => "MIDI SoundFont",
@@ -412,6 +455,7 @@ impl Field {
             Field::FontSize => s.pe_fontsize.to_string(),
             Field::TitleFormat => s.titlefmt.clone(),
             Field::FadeMs => s.fade_ms.to_string(),
+            Field::CrossfadeMs => s.crossfade_ms.to_string(),
             Field::BufferMs => s.buffer_ms.to_string(),
             Field::Proxy => s.proxy.clone(),
             Field::SoundFont => s.soundfont.clone(),
@@ -424,6 +468,7 @@ impl Field {
         match self {
             Field::FontSize => number("Font size"),
             Field::FadeMs => number("Fade-out"),
+            Field::CrossfadeMs => number("Crossfade"),
             Field::BufferMs => number("Output buffer"),
             Field::TitleFormat if text.trim().is_empty() => Err("Title format: must not be empty".into()),
             Field::SoundFont if !text.trim().is_empty() && !std::path::Path::new(text.trim()).is_file() => {
@@ -439,6 +484,7 @@ impl Field {
         match self {
             Field::FontSize => model.settings_mut().pe_fontsize = n().min(1000) as i32,
             Field::FadeMs => model.settings_mut().fade_ms = n(),
+            Field::CrossfadeMs => model.settings_mut().crossfade_ms = n(),
             Field::BufferMs => model.settings_mut().buffer_ms = n(),
             Field::Proxy => model.settings_mut().proxy = text.trim().to_string(),
             Field::SoundFont => model.settings_mut().soundfont = text.trim().to_string(),
@@ -486,7 +532,9 @@ impl Preferences {
         let w = 480;
         let mut form = Form::new(w, 0);
         let mut y = 10;
-        for (title, flags) in [("Windows", &Flag::WINDOWS[..]), ("Display and playback", &Flag::DISPLAY[..])] {
+        for (title, flags) in
+            [("Windows", &Flag::WINDOWS[..]), ("Display and playback", &Flag::DISPLAY[..]), ("Desktop", &Flag::DESKTOP[..])]
+        {
             let rows = flags.len().div_ceil(2) as i32;
             form.add(Rect::new(10, y, w - 20, 22 + rows * 22), Widget::Group { label: title.into() });
             for (n, &f) in flags.iter().enumerate() {
@@ -856,7 +904,7 @@ pub(crate) mod tests {
     use crate::widgets::Key;
     use popamp_core::plformats::Item;
 
-    fn songs(titles: &[&str]) -> Model {
+    pub(crate) fn songs(titles: &[&str]) -> Model {
         let mut m = Model::for_tests();
         let items = titles.iter().enumerate().map(|(i, t)| Item {
             location: format!("/music/{i}.mp3"),
@@ -1060,8 +1108,10 @@ pub(crate) mod tests {
         assert!(matches!(status, Widget::Label { text, .. } if text.contains("Fade-out")));
         retype(&mut p, &mut m, Field::FadeMs, "500");
         retype(&mut p, &mut m, Field::TitleFormat, "%title%!");
+        retype(&mut p, &mut m, Field::CrossfadeMs, "60000");
         assert!(!press(&mut p, &mut m, Key::Enter));
         assert_eq!((m.settings().pe_fontsize, m.settings().fade_ms), (14, 500));
+        assert_eq!(m.settings().crossfade_ms, 10_000, "kept to ten seconds");
         assert_eq!(m.settings().titlefmt, "%title%!");
     }
 

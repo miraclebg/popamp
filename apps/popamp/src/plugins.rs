@@ -5,6 +5,7 @@ use crate::model::{AppEvent, Model};
 use crate::panels::{button, Act};
 use crate::widgets::{Event, Form, Rect, Widget, BUTTON};
 use popamp_audio::dsp::Effect;
+use popamp_audio::formats::Decoders;
 use popamp_audio::EngineCmd;
 use popamp_core::config::PluginConfig;
 use popamp_plugins::installed::{self, Installed, State};
@@ -34,7 +35,8 @@ impl Model {
     }
 
     /// Puts the source plug-ins that are on in front of the built-in
-    /// sources, and gives the engine the dsp ones.
+    /// sources, adds the formats of the decoder ones, and gives the engine
+    /// the dsp ones.
     pub fn on_plugins(&mut self, n: u64, list: Vec<Installed>, effects: Vec<Box<dyn Effect>>) {
         if n != self.plugins.loads {
             return;
@@ -45,7 +47,11 @@ impl Model {
                 events.send(AppEvent::PluginStopped(id.clone(), why.to_string()));
             }));
         }
-        self.sources.set_plugins(installed::sources(&list));
+        // The engine first: a track waiting for the sources opens next,
+        // and may be of a plug-in's format.
+        self.decoders = Decoders::new(installed::decoders(&list));
+        self.push_engine_settings();
+        self.sources.set_plugins(installed::sources(&list), self.decoders.clone());
         self.engine.send(EngineCmd::Effects(effects));
         self.plugins.list = list;
     }
@@ -303,7 +309,8 @@ fn problem(p: &Installed) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::AddMode;
+    use crate::dialogs::{DialogKind, Request};
+    use crate::model::{AddMode, UiReq};
     use crate::panels::tests::{click, press, type_text};
     use crate::panels::{Panel, PanelKind};
     use crate::widgets::Key;
@@ -505,5 +512,31 @@ mod tests {
         assert_eq!(got[1], ("https://test.invalid/list/2".to_string(), Some("Track 2".to_string())));
         m.on_plugins(m.plugins.loads - 1, Vec::new(), Vec::new());
         assert_eq!(m.plugins.list.len(), 1, "an older answer is dropped");
+    }
+
+    #[test]
+    fn an_allowed_decoder_plays_its_files_and_offers_them_to_open() {
+        let mut m = Model::for_tests();
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/popamp-plugins/tests/fixtures");
+        let dir = m.paths.plugins_dir().join("test-decoder");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::copy(fixtures.join("test-decoder/plugin.toml"), dir.join("plugin.toml")).unwrap();
+        std::fs::copy(fixtures.join("test/plugin.wasm"), dir.join("plugin.wasm")).unwrap();
+        m.config.set_plugin_grant("test-decoder", &grant_of(&std::fs::read_to_string(dir.join("plugin.toml")).unwrap()));
+        let list = installed::load_all(&m.paths.plugins_dirs(), &m.config.plugins(), &m.source_context(), &[]);
+        m.on_plugins(m.plugins.loads, list, Vec::new());
+        let song = m.paths.plugins_dir().join("song.ptest");
+        let mut bytes = 8_000u32.to_le_bytes().to_vec();
+        bytes.extend([0u8; 4 * 8_000]);
+        std::fs::write(&song, bytes).unwrap();
+        m.add_now(vec![song.to_string_lossy().into_owned()], AddMode::Append);
+        let entry = &m.playlist.entries()[0];
+        let title = entry.meta.as_ref().and_then(|m| m.title.clone());
+        assert_eq!((title.as_deref(), entry.length_ms), (Some("A .ptest file"), Some(1_000)));
+        m.request_dialog(DialogKind::OpenFiles { play: false });
+        let Some(UiReq::Dialog(_, Request::Files { filter, .. })) = m.ui.pop() else { panic!() };
+        assert!(filter.contains(&"*.ptest".to_string()), "{filter:?}");
+        m.on_plugins(m.plugins.loads, Vec::new(), Vec::new());
+        assert!(!m.source_context().decoders.plays("song.ptest"), "a decoder turned off takes its formats along");
     }
 }
