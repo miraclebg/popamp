@@ -57,6 +57,17 @@ pub fn drawn_size(w: i32, h: i32, pct: i32) -> Size {
     }
 }
 
+/// A length of `px` screen pixels in something drawn at `pct` (a menu, a
+/// dialog), in the desktop's units: where a submenu opens, how wide a menu
+/// is when it is placed.
+pub fn from_drawn(px: i32, pct: i32) -> i32 {
+    if DESKTOP_IN_POINTS {
+        px * 100 / pct.max(1)
+    } else {
+        px
+    }
+}
+
 /// A point winit gives in screen pixels (a window's position, the cursor in
 /// it), in the desktop's units; `factor` is the window's pixels per point.
 pub fn from_screen(x: f64, y: f64, factor: f64) -> (i32, i32) {
@@ -137,6 +148,7 @@ mod tests {
     #[test]
     fn a_mac_desktop_counts_in_points() {
         assert_eq!(from_screen(301.0, 99.0, 2.0), (150, 49));
+        assert_eq!(from_drawn(600, 200), 300, "a menu drawn at 200%: 600 pixels are 300 points");
         assert!(matches!(position(10, 20), Position::Logical(p) if (p.x, p.y) == (10.0, 20.0)));
         assert!(matches!(size(275, 116), Size::Logical(s) if (s.width, s.height) == (275.0, 116.0)));
     }
@@ -145,6 +157,7 @@ mod tests {
     #[test]
     fn elsewhere_the_desktop_counts_in_pixels() {
         assert_eq!(from_screen(301.0, 99.0, 2.0), (301, 99));
+        assert_eq!(from_drawn(600, 200), 600);
         assert!(matches!(position(10, 20), Position::Physical(p) if (p.x, p.y) == (10, 20)));
         assert!(matches!(size(275, 116), Size::Physical(s) if (s.width, s.height) == (275, 116)));
     }
