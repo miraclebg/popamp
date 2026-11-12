@@ -57,8 +57,11 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked --features popamp/plus -- -D warnings
       - run: cargo test --workspace --locked --features popamp/plus
 
+  # After each merge to main only, so pull requests don't wait for the
+  # slower macOS runners.
   macos:
     name: macOS - clippy, test
+    if: github.event_name == 'push'
     runs-on: macos-15
     timeout-minutes: 60
     steps:
