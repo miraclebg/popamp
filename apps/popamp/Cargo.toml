@@ -44,6 +44,8 @@ objc2-core-text = { version = "0.3.2", default-features = false, features = ["st
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFString", "CFURL", "CFCGTypes"] }
 # Files Finder opens with Popamp, as Apple Events.
 objc2 = "0.6"
+# The clipboard, for ⌘V.
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSPasteboard"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSAppleEventManager", "NSAppleEventDescriptor", "NSNotification", "NSString", "NSURL", "objc2-core-services"] }
 
 [target.'cfg(windows)'.dependencies]

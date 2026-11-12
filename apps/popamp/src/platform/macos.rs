@@ -59,6 +59,31 @@ impl Platform {
     /// Nothing to give back.
     pub fn release(&self, _window: &Window) {}
 
+    /// What is on the clipboard: the paths of copied files, and the text.
+    pub fn clipboard(&self) -> (Vec<String>, Option<String>) {
+        use objc2::ClassType;
+        use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+        use objc2_foundation::{NSArray, NSURL};
+        let board = NSPasteboard::generalPasteboard();
+        let classes = NSArray::from_slice(&[NSURL::class()]);
+        // SAFETY: asks for NSURL objects, with no options.
+        let urls = unsafe { board.readObjectsForClasses_options(&classes, None) };
+        let files = urls
+            .map(|list| {
+                list.to_vec()
+                    .into_iter()
+                    .filter_map(|o| o.downcast::<NSURL>().ok())
+                    .filter(|u| u.isFileURL())
+                    .filter_map(|u| u.path())
+                    .map(|p| p.to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+        // SAFETY: AppKit's constant for plain text.
+        let text = board.stringForType(unsafe { NSPasteboardTypeString }).map(|s| s.to_string());
+        (files, text)
+    }
+
     /// Brings `windows` above other programs' windows, back to front,
     /// without making any of them the key window: macOS brings up only the
     /// window clicked, not its companions.

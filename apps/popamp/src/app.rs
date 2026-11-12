@@ -1034,6 +1034,20 @@ impl App {
 
     // --- input -----------------------------------------------------------------
 
+    /// ⌘V: adds the copied files, or the copied links and paths, to the
+    /// playlist, as `/ADD` would.
+    #[cfg(target_os = "macos")]
+    fn paste(&mut self, el: &ActiveEventLoop) {
+        let (files, text) = self.platform.clipboard();
+        let items = crate::mac_keys::paste_items(files, text);
+        if items.is_empty() {
+            return;
+        }
+        self.model.on_remote(vec![crate::cli::Remote::Add(items)]);
+        self.after_model(el);
+        self.redraw_all();
+    }
+
     /// The modifiers held, as the Mac key table reads them.
     #[cfg(target_os = "macos")]
     fn mac_mods(&self) -> crate::mac_keys::Mods {
@@ -1159,7 +1173,7 @@ impl App {
             use crate::mac_keys::Mac;
             match crate::mac_keys::translate(code, self.mac_mods(), k) {
                 Mac::Key { code, ctrl, alt, shift } => (code, ctrl, alt, shift),
-                Mac::Paste => return,
+                Mac::Paste => return self.paste(el),
                 Mac::Close => {
                     let c = match k {
                         WindowKey::Main => C::Exit,

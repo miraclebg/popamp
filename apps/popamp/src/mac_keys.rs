@@ -108,6 +108,18 @@ pub fn label(accel: &str) -> String {
     out + key
 }
 
+/// What ⌘V adds to the playlist: the copied files if there are any, else
+/// each line of copied text that is a web address or names a file or
+/// folder that is there. Anything else (a sentence, an empty clipboard)
+/// adds nothing.
+pub fn paste_items(files: Vec<String>, text: Option<String>) -> Vec<String> {
+    if !files.is_empty() {
+        return files;
+    }
+    let usable = |l: &&str| l.starts_with("http://") || l.starts_with("https://") || std::path::Path::new(l).exists();
+    text.map(|t| t.lines().map(str::trim).filter(|l| !l.is_empty()).filter(usable).map(str::to_string).collect()).unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,5 +202,15 @@ mod tests {
         ] {
             assert_eq!(label(linux), mac, "{linux}");
         }
+    }
+
+    #[test]
+    fn paste_takes_files_then_links_and_paths_and_nothing_else() {
+        let tmp = std::env::temp_dir();
+        let dir = tmp.to_string_lossy().into_owned();
+        assert_eq!(paste_items(vec!["/a.mp3".into()], Some("https://x".into())), ["/a.mp3"]);
+        let text = format!("https://ice1.somafm.com/groovesalad-128-mp3\n\n  {dir}  \nhello there\n/popamp/none.mp3\nftp://x");
+        assert_eq!(paste_items(vec![], Some(text)), ["https://ice1.somafm.com/groovesalad-128-mp3".to_string(), dir]);
+        assert!(paste_items(vec![], None).is_empty());
     }
 }
