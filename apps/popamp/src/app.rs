@@ -555,7 +555,7 @@ impl App {
         let (w, h) = layout.screen();
         let monitor = self.win(WindowKey::Main).and_then(|w| w.window.current_monitor()).map(|m| platform::monitor(&m));
         // Placed in the desktop's units, as the cursor and the monitor are.
-        let units = if platform::DESKTOP_IN_POINTS { (w * 100 / pct, h * 100 / pct) } else { (w, h) };
+        let units = (platform::from_drawn(w, pct), platform::from_drawn(h, pct));
         let (x, y) = monitor.map_or(at, |m| menu_origin(at, units, m, !sub));
         let attrs = platform::attributes(WindowRole::Popup)
             .with_inner_size(platform::drawn_size(w, h, pct))
@@ -610,7 +610,7 @@ impl App {
         // Centred on the main window's monitor, so the title bar is on screen.
         let monitor = self.win(WindowKey::Main).and_then(|m| m.window.current_monitor()).map(|m| platform::monitor(&m));
         let (cx, cy) = monitor.map_or((640, 400), |m| (m.x + m.w / 2, m.y + m.h / 2));
-        let (uw, uh) = if platform::DESKTOP_IN_POINTS { (w * 100 / pct, h * 100 / pct) } else { (w, h) };
+        let (uw, uh) = (platform::from_drawn(w, pct), platform::from_drawn(h, pct));
         let attrs = platform::attributes(WindowRole::Dialog)
             .with_title(panel.title())
             .with_inner_size(platform::drawn_size(w, h, pct))
@@ -805,7 +805,7 @@ impl App {
         p.hover = hover;
         let sub = hover.and_then(|h| {
             (!p.items[h].sub.is_empty()).then(|| {
-                let at = |n: i32| crate::pen::screen(p.layout.pct, n);
+                let at = |n: i32| platform::from_drawn(crate::pen::screen(p.layout.pct, n), p.layout.pct);
                 (p.items[h].sub.clone(), p.pos.0 + at(p.layout.w - 3), p.pos.1 + at(p.layout.rows[h].0 - 3))
             })
         });
