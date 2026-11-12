@@ -71,10 +71,12 @@ sound goes through CoreAudio, fonts are found through CoreText, dialogs are
 the Mac's own, and Popamp.app carries libopus, libopenmpt and the MIDI
 SoundFont. Settings and skins live in `~/Library/Application Support/popamp`.
 
-Until the downloads are signed with a Developer ID, macOS asks before the
-first start. Control-click Popamp in Applications and choose Open, or open
-System Settings > Privacy & Security and click Open Anyway. Later starts
-do not ask.
+Until the downloads are signed with a Developer ID, macOS refuses the
+first start. Open Popamp once; when macOS says it cannot check it, open
+System Settings > Privacy & Security and click Open Anyway (the button is
+there for a while after that first try), then confirm. On macOS 12 to 14,
+Control-clicking Popamp in Applications and choosing Open also works.
+Later starts do not ask.
 
 Building needs Rust 1.96 or newer and the Xcode Command Line Tools
 (`xcode-select --install`). To run from the source tree with Opus and
@@ -86,12 +88,14 @@ cargo build --release
 ./target/release/popamp ~/Music
 ```
 
-To make the disk image (both editions, as for Windows):
+To make the disk images:
 
 ```sh
 sh packaging/macos/fetch-libs.sh dist/libs     # libopus, libopenmpt for macOS 12, the SoundFont
 MACOSX_DEPLOYMENT_TARGET=12.0 cargo build --release -p popamp
 sh packaging/build-macos.sh                    # dist/Popamp-<version>-macos-arm64.dmg
+MACOSX_DEPLOYMENT_TARGET=12.0 cargo build --release -p popamp --features plus
+sh packaging/build-macos.sh                    # dist/Popamp-Plus-<version>-macos-arm64.dmg
 ```
 
 `build-macos.sh` signs ad hoc unless `MACOS_SIGN_IDENTITY` names a

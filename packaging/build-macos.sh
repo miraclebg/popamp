@@ -43,8 +43,8 @@ if [ "${2:-}" != "$version" ]; then
     exit 1
 fi
 case "$1" in
-    popamp) name=Popamp; plus=false ;;
-    popamp-plus) name=Popamp-Plus; plus=true ;;
+    popamp) name=Popamp; title=Popamp; plus=false ;;
+    popamp-plus) name=Popamp-Plus; title="Popamp Plus"; plus=true ;;
     *) echo "error: $bin says it is $1, not popamp or popamp-plus" >&2; exit 1 ;;
 esac
 
@@ -82,7 +82,8 @@ if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
     # Popamp Plus runs plug-ins through wasmtime, which writes machine code.
     if [ "$plus" = true ]; then
         sign --entitlements "$here/macos/plus.entitlements" "$app"
-        codesign -d --entitlements - "$app" 2>/dev/null | grep -q allow-jit || { echo "error: Popamp Plus lacks allow-jit" >&2; exit 1; }
+        codesign -d --entitlements - "$app" 2>/dev/null | grep -q allow-unsigned-executable-memory ||
+            { echo "error: Popamp Plus lacks allow-unsigned-executable-memory" >&2; exit 1; }
     else
         sign "$app"
     fi
@@ -96,7 +97,7 @@ fi
 ln -s /Applications "$work/stage/Applications"
 dmg="$outdir/${name}-${version}-macos-${arch}.dmg"
 rm -f "$dmg"
-hdiutil create -quiet -volname "Popamp $version" -srcfolder "$work/stage" -fs HFS+ -format UDZO "$dmg"
+hdiutil create -quiet -volname "$title $version" -srcfolder "$work/stage" -fs HFS+ -format UDZO "$dmg"
 
 if [ -n "${MACOS_SIGN_IDENTITY:-}" ] && [ -n "${NOTARY_KEY_PATH:-}" ] && [ -n "${NOTARY_KEY_ID:-}" ] && [ -n "${NOTARY_ISSUER:-}" ]; then
     xcrun notarytool submit "$dmg" --key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" --wait

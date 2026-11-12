@@ -124,6 +124,9 @@ jobs:
   macos:
     runs-on: macos-15
     timeout-minutes: 60
+    # The signing keys are on this runner for a while: no write access.
+    permissions:
+      contents: read
     env:
       # Every binary in Popamp.app starts on macOS 12 and newer.
       MACOSX_DEPLOYMENT_TARGET: "12.0"
@@ -144,6 +147,14 @@ jobs:
       - run: cargo test --release --locked --workspace
       - run: cargo test --release --locked --workspace --features popamp/plus
       - run: sh packaging/macos/fetch-libs.sh dist/libs
+      # Both editions are built before any signing key is on the runner, so
+      # no crate's build script or macro runs with one.
+      - name: Build both editions
+        run: |
+          cargo build --release --locked -p popamp
+          cp target/release/popamp target/popamp-player
+          cargo build --release --locked -p popamp --features plus
+          cp target/release/popamp target/popamp-plus
       - name: Signing keys, when the repository has them
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
@@ -166,6 +177,10 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
           identity=$(security find-identity -v -p codesigning "$keychain" | awk -F'"' '/Developer ID Application/ { print $2; exit }')
+          if [ -z "$identity" ]; then
+            echo "::error::MACOS_CERTIFICATE holds no Developer ID Application identity"
+            exit 1
+          fi
           echo "MACOS_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
           if [ -n "$NOTARY_KEY" ]; then
             printf '%s' "$NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
@@ -175,15 +190,16 @@ jobs:
               echo "NOTARY_ISSUER=$NOTARY_ISSUER"
             } >> "$GITHUB_ENV"
           fi
-      - name: Package popamp
+      - name: Package both editions
         run: |
-          cargo build --release --locked -p popamp
-          sh packaging/build-macos.sh target/release/popamp dist
-      - name: Package popamp-plus
-        run: |
-          cargo build --release --locked -p popamp --features plus
-          sh packaging/build-macos.sh target/release/popamp dist
+          sh packaging/build-macos.sh target/popamp-player dist
+          sh packaging/build-macos.sh target/popamp-plus dist
           ls -lh dist
+      - name: Remove the signing keys
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/notary.p8"
       - uses: actions/upload-artifact@v7
         with:
           name: macos-arm64
@@ -192,7 +208,7 @@ jobs:
   # macOS is a community-maintained platform: a failing macOS job does not
   # hold the release back, which then ships without the disk images.
   release:
-    if: always() && github.ref_type == 'tag' && needs.linux.result == 'success' && needs.windows.result == 'success'
+    if: ${{ !cancelled() && github.ref_type == 'tag' && needs.linux.result == 'success' && needs.windows.result == 'success' }}
     needs: [linux, windows, macos]
     runs-on: ubuntu-24.04
     timeout-minutes: 60

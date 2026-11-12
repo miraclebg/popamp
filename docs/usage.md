@@ -54,7 +54,7 @@ popamp /HELP               # all options
 |---|---|---|---|
 | Settings, playlist, bookmarks | `~/.config/popamp/` | `%APPDATA%\popamp\` | `~/Library/Application Support/popamp/` |
 | Skins, plug-ins | `~/.local/share/popamp/skins/`, `plugins/` | `%APPDATA%\popamp\skins\`, `plugins\` | `~/Library/Application Support/popamp/skins/`, `plugins/` |
-| Skins, plug-ins from packages | `/usr/share/popamp/skins/`, `plugins/` (each of `$XDG_DATA_DIRS`) | none | `Popamp.app/Contents/Resources/popamp/` |
+| Skins, plug-ins from packages | `/usr/share/popamp/skins/`, `plugins/` (each of `$XDG_DATA_DIRS`) | none | none |
 
 Settings are in `popamp.ini`, whose key names follow `winamp.ini`; the
 playlist is saved to `popamp.m3u8`. A `popamp.ini` next to the program
