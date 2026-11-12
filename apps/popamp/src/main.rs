@@ -13,6 +13,8 @@ mod dialogs;
 mod edition;
 mod fileinfo;
 mod filetypes;
+#[cfg(target_os = "macos")]
+mod finder;
 mod font;
 mod gallery;
 mod headless;
@@ -124,6 +126,8 @@ fn main() {
         }
     };
     let proxy = event_loop.create_proxy();
+    #[cfg(target_os = "macos")]
+    finder::listen(proxy.clone());
     let mut model = Model::new(paths, config, proxy.clone());
     model.load_session();
 
