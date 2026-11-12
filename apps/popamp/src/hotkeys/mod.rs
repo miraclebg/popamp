@@ -2,18 +2,19 @@
 //! arrows work from any program, as in Winamp. Grabbed through X11 on
 //! Linux, asked of the desktop portal under Wayland, and registered with
 //! RegisterHotKey on Windows, on a thread of their own; a key another
-//! program holds already is left to it.
+//! program holds already is left to it. Not on macOS yet.
 
 use popamp_core::Command;
 use std::sync::Arc;
 
-#[cfg(unix)]
+#[cfg(linux_like)]
 mod portal;
 
 /// Sends a command to the UI thread.
 pub type Send = Arc<dyn Fn(Command) + std::marker::Send + Sync>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 enum Key {
     Insert,
     Home,
@@ -27,6 +28,7 @@ enum Key {
 }
 
 /// Each key, pressed with Ctrl+Alt, and what it does.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 const BINDINGS: [(Key, Command); 9] = [
     (Key::Insert, Command::Play),
     (Key::Home, Command::Pause),
@@ -59,7 +61,7 @@ impl Hotkeys {
 
 /// X11's passive grabs on the root window. Under Wayland they would only
 /// see keys pressed in Xwayland's windows, so there the portal is asked.
-#[cfg(unix)]
+#[cfg(linux_like)]
 mod os {
     use super::{portal, Key, Send, BINDINGS};
     use std::sync::Arc;
@@ -185,6 +187,19 @@ mod os {
     }
 }
 
+/// Not there yet on macOS: no keys are grabbed.
+#[cfg(target_os = "macos")]
+mod os {
+    use super::Send;
+
+    pub struct Grab;
+
+    pub fn grab(_send: Send) -> Option<Grab> {
+        log::info!("global hotkeys are not there on macOS yet");
+        None
+    }
+}
+
 /// RegisterHotKey on a thread of its own: the keys come to its message
 /// queue, which it reads until told to quit.
 #[cfg(windows)]
@@ -275,12 +290,13 @@ mod os {
     }
 }
 
-#[cfg(test)]
+// Each system's grab has its test; macOS has no grab yet.
+#[cfg(all(test, not(target_os = "macos")))]
 mod tests {
     use super::*;
 
     #[test]
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     fn a_key_is_found_on_the_keyboard_by_its_unshifted_symbol() {
         // Two keysyms per keycode, keycodes from 8: Home on 9, Insert on 10
         // only shifted (as on a keypad).
