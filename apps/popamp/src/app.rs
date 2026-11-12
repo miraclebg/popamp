@@ -214,6 +214,12 @@ impl App {
         }
     }
 
+    /// The screens, in the desktop's units, with their pixels per unit.
+    fn screens(&self) -> Vec<(Screen, f64)> {
+        let Some(w) = self.win(WindowKey::Main) else { return Vec::new() };
+        w.window.available_monitors().map(|m| (platform::monitor(&m), m.scale_factor())).collect()
+    }
+
     fn monitors(el: &ActiveEventLoop) -> Vec<Screen> {
         el.available_monitors().map(|m| platform::monitor(&m)).collect()
     }
@@ -547,7 +553,8 @@ impl App {
         }
         let active = w.focused;
         self.skins[k.index()].draw(&self.model, &mut self.fonts, &mut Canvas::new(&mut w.frame, drawn), active);
-        let (pw, ph) = (scale.px(lw) as u32, scale.px(lh) as u32);
+        let factor = if platform::DESKTOP_IN_POINTS { w.window.scale_factor() } else { 1.0 };
+        let (pw, ph) = surface_size(layout, (lw, lh), factor);
         let (Some(nw), Some(nh)) = (NonZeroU32::new(pw), NonZeroU32::new(ph)) else { return };
         if w.surface.resize(nw, nh).is_err() {
             return;
@@ -580,10 +587,13 @@ impl App {
         if items.is_empty() {
             return;
         }
-        let pct = self.dialog_pct();
+        // Drawn at the density of the screen it opens on, placed within it.
+        let screens = self.screens();
+        let pct = if platform::DESKTOP_IN_POINTS { pct_on(&screens, at, self.dialog_pct()) } else { self.dialog_pct() };
         let layout = menu::layout(&items, &mut self.fonts.list, pct);
         let (w, h) = layout.screen();
-        let monitor = self.win(WindowKey::Main).and_then(|w| w.window.current_monitor()).map(|m| platform::monitor(&m));
+        let main_monitor = self.win(WindowKey::Main).and_then(|w| w.window.current_monitor()).map(|m| platform::monitor(&m));
+        let monitor = screens.iter().map(|&(s, _)| s).find(|s| contains(*s, at)).or(main_monitor);
         // Placed in the desktop's units, as the cursor and the monitor are.
         let units = (platform::from_drawn(w, pct), platform::from_drawn(h, pct));
         let (x, y) = monitor.map_or(at, |m| menu_origin(at, units, m, !sub));
@@ -675,8 +685,10 @@ impl App {
     }
 
     fn render_panel(&mut self, i: usize) {
-        let pct = self.dialog_pct();
+        let main_pct = self.dialog_pct();
         let Some(p) = self.panels.get_mut(i) else { return };
+        // A dialog dragged to another screen is drawn at that screen's density.
+        let pct = if platform::DESKTOP_IN_POINTS { ((p.window.scale_factor() * 100.0).round() as i32).max(100) } else { main_pct };
         let form = p.panel.form();
         let (w, h) = (crate::pen::screen(pct, form.w), crate::pen::screen(pct, form.h));
         if (w, h) != (p.frame.w, p.frame.h) {
@@ -695,7 +707,7 @@ impl App {
         let form = p.panel.form_mut();
         let out = match ev {
             WindowEvent::CloseRequested => Event::Cancel,
-            WindowEvent::RedrawRequested => Event::None,
+            WindowEvent::RedrawRequested | WindowEvent::ScaleFactorChanged { .. } => Event::None,
             WindowEvent::ModifiersChanged(m) => {
                 self.mods = m.state();
                 return;
@@ -1744,6 +1756,25 @@ fn shape_mask(model: &Model, mode: &Mode, shape: &Shape, size: (i32, i32), scale
 /// Screen rectangle of a shown window: x, y, width, height.
 type Rect = (i32, i32, i32, i32);
 
+/// Whether `at` is on `screen`.
+fn contains(screen: Screen, at: (i32, i32)) -> bool {
+    at.0 >= screen.x && at.0 < screen.x + screen.w && at.1 >= screen.y && at.1 < screen.y + screen.h
+}
+
+/// The drawing percent on the screen holding `at`, from each screen's
+/// pixels per desktop unit; `fallback` off every screen.
+fn pct_on(screens: &[(Screen, f64)], at: (i32, i32), fallback: i32) -> i32 {
+    screens.iter().find(|(s, _)| contains(*s, at)).map_or(fallback, |&(_, f)| ((f * 100.0).round() as i32).max(100))
+}
+
+/// The pixels of a window `size` skin pixels big at `layout` in the
+/// desktop's units, on a screen with `factor` pixels to each: the window's
+/// own size, rounded once, so the drawing reaches every edge.
+fn surface_size(layout: Scale, size: (i32, i32), factor: f64) -> (u32, u32) {
+    let px = |n: i32| ((layout.px(n) as f64) * factor).round().max(1.0) as u32;
+    (px(size.0), px(size.1))
+}
+
 /// The windows to bring up when `focused` is clicked, back to front: the
 /// other visible ones, then `focused` itself on top.
 fn raise_order(focused: WindowKey, visible: impl Fn(WindowKey) -> bool) -> Vec<WindowKey> {
@@ -1817,6 +1848,22 @@ fn reattach(a: Rect, b: Rect, now: Rect, size: (i32, i32), rescale: &impl Fn(i32
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_menu_is_drawn_at_the_density_of_the_screen_it_opens_on() {
+        let retina = (Screen { x: 0, y: 0, w: 1728, h: 1117 }, 2.0);
+        let plain = (Screen { x: 1728, y: 0, w: 2560, h: 1440 }, 1.0);
+        assert_eq!(pct_on(&[retina, plain], (2000, 300), 150), 100);
+        assert_eq!(pct_on(&[retina, plain], (100, 300), 150), 200);
+        assert_eq!(pct_on(&[retina, plain], (-50, -50), 150), 150, "off every screen: the fallback");
+    }
+
+    #[test]
+    fn the_drawing_fills_the_window_to_the_last_pixel() {
+        // x1.5 on Retina: 275 skin pixels are 413 points, 826 pixels.
+        assert_eq!(surface_size(Scale::new(150, popamp_core::config::Scaling::Sharp), (275, 116), 2.0), (826, 348));
+        assert_eq!(surface_size(Scale::new(200, popamp_core::config::Scaling::Sharp), (275, 116), 1.0), (550, 232));
+    }
 
     #[test]
     fn the_window_clicked_comes_up_last_with_its_visible_companions_under_it() {
