@@ -193,7 +193,7 @@ impl<A: Copy + PartialEq> Form<A> {
     }
 
     /// The texts of the labels, in the order they were added.
-    #[cfg(test)]
+    #[cfg(all(test, target_os = "macos"))]
     pub fn labels(&self) -> Vec<&str> {
         self.controls
             .iter()
