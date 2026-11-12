@@ -1595,6 +1595,13 @@ impl ApplicationHandler<AppEvent> for App {
                 if let Some(w) = self.win_mut(k) {
                     w.focused = f;
                 }
+                if f {
+                    // Clicked, the window comes up alone on macOS; its
+                    // companions come up with it, under it.
+                    let order = raise_order(k, |o| self.win(o).is_some_and(|w| w.visible));
+                    let windows: Vec<&Window> = order.iter().filter_map(|&o| self.win(o)).map(|w| &*w.window).collect();
+                    self.platform.raise_together(&windows);
+                }
                 if !f && !self.popups.is_empty() {
                     self.popup_focus_check = Some(Instant::now());
                 }
@@ -1700,6 +1707,13 @@ fn shape_mask(model: &Model, mode: &Mode, shape: &Shape, size: (i32, i32), scale
 /// Screen rectangle of a shown window: x, y, width, height.
 type Rect = (i32, i32, i32, i32);
 
+/// The windows to bring up when `focused` is clicked, back to front: the
+/// other visible ones, then `focused` itself on top.
+fn raise_order(focused: WindowKey, visible: impl Fn(WindowKey) -> bool) -> Vec<WindowKey> {
+    let others = WindowKey::ALL.into_iter().filter(|&k| k != focused && visible(k));
+    others.chain([focused]).collect()
+}
+
 /// New positions after windows change size. `anchor`, then the first shown
 /// window of every other docked group, stays put; a window docked to a placed
 /// one goes back against the same edge, its offset along that edge passed
@@ -1766,6 +1780,13 @@ fn reattach(a: Rect, b: Rect, now: Rect, size: (i32, i32), rescale: &impl Fn(i32
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_window_clicked_comes_up_last_with_its_visible_companions_under_it() {
+        let shown = |k: WindowKey| k != WindowKey::Eq;
+        assert_eq!(raise_order(WindowKey::Main, shown), [WindowKey::Playlist, WindowKey::Main]);
+        assert_eq!(raise_order(WindowKey::Playlist, |_| true), [WindowKey::Main, WindowKey::Eq, WindowKey::Playlist]);
+    }
 
     fn x15(d: i32) -> i32 {
         d * 3 / 2

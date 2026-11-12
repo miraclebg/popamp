@@ -92,6 +92,9 @@ impl Platform {
     /// which the window manager never focuses.
     pub fn no_activate(&self, _window: &Window) {}
 
+    /// Nothing to do: owned windows come up with their owner.
+    pub fn raise_together(&self, _windows: &[&Window]) {}
+
     /// Nothing to give back: a strut goes with its window.
     pub fn release(&self, _window: &Window) {}
 
