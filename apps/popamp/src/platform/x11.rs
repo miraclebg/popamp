@@ -29,6 +29,9 @@ pub fn attributes(role: WindowRole) -> WindowAttributes {
 /// their owner, so every window is minimized and restored by itself.
 pub const OWNED_FOLLOW_OWNER: bool = false;
 
+/// Each window is minimized as the owner rule above says.
+pub const MINIMIZE_HIDES_COMPANIONS: bool = false;
+
 /// A connection to the X server for what winit does not cover.
 pub struct Platform {
     x11: Option<RustConnection>,

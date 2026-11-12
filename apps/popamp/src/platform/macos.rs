@@ -22,6 +22,10 @@ pub fn attributes(role: WindowRole) -> WindowAttributes {
 /// Popamp moves and minimizes the docked windows itself, as on Linux.
 pub const OWNED_FOLLOW_OWNER: bool = false;
 
+/// macOS gives each minimized window a Dock tile of its own, so only the
+/// main window goes there; its companions hide and come back with it.
+pub const MINIMIZE_HIDES_COMPANIONS: bool = true;
+
 /// Nothing to connect to yet.
 pub struct Platform;
 

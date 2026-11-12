@@ -122,6 +122,9 @@ pub struct App {
     last_slow: Instant,
     start_minimized: bool,
     popup_focus_check: Option<Instant>,
+    /// The companions hidden while the main window is minimized, where
+    /// they do not go to the Dock with it (macOS).
+    hidden_with_main: Vec<WindowKey>,
     /// `POPAMP_SNAPSHOT=<dir>`: write each window as PNG after a few frames and exit.
     snapshot: Option<(std::path::PathBuf, u32)>,
     platform: Platform,
@@ -155,6 +158,7 @@ impl App {
             last_slow: Instant::now(),
             start_minimized,
             popup_focus_check: None,
+            hidden_with_main: Vec::new(),
             snapshot: std::env::var_os("POPAMP_SNAPSHOT").map(|d| (std::path::PathBuf::from(d), 0)),
             platform: Platform::connect(),
             media,
@@ -310,7 +314,24 @@ impl App {
     /// Minimizes or restores the windows. Where the system does that with
     /// the main window for the windows tied to it, only the main window:
     /// a minimized owned window would stay behind as a stub on the desktop.
-    fn set_minimized(&self, on: bool) {
+    fn set_minimized(&mut self, on: bool) {
+        let main = self.win(WindowKey::Main).filter(|w| w.role == WindowRole::Main).map(|w| w.window.clone());
+        if let (true, Some(main)) = (platform::MINIMIZE_HIDES_COMPANIONS, main) {
+            // One Dock tile: the main window goes there, its companions hide.
+            main.set_minimized(on);
+            if on {
+                for k in [WindowKey::Eq, WindowKey::Playlist] {
+                    if let Some(w) = self.win_mut(k).filter(|w| w.visible) {
+                        w.window.set_visible(false);
+                        w.visible = false;
+                        self.hidden_with_main.push(k);
+                    }
+                }
+            } else {
+                self.show_hidden_companions();
+            }
+            return;
+        }
         let owned = platform::OWNED_FOLLOW_OWNER && self.win(WindowKey::Main).is_some_and(|w| w.role == WindowRole::Main);
         for k in WindowKey::ALL {
             if owned && k != WindowKey::Main {
@@ -318,6 +339,17 @@ impl App {
             }
             if let Some(w) = self.win(k).filter(|w| w.visible) {
                 w.window.set_minimized(on);
+            }
+        }
+    }
+
+    /// Shows again the companions hidden when the main window was minimized.
+    fn show_hidden_companions(&mut self) {
+        for k in std::mem::take(&mut self.hidden_with_main) {
+            let wanted = self.wanted_visible(k);
+            if let Some(w) = self.win_mut(k).filter(|_| wanted) {
+                w.window.set_visible(true);
+                w.visible = true;
             }
         }
     }
@@ -1595,10 +1627,15 @@ impl ApplicationHandler<AppEvent> for App {
                 if let Some(w) = self.win_mut(k) {
                     w.focused = f;
                 }
+                if f && k == WindowKey::Main {
+                    // Back from the Dock: so are the companions.
+                    self.show_hidden_companions();
+                }
                 if f {
                     // Clicked, the window comes up alone on macOS; its
-                    // companions come up with it, under it.
-                    let order = raise_order(k, |o| self.win(o).is_some_and(|w| w.visible));
+                    // companions come up with it, under it. A minimized one
+                    // stays in the Dock: bringing it up would restore it.
+                    let order = raise_order(k, |o| self.win(o).is_some_and(|w| w.visible && w.window.is_minimized() != Some(true)));
                     let windows: Vec<&Window> = order.iter().filter_map(|&o| self.win(o)).map(|w| &*w.window).collect();
                     self.platform.raise_together(&windows);
                 }
