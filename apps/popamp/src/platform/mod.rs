@@ -102,6 +102,7 @@ pub enum WindowRole {
 
 /// Which pixels of a window show: `w` x `h` of them, each `scale` times
 /// bigger on the screen.
+#[derive(Clone)]
 pub struct Mask {
     pub w: i32,
     pub h: i32,
@@ -109,9 +110,18 @@ pub struct Mask {
     pub scale: Scale,
 }
 
+impl Mask {
+    /// Whether the window shows its pixel at `(x, y)`, counted in the
+    /// desktop's units from its top-left corner.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn covers(&self, x: i32, y: i32) -> bool {
+        let (mx, my) = (self.scale.skin(x), self.scale.skin(y));
+        x >= 0 && y >= 0 && mx < self.w && my < self.h && self.on.get((my * self.w + mx) as usize).copied().unwrap_or(false)
+    }
+}
+
 /// The visible part of a window as `(x, y, w, h)` rectangles in screen
 /// pixels: one per horizontal run of the mask.
-#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn shape_rects(mask: Option<&Mask>, size: (i32, i32)) -> Vec<(i16, i16, u16, u16)> {
     let whole = vec![(0, 0, size.0 as u16, size.1 as u16)];
     let Some(Mask { w, h, on: mask, scale }) = mask else { return whole };
@@ -181,6 +191,17 @@ mod tests {
         // At x1.5 the runs meet without gaps: rows 0..2 and 2..3.
         let x15 = Scale::new(150, Scaling::Sharp);
         assert_eq!(shape_rects(Some(&region(&rect, 6, 3, x15)), (9, 5)), [(2, 0, 6, 2), (2, 2, 6, 1)]);
+    }
+
+    #[test]
+    fn the_cursor_is_over_a_shape_only_on_its_pixels() {
+        // A 4x2 rectangle at (1, 0) in a 6x3 window, shown at x2.
+        let rect = vec![vec![(1, 0), (5, 0), (5, 2), (1, 2)]];
+        let m = region(&rect, 6, 3, Scale::new(200, Scaling::Sharp));
+        assert!(m.covers(2, 0) && m.covers(9, 3));
+        assert!(!m.covers(1, 0), "left of the shape");
+        assert!(!m.covers(4, 5), "below it");
+        assert!(!m.covers(-1, 0) && !m.covers(100, 1), "outside the window");
     }
 
     #[test]

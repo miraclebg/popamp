@@ -119,6 +119,8 @@ pub struct App {
     drop_time: Instant,
     seen_pl_dirty: u64,
     next_frame: Instant,
+    /// When a shaped window next looks where the cursor is (macOS).
+    next_poll: Instant,
     last_slow: Instant,
     start_minimized: bool,
     popup_focus_check: Option<Instant>,
@@ -155,6 +157,7 @@ impl App {
             drop_time: Instant::now(),
             seen_pl_dirty: u64::MAX,
             next_frame: Instant::now(),
+            next_poll: Instant::now(),
             last_slow: Instant::now(),
             start_minimized,
             popup_focus_check: None,
@@ -731,7 +734,10 @@ impl App {
                 Event::None
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                match form_key(&event, self.mods.control_key() || self.mods.alt_key()) {
+                match form_key(
+                    &event,
+                    self.mods.control_key() || self.mods.alt_key() || (cfg!(target_os = "macos") && self.mods.super_key()),
+                ) {
                     Some(k) => form.key(k),
                     None => return,
                 }
@@ -1031,10 +1037,33 @@ impl App {
 
     // --- input -----------------------------------------------------------------
 
+    /// ⌘V: adds the copied files, or the copied links and paths, to the
+    /// playlist, as `/ADD` would.
+    #[cfg(target_os = "macos")]
+    fn paste(&mut self, el: &ActiveEventLoop) {
+        let (files, text) = self.platform.clipboard();
+        let items = crate::mac_keys::paste_items(files, text);
+        if items.is_empty() {
+            return;
+        }
+        self.model.on_remote(vec![crate::cli::Remote::Add(items)]);
+        self.after_model(el);
+        self.redraw_all();
+    }
+
+    /// The modifiers held, as the Mac key table reads them.
+    #[cfg(target_os = "macos")]
+    fn mac_mods(&self) -> crate::mac_keys::Mods {
+        let m = self.mods;
+        crate::mac_keys::Mods { cmd: m.super_key(), ctrl: m.control_key(), alt: m.alt_key(), shift: m.shift_key() }
+    }
+
     fn input(&self, k: WindowKey, right: bool, double: bool) -> Input {
         let s = self.scale(k);
         let c = self.win(k).map(|w| w.cursor).unwrap_or((0, 0));
-        Input { x: s.skin(c.0), y: s.skin(c.1), right, shift: self.mods.shift_key(), ctrl: self.mods.control_key(), double }
+        // Popamp's Ctrl+click is ⌘+click on a Mac.
+        let ctrl = if cfg!(target_os = "macos") { self.mods.super_key() } else { self.mods.control_key() };
+        Input { x: s.skin(c.0), y: s.skin(c.1), right, shift: self.mods.shift_key(), ctrl, double }
     }
 
     fn handle_out(&mut self, el: &ActiveEventLoop, k: WindowKey, out: Out) {
@@ -1137,9 +1166,29 @@ impl App {
             self.render(k);
             return;
         }
+        #[cfg(not(target_os = "macos"))]
         let (ctrl, shift, alt) = (self.mods.control_key(), self.mods.shift_key(), self.mods.alt_key());
         use Command as C;
         use KeyCode as K;
+        // A Mac's keys become the ones below, or a Mac action of their own.
+        #[cfg(target_os = "macos")]
+        let (code, ctrl, alt, shift) = {
+            use crate::mac_keys::Mac;
+            match crate::mac_keys::translate(code, self.mac_mods(), k) {
+                Mac::Key { code, ctrl, alt, shift } => (code, ctrl, alt, shift),
+                Mac::Paste => return self.paste(el),
+                Mac::Close => {
+                    let c = match k {
+                        WindowKey::Main => C::Exit,
+                        WindowKey::Eq => C::ToggleEqWindow,
+                        WindowKey::Playlist => C::TogglePlaylistWindow,
+                    };
+                    return self.run(el, c);
+                }
+                Mac::Minimize => return self.run(el, C::Minimize),
+                Mac::Nothing => return,
+            }
+        };
         // Window-specific keys first.
         if k == WindowKey::Eq && !ctrl && !alt {
             const UP: [K; 10] =
@@ -1499,7 +1548,16 @@ fn window_icon() -> Option<winit::window::Icon> {
 
 impl ApplicationHandler<AppEvent> for App {
     fn new_events(&mut self, el: &ActiveEventLoop, cause: StartCause) {
-        if matches!(cause, StartCause::ResumeTimeReached { .. } | StartCause::Poll) || Instant::now() >= self.next_frame {
+        // A shaped window looks where the cursor is 30 times a second, on a
+        // clock of its own, so the windows are not drawn more often for it.
+        let tracking = self.platform.tracks_cursor();
+        if tracking && Instant::now() >= self.next_poll {
+            self.next_poll = Instant::now() + Duration::from_millis(33);
+            let windows: Vec<&Window> = WindowKey::ALL.iter().filter_map(|&k| self.win(k)).map(|w| &*w.window).collect();
+            self.platform.track_cursor(&windows, self.drag.is_some() || self.capture.is_some());
+        }
+        let frame_due = Instant::now() >= self.next_frame || (!tracking && matches!(cause, StartCause::ResumeTimeReached { .. }));
+        if matches!(cause, StartCause::Poll) || frame_due {
             let s = self.model.settings();
             let fps = if self.model.state() == PlayState::Playing && s.sa != 0 { s.vis_fps.max(1) } else { 6 };
             self.next_frame = Instant::now() + Duration::from_millis(1000 / fps as u64);
@@ -1533,7 +1591,8 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
         }
-        el.set_control_flow(ControlFlow::WaitUntil(self.next_frame));
+        let wake = if self.platform.tracks_cursor() { self.next_frame.min(self.next_poll) } else { self.next_frame };
+        el.set_control_flow(ControlFlow::WaitUntil(wake));
     }
 
     fn resumed(&mut self, el: &ActiveEventLoop) {
@@ -1688,11 +1747,16 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 self.mouse_moved(k);
             }
-            WindowEvent::MouseInput { state, button, .. } => match state {
-                ElementState::Pressed => self.mouse_down(el, k, button),
-                ElementState::Released if button == MouseButton::Left => self.mouse_up(el, k),
-                _ => {}
-            },
+            WindowEvent::MouseInput { state, button, .. } => {
+                // Ctrl+click is a right click on a Mac, pressed and released.
+                #[cfg(target_os = "macos")]
+                let button = crate::mac_keys::button(button, self.mac_mods());
+                match state {
+                    ElementState::Pressed => self.mouse_down(el, k, button),
+                    ElementState::Released if button == MouseButton::Left => self.mouse_up(el, k),
+                    _ => {}
+                }
+            }
             WindowEvent::MouseWheel { delta, .. } => {
                 let steps = match delta {
                     MouseScrollDelta::LineDelta(_, y) => y.round() as i32,

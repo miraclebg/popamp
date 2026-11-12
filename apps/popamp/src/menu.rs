@@ -48,6 +48,9 @@ pub struct MenuItem {
 
 impl MenuItem {
     pub fn action(label: &str, accel: &str, action: MenuAction) -> Self {
+        // A Mac shows its own shortcuts.
+        #[cfg(target_os = "macos")]
+        let accel = &crate::mac_keys::label(accel);
         Self { label: label.into(), accel: accel.into(), action: Some(action), checked: false, sub: vec![], separator: false }
     }
     pub fn cmd(label: &str, accel: &str, c: Command) -> Self {
