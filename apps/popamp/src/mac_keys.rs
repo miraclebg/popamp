@@ -116,7 +116,12 @@ pub fn paste_items(files: Vec<String>, text: Option<String>) -> Vec<String> {
     if !files.is_empty() {
         return files;
     }
-    let usable = |l: &&str| l.starts_with("http://") || l.starts_with("https://") || std::path::Path::new(l).exists();
+    // Only whole paths: a word such as "Library" names a folder relative to
+    // `/`, where an app started from Finder runs.
+    let usable = |l: &&str| {
+        let path = std::path::Path::new(l);
+        l.starts_with("http://") || l.starts_with("https://") || (path.is_absolute() && path.exists())
+    };
     text.map(|t| t.lines().map(str::trim).filter(|l| !l.is_empty()).filter(usable).map(str::to_string).collect()).unwrap_or_default()
 }
 
@@ -212,5 +217,12 @@ mod tests {
         let text = format!("https://ice1.somafm.com/groovesalad-128-mp3\n\n  {dir}  \nhello there\n/popamp/none.mp3\nftp://x");
         assert_eq!(paste_items(vec![], Some(text)), ["https://ice1.somafm.com/groovesalad-128-mp3".to_string(), dir]);
         assert!(paste_items(vec![], None).is_empty());
+    }
+
+    // An app started from Finder runs in `/`, where "Library" or "Users"
+    // are folders: a copied word must not add one.
+    #[test]
+    fn a_copied_word_is_not_a_path() {
+        assert!(paste_items(vec![], Some("src".into())).is_empty(), "src exists beside the crate's tests");
     }
 }

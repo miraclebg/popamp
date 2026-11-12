@@ -53,7 +53,12 @@ impl Platform {
         let mut shapes = self.shapes.borrow_mut();
         shapes.retain(|s| s.id != window.id());
         match mask {
-            Some(m) => shapes.push(Shaped { id: window.id(), mask: m.clone(), takes_mouse: Cell::new(true) }),
+            Some(m) => {
+                // Taking the mouse, as the new entry says: the old one may
+                // have turned it off while the cursor was beside the shape.
+                let _ = window.set_cursor_hittest(true);
+                shapes.push(Shaped { id: window.id(), mask: m.clone(), takes_mouse: Cell::new(true) });
+            }
             None => {
                 let _ = window.set_cursor_hittest(true);
             }
@@ -266,6 +271,9 @@ mod layer {
         .ok_or("no mask image")?;
         let mask = CALayer::new();
         mask.setFrame(layer.bounds());
+        // One pixel per point, stretched on Retina: whole pixels, no soft edge.
+        // SAFETY: Core Animation's constant for nearest-pixel filtering.
+        mask.setMagnificationFilter(unsafe { objc2_quartz_core::kCAFilterNearest });
         // SAFETY: a CGImage is a valid layer content; a CALayer a valid mask.
         unsafe {
             mask.setContents(Some(image.as_ref()));
