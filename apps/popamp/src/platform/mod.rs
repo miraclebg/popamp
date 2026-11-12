@@ -7,15 +7,15 @@ use crate::scale::Scale;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use windows::{attributes, use_parent_console, Platform, OWNED_FOLLOW_OWNER};
+pub use windows::{attributes, use_parent_console, Platform, OWNED_FOLLOW_OWNER, SKIN_COUNTS_IN_POINTS};
 #[cfg(linux_like)]
 mod x11;
 #[cfg(linux_like)]
-pub use x11::{attributes, Platform, OWNED_FOLLOW_OWNER};
+pub use x11::{attributes, Platform, OWNED_FOLLOW_OWNER, SKIN_COUNTS_IN_POINTS};
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::{attributes, Platform, OWNED_FOLLOW_OWNER};
+pub use macos::{attributes, Platform, OWNED_FOLLOW_OWNER, SKIN_COUNTS_IN_POINTS};
 
 /// What a window is for, which decides how the window manager treats it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

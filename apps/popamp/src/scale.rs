@@ -14,8 +14,10 @@ pub struct Scale {
 impl Scale {
     pub const ONE: Scale = Scale { pct: 100, mode: Scaling::Nearest };
 
-    pub fn of(s: &Settings) -> Scale {
-        Scale::new(if s.dsize { s.zoom } else { 100 }, s.wsz_scaling)
+    /// The window scale `s` asks for, on a screen with `backing_pct`
+    /// pixels per 100 of the units the zoom counts in.
+    pub fn of(s: &Settings, backing_pct: i32) -> Scale {
+        Scale::new(if s.dsize { s.zoom } else { 100 } * backing_pct / 100, s.wsz_scaling)
     }
 
     /// `pct` screen pixels per 100 skin pixels.
@@ -141,11 +143,11 @@ mod tests {
 
     #[test]
     fn double_size_switches_to_the_chosen_zoom() {
-        assert_eq!(Scale::of(&settings(false, 150, Scaling::Sharp)).px(275), 275);
-        let s = Scale::of(&settings(true, 150, Scaling::Sharp));
+        assert_eq!(Scale::of(&settings(false, 150, Scaling::Sharp), 100).px(275), 275);
+        let s = Scale::of(&settings(true, 150, Scaling::Sharp), 100);
         assert_eq!((s.px(275), s.px(116)), (413, 174));
         assert_eq!((s.skin(0), s.skin(2), s.skin(3), s.skin(412)), (0, 1, 2, 274));
-        assert_eq!(Scale::of(&settings(true, 250, Scaling::Integer)).px(10), 20, "integer rounds down");
+        assert_eq!(Scale::of(&settings(true, 250, Scaling::Integer), 100).px(10), 20, "integer rounds down");
     }
 
     fn strip(px: &[u32]) -> Bitmap {
@@ -163,7 +165,7 @@ mod tests {
     #[test]
     fn whole_multiples_copy_pixels_in_any_mode() {
         let src = strip(&[0x000000, 0xffffff]);
-        let sharp = Scale::of(&settings(true, 200, Scaling::Sharp));
+        let sharp = Scale::of(&settings(true, 200, Scaling::Sharp), 100);
         assert_eq!(present(sharp, &src, 4, 2), [0, 0, 0xffffff, 0xffffff, 0, 0, 0xffffff, 0xffffff]);
     }
 
@@ -171,16 +173,16 @@ mod tests {
     fn sharp_blends_only_the_pixel_on_an_edge() {
         // Two pixels at x1.5: black, a half-and-half column, white.
         let src = strip(&[0x000000, 0xffffff]);
-        let sharp = Scale::of(&settings(true, 150, Scaling::Sharp));
+        let sharp = Scale::of(&settings(true, 150, Scaling::Sharp), 100);
         assert_eq!(present(sharp, &src, 3, 1), [0x000000, 0x808080, 0xffffff]);
-        let nearest = Scale::of(&settings(true, 150, Scaling::Nearest));
+        let nearest = Scale::of(&settings(true, 150, Scaling::Nearest), 100);
         assert_eq!(present(nearest, &src, 3, 1), [0x000000, 0x000000, 0xffffff]);
     }
 
     #[test]
     fn flat_areas_stay_flat() {
         let src = strip(&[0x123456; 7]);
-        let sharp = Scale::of(&settings(true, 175, Scaling::Sharp));
+        let sharp = Scale::of(&settings(true, 175, Scaling::Sharp), 100);
         assert!(present(sharp, &src, 12, 2).iter().all(|&p| p == 0x123456));
     }
 }
