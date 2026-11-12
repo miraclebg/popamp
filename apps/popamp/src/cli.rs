@@ -192,7 +192,7 @@ fn absolutize(f: String) -> String {
 }
 
 pub const HELP: &str = "\
-Popamp - a Winamp-style audio player for Linux
+Popamp - a Winamp-style audio player for macOS, Linux and Windows
 
 Usage: popamp [OPTIONS] [FILES/URLS...]
 

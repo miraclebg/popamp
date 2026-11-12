@@ -1352,7 +1352,7 @@ impl Model {
             C::ToggleVis => self.exec(C::CycleVisMode),
             C::About => {
                 let text = format!(
-                    "{}\n\nA Winamp-style audio player for Linux, written in Rust.\nDecoding by Symphonia. Classic (.wsz) and vector (.psz) skins.\n\nConfig: {}",
+                    "{}\n\nA Winamp-style audio player for macOS, Linux and Windows, written in Rust.\nDecoding by Symphonia. Classic (.wsz) and vector (.psz) skins.\n\nConfig: {}",
                     crate::edition::title(),
                     self.config.path().display()
                 );
@@ -2023,6 +2023,14 @@ mod tests {
         assert_eq!(m.settings().eq_bands()[0], 31);
         m.exec(Command::EqLoadDefault);
         assert_eq!(m.settings().eq_bands()[0], 10);
+    }
+
+    #[test]
+    fn about_names_every_system_popamp_runs_on() {
+        let mut m = with_songs(0);
+        m.exec(Command::About);
+        let Some(UiReq::Dialog(DialogKind::Info, Request::Info { text, .. })) = m.ui.last() else { panic!("no About") };
+        assert!(text.contains("macOS, Linux and Windows"), "{text}");
     }
 
     #[test]

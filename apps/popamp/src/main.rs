@@ -1,4 +1,4 @@
-//! Popamp: a Winamp-style skinnable audio player for Linux and Windows.
+//! Popamp: a Winamp-style skinnable audio player for macOS, Linux and Windows.
 
 // A window program on Windows, so none opens a console of its own; output
 // for the command line goes to the console it was started from.

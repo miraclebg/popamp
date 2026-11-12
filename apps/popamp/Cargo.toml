@@ -1,6 +1,6 @@
 [package]
 name = "popamp"
-description = "A Winamp-style skinnable audio player for Linux and Windows"
+description = "A Winamp-style skinnable audio player for macOS, Linux and Windows"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
