@@ -64,7 +64,9 @@ CI and under Proton; reports from real machines are welcome.
 
 ### macOS
 
-macOS 12 or newer on Apple Silicon. The disk images need nothing else:
+macOS 12 or newer on Apple Silicon. The macOS version is experimental and
+maintained by the community: a release whose macOS build fails ships
+without it. The disk images need nothing else:
 sound goes through CoreAudio, fonts are found through CoreText, dialogs are
 the Mac's own, and Popamp.app carries libopus, libopenmpt and the MIDI
 SoundFont. Settings and skins live in `~/Library/Application Support/popamp`.

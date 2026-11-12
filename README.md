@@ -19,7 +19,7 @@
 Popamp is a desktop music player in the spirit of Winamp 2: a main
 window, a 10-band equalizer and a playlist that snap together, and a
 different look whenever you want one. It is written in Rust and runs on
-Linux, Windows and macOS.
+Linux, Windows and, experimentally, macOS.
 
 - **Sharp at any size.** Popamp's own skins are drawn as vectors, so they
   stay crisp from ×1 to ×3 in steps of a quarter, on any monitor.
@@ -82,7 +82,7 @@ with [plug-ins](docs/plugins.md) such as YouTube and visualizers.
 | openSUSE, Fedora | add the [repository](docs/building.md#opensuse-and-fedora), then `sudo zypper install popamp` or `sudo dnf install popamp` |
 | Any other Linux | `Popamp-<version>-linux-x86_64.AppImage`: `chmod +x` it and run it |
 | Windows 10 or 11 | `Popamp-<version>-windows-x86_64-setup.exe`, or the portable `…-portable.zip`: unpack it anywhere and run `popamp.exe` |
-| macOS 12 or newer, Apple Silicon | `Popamp-<version>-macos-arm64.dmg`: open it and drag Popamp to Applications ([first start](docs/building.md#macos)) |
+| macOS 12 or newer, Apple Silicon (experimental) | `Popamp-<version>-macos-arm64.dmg`: open it and drag Popamp to Applications ([first start](docs/building.md#macos)) |
 
 Or build it yourself with Rust 1.96 or newer:
 

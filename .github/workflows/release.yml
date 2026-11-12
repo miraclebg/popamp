@@ -189,8 +189,10 @@ jobs:
           name: macos-arm64
           path: dist/*.dmg
 
+  # macOS is a community-maintained platform: a failing macOS job does not
+  # hold the release back, which then ships without the disk images.
   release:
-    if: github.ref_type == 'tag'
+    if: always() && github.ref_type == 'tag' && needs.linux.result == 'success' && needs.windows.result == 'success'
     needs: [linux, windows, macos]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
