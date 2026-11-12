@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/popamp/popamp/actions/workflows/ci.yml"><img src="https://github.com/popamp/popamp/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows-8a5cf6" alt="Linux and Windows">
+  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-8a5cf6" alt="Linux, Windows and macOS">
   <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="MIT OR Apache-2.0"></a>
 </p>
 
@@ -19,7 +19,7 @@
 Popamp is a desktop music player in the spirit of Winamp 2: a main
 window, a 10-band equalizer and a playlist that snap together, and a
 different look whenever you want one. It is written in Rust and runs on
-Linux and Windows.
+Linux, Windows and macOS.
 
 - **Sharp at any size.** Popamp's own skins are drawn as vectors, so they
   stay crisp from ×1 to ×3 in steps of a quarter, on any monitor.
@@ -66,8 +66,8 @@ those skins went soft and blurry, even at double size.
 So Popamp took Linamp's code, brought over the best of Ferramp's
 features, and added one new idea: skins drawn as vectors, sharp at any
 size, fractional ones included. Classic skins got the same care. Then
-came plug-ins that cannot reach more than you allow, and a Windows
-version, so one player and its skins work on both systems.
+came plug-ins that cannot reach more than you allow, and Windows and
+macOS versions, so one player and its skins work on all three systems.
 
 ## Install
 
@@ -82,6 +82,7 @@ with [plug-ins](docs/plugins.md) such as YouTube and visualizers.
 | openSUSE, Fedora | add the [repository](docs/building.md#opensuse-and-fedora), then `sudo zypper install popamp` or `sudo dnf install popamp` |
 | Any other Linux | `Popamp-<version>-linux-x86_64.AppImage`: `chmod +x` it and run it |
 | Windows 10 or 11 | `Popamp-<version>-windows-x86_64-setup.exe`, or the portable `…-portable.zip`: unpack it anywhere and run `popamp.exe` |
+| macOS 12 or newer, Apple Silicon | `Popamp-<version>-macos-arm64.dmg`: open it and drag Popamp to Applications ([first start](docs/building.md#macos)) |
 
 Or build it yourself with Rust 1.96 or newer:
 

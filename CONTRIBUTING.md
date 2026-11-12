@@ -50,9 +50,9 @@ commit them with the change.
 | Crate | Contents |
 |---|---|
 | `crates/popamp-core` | settings, playlist model and formats, title formatting, EQF, command ids |
-| `crates/popamp-audio` | decoding, EQ, limiter, ALSA and WASAPI output, engine thread, sources, streams, covers |
+| `crates/popamp-audio` | decoding, EQ, limiter, ALSA, WASAPI and CoreAudio output, engine thread, sources, streams, covers |
 | `crates/popamp-skin` | skin loading, sprite geometry, default skin generator |
-| `apps/popamp` | windows, menus, input, dialogs, IPC, media controls (MPRIS, SMTC) |
+| `apps/popamp` | windows, menus, input, dialogs, IPC, media controls (MPRIS, SMTC); on macOS also the key table (`mac_keys.rs`) and files from Finder (`finder.rs`) |
 
 What was tested and how is in [docs/testing.md](docs/testing.md); its
 "Not yet tested by hand" list is a good place to start.
