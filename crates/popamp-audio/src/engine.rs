@@ -1059,6 +1059,48 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_default_device_plays_a_track_at_its_own_speed() {
+        if crate::output::available().is_err() {
+            eprintln!("no sound output device: skipped");
+            return;
+        }
+        let wav = silent_wav("macos-speed", 1000);
+        let (tx, events) = crossbeam_channel::unbounded();
+        let engine = Engine::spawn(crate::output::DEFAULT.into(), Arc::new(Sources::default()), move |e| {
+            let _ = tx.send(e);
+        });
+        let started = std::time::Instant::now();
+        engine.send(EngineCmd::Open { id: 1, location: wav.to_string_lossy().into(), start_ms: 0 });
+        assert_eq!(events_until_finished(&events), ["started 1", "finished 1"]);
+        let _ = std::fs::remove_file(wav);
+        assert!(started.elapsed() >= Duration::from_millis(800), "{:?}", started.elapsed());
+    }
+
+    // Picking another track while paused: the new one plays, as on Linux.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_track_opened_while_paused_plays() {
+        if crate::output::available().is_err() {
+            eprintln!("no sound output device: skipped");
+            return;
+        }
+        let (first, second) = (silent_wav("macos-paused-1", 2000), silent_wav("macos-paused-2", 300));
+        let (tx, events) = crossbeam_channel::unbounded();
+        let engine = Engine::spawn(crate::output::DEFAULT.into(), Arc::new(Sources::default()), move |e| {
+            let _ = tx.send(e);
+        });
+        engine.send(EngineCmd::Open { id: 1, location: first.to_string_lossy().into(), start_ms: 0 });
+        assert!(matches!(events.recv_timeout(Duration::from_secs(2)), Ok(EngineEvent::Started { id: 1, .. })));
+        engine.send(EngineCmd::Pause(true));
+        engine.send(EngineCmd::Open { id: 2, location: second.to_string_lossy().into(), start_ms: 0 });
+        let seen = events_until_finished(&events);
+        let _ = (std::fs::remove_file(first), std::fs::remove_file(second));
+        assert_eq!(seen.last().map(String::as_str), Some("finished 2"), "{seen:?}");
+        assert!(seen.iter().all(|s| !s.contains("Error")), "{seen:?}");
+    }
+
     // The program is a shell script.
     #[cfg(unix)]
     #[test]
@@ -1072,7 +1114,7 @@ mod tests {
     }
 
     /// A worker driven by hand, playing `location` on ALSA's `null`.
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     fn worker_playing(location: &str) -> Worker {
         let sources = Sources::default();
         sources.set_plugins(vec![Arc::new(ShellSource)]);
@@ -1086,8 +1128,9 @@ mod tests {
         w
     }
 
-    // ALSA's `plug:null` is a second device that plays nothing.
-    #[cfg(unix)]
+    // ALSA's `plug:null` is a second device that plays nothing, so these
+    // need ALSA.
+    #[cfg(linux_like)]
     #[test]
     fn a_new_device_goes_on_from_where_the_track_was() {
         let wav = silent_wav("device", 1000);
@@ -1103,7 +1146,7 @@ mod tests {
         assert!(w.state == PlayState::Playing && w.position_ms() > after, "{:?} at {} ms", w.state, w.position_ms());
     }
 
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     #[test]
     fn a_stream_goes_on_counting_on_the_new_device() {
         let mut w = worker_playing("live:head -c 384000 /dev/zero");
@@ -1113,7 +1156,7 @@ mod tests {
         assert!(before > 0 && w.position_ms() == before, "{before} ms, then {} ms", w.position_ms());
     }
 
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     #[test]
     fn a_paused_track_resumes_on_the_new_device_where_it_was() {
         let wav = silent_wav("device-paused", 1000);

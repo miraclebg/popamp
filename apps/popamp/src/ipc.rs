@@ -248,10 +248,10 @@ pub fn serve(path: PathBuf, deliver: impl Fn(Request) + Send + 'static) -> std::
 }
 
 /// Reads one client's commands, hands them over and writes the reply.
-fn answer<S>(client: &S, deliver: &impl Fn(Request))
-where
-    for<'a> &'a S: Read + Write,
-{
+/// `client` is a shared reference to the connection, which reads and
+/// writes as itself. (A bound on all references, `for<'a> &'a S`, would
+/// send the compiler round objc2's impls for ever on macOS.)
+fn answer<S: Read + Write + Copy>(client: S, deliver: &impl Fn(Request)) {
     let mut reader = BufReader::new(client);
     let mut remotes = Vec::new();
     let mut line = String::new();
@@ -275,6 +275,15 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn socket_paths_fit_a_macos_socket_address() {
+        for class in ["default".to_string(), format!("new-{}", u32::MAX)] {
+            let path = socket_path(&class);
+            assert!(path.as_os_str().len() < 104, "{}", path.display());
+        }
+    }
 
     #[test]
     fn encode_decode_round_trip() {

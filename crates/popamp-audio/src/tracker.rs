@@ -38,14 +38,15 @@ struct Lib {
 
 #[cfg(windows)]
 const LIB_NAME: &str = "libopenmpt.dll";
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+const LIB_NAME: &str = "libopenmpt.0.dylib";
+#[cfg(linux_like)]
 const LIB_NAME: &str = "libopenmpt.so.0";
 
 fn lib() -> Result<&'static Lib, String> {
     static LIB: OnceLock<Result<Lib, String>> = OnceLock::new();
     LIB.get_or_init(|| unsafe {
-        let lib =
-            libloading::Library::new(LIB_NAME).map_err(|e| format!("tracker modules need libopenmpt: cannot load {LIB_NAME}: {e}"))?;
+        let lib = crate::dylib::load(LIB_NAME).map_err(|e| format!("tracker modules need libopenmpt: {e}"))?;
         macro_rules! sym {
             ($name:literal) => {
                 *lib.get(concat!($name, "\0").as_bytes()).map_err(|e| format!("libopenmpt: missing {}: {e}", $name))?
