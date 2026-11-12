@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-12
+
 ### Added
 
 - **Opus:** `.opus` files (and Opus in Matroska and WebM) play, seek and
@@ -32,6 +34,24 @@ All notable changes to this project are documented here. The format follows
   plays local files of the extensions it lists, in folders, playlists,
   CUE sheets and the Open dialog. It reads only the file it plays and
   may ask for no permissions. Popamp's own formats always come first.
+
+- **Crossfade** (Preferences > "Crossfade (ms)", off by default): the
+  end of a track overlaps the start of the next one. Tracks of different
+  sample rates still change gapless, without the overlap.
+- **History** (`Ctrl+H`): the last 5000 plays, searchable, kept in
+  `history.txt` in the settings folder.
+- **ReplayGain scanner:** select tracks, then *Scan ReplayGain* in the
+  playlist's menu. It measures track and album gain (EBU R128) and keeps
+  the values in `replaygain.txt`; the audio files are never written.
+- **Tray icon** on Linux (StatusNotifierItem) and Windows, on by default:
+  a click brings Popamp up, a middle click plays or pauses, and its menu
+  has the transport buttons. "Minimize to the tray" hides the windows
+  into the icon, as Winamp does, also with `/STARTMIN`.
+- **Track notifications** on Linux, with the cover, off by default.
+- **Global hotkeys** as in Winamp (Ctrl+Alt+Insert, Home, End, Page
+  Up/Down, arrows), off by default. On X11 and Windows; under Wayland
+  through the desktop's GlobalShortcuts portal.
+- The tray, notifications and hotkeys are set in Preferences > Desktop.
 
 ### Fixed
 
@@ -378,7 +398,8 @@ First release.
 - **Packaging:** desktop entry, `.wsz` MIME type, icons and a per-user
   install script.
 
-[Unreleased]: https://github.com/popamp/popamp/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/popamp/popamp/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/popamp/popamp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/popamp/popamp/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/popamp/popamp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/popamp/popamp/compare/v0.5.0...v0.6.0
