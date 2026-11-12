@@ -731,7 +731,10 @@ impl App {
                 Event::None
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                match form_key(&event, self.mods.control_key() || self.mods.alt_key()) {
+                match form_key(
+                    &event,
+                    self.mods.control_key() || self.mods.alt_key() || (cfg!(target_os = "macos") && self.mods.super_key()),
+                ) {
                     Some(k) => form.key(k),
                     None => return,
                 }
@@ -1031,10 +1034,19 @@ impl App {
 
     // --- input -----------------------------------------------------------------
 
+    /// The modifiers held, as the Mac key table reads them.
+    #[cfg(target_os = "macos")]
+    fn mac_mods(&self) -> crate::mac_keys::Mods {
+        let m = self.mods;
+        crate::mac_keys::Mods { cmd: m.super_key(), ctrl: m.control_key(), alt: m.alt_key(), shift: m.shift_key() }
+    }
+
     fn input(&self, k: WindowKey, right: bool, double: bool) -> Input {
         let s = self.scale(k);
         let c = self.win(k).map(|w| w.cursor).unwrap_or((0, 0));
-        Input { x: s.skin(c.0), y: s.skin(c.1), right, shift: self.mods.shift_key(), ctrl: self.mods.control_key(), double }
+        // Popamp's Ctrl+click is ⌘+click on a Mac.
+        let ctrl = if cfg!(target_os = "macos") { self.mods.super_key() } else { self.mods.control_key() };
+        Input { x: s.skin(c.0), y: s.skin(c.1), right, shift: self.mods.shift_key(), ctrl, double }
     }
 
     fn handle_out(&mut self, el: &ActiveEventLoop, k: WindowKey, out: Out) {
@@ -1137,9 +1149,29 @@ impl App {
             self.render(k);
             return;
         }
+        #[cfg(not(target_os = "macos"))]
         let (ctrl, shift, alt) = (self.mods.control_key(), self.mods.shift_key(), self.mods.alt_key());
         use Command as C;
         use KeyCode as K;
+        // A Mac's keys become the ones below, or a Mac action of their own.
+        #[cfg(target_os = "macos")]
+        let (code, ctrl, alt, shift) = {
+            use crate::mac_keys::Mac;
+            match crate::mac_keys::translate(code, self.mac_mods(), k) {
+                Mac::Key { code, ctrl, alt, shift } => (code, ctrl, alt, shift),
+                Mac::Paste => return,
+                Mac::Close => {
+                    let c = match k {
+                        WindowKey::Main => C::Exit,
+                        WindowKey::Eq => C::ToggleEqWindow,
+                        WindowKey::Playlist => C::TogglePlaylistWindow,
+                    };
+                    return self.run(el, c);
+                }
+                Mac::Minimize => return self.run(el, C::Minimize),
+                Mac::Nothing => return,
+            }
+        };
         // Window-specific keys first.
         if k == WindowKey::Eq && !ctrl && !alt {
             const UP: [K; 10] =
@@ -1688,11 +1720,16 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 self.mouse_moved(k);
             }
-            WindowEvent::MouseInput { state, button, .. } => match state {
-                ElementState::Pressed => self.mouse_down(el, k, button),
-                ElementState::Released if button == MouseButton::Left => self.mouse_up(el, k),
-                _ => {}
-            },
+            WindowEvent::MouseInput { state, button, .. } => {
+                // Ctrl+click is a right click on a Mac, pressed and released.
+                #[cfg(target_os = "macos")]
+                let button = crate::mac_keys::button(button, self.mac_mods());
+                match state {
+                    ElementState::Pressed => self.mouse_down(el, k, button),
+                    ElementState::Released if button == MouseButton::Left => self.mouse_up(el, k),
+                    _ => {}
+                }
+            }
             WindowEvent::MouseWheel { delta, .. } => {
                 let steps = match delta {
                     MouseScrollDelta::LineDelta(_, y) => y.round() as i32,

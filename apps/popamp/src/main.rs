@@ -21,6 +21,8 @@ mod headless;
 mod ipc;
 #[cfg(feature = "visualizers")]
 mod keep_awake;
+#[cfg(any(target_os = "macos", test))]
+mod mac_keys;
 mod media;
 mod menu;
 mod model;
