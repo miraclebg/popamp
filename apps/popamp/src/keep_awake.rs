@@ -23,7 +23,7 @@ pub fn spawn(wanted: impl Fn() -> bool + Send + 'static, stopped: impl Fn() -> b
 /// The freedesktop call is served by GNOME, KDE, Xfce, MATE and Cinnamon.
 /// A desktop without it just blanks as usual. Should the program die, the
 /// bus ends the hold along with the connection.
-#[cfg(unix)]
+#[cfg(linux_like)]
 mod os {
     use zbus::blocking::Connection;
 
@@ -52,6 +52,17 @@ mod os {
                 log::warn!("cannot let the screen sleep again: {e}");
             }
         }
+    }
+}
+
+/// Not there yet on macOS: the screen sleeps as usual.
+#[cfg(target_os = "macos")]
+mod os {
+    pub struct Hold;
+
+    pub fn hold() -> Option<Hold> {
+        log::warn!("cannot keep the screen on: not on macOS yet");
+        None
     }
 }
 

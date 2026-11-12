@@ -33,7 +33,9 @@ log.workspace = true
 env_logger.workspace = true
 jiff.workspace = true
 
-[target.'cfg(unix)'.dependencies]
+# X11, D-Bus: Linux and the other Unix systems, not macOS. Cargo cannot
+# see the `linux_like` cfg that build.rs sets, so it is spelled out here.
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 x11rb = { version = "0.13", features = ["shape"] }
 zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
 # The tray icon (StatusNotifierItem), on the same zbus and executor.

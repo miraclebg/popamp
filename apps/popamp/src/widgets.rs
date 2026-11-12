@@ -192,8 +192,20 @@ impl<A: Copy + PartialEq> Form<A> {
         }
     }
 
+    /// The texts of the labels, in the order they were added.
+    #[cfg(test)]
+    pub fn labels(&self) -> Vec<&str> {
+        self.controls
+            .iter()
+            .filter_map(|(_, w)| match w {
+                Widget::Label { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Whether check box `i` is ticked.
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     pub fn checked(&self, i: usize) -> bool {
         matches!(self.controls[i].1, Widget::Check { checked: true, .. })
     }
