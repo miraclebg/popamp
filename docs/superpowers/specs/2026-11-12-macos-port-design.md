@@ -241,6 +241,14 @@ tries one shaped `.wsz` skin. *My call:* if it works, shaped skins move
 into Stage 3 (classic skins are the contributor's priority); if not, they
 stay in Stage 5 and the spike's findings go into this document.
 
+**Spike result (2026-11-12, on the contributor's Mac).** Reference code:
+`docs/superpowers/spikes/2026-11-12-macos-shapes.patch` (this branch only).
+- **`softbuffer` drops alpha on macOS.** It presents with `CGImageAlphaInfo::NoneSkipFirst`, so it cannot make pixels transparent.
+- **A mask layer works without touching presentation.** `set_shape` sets the view layer's `mask` to a `CALayer` whose contents is a premultiplied-alpha `CGImage` built from `shape_rects`. Windows are created with `with_transparent(true)`. Apart from that, nothing outside `platform/macos.rs` changes.
+- **Seen:** an exact ellipse with the desktop showing around it; dragging works; the shadow appears to follow the shape, faintly.
+- **Not working: clicks outside the shape still reach the window.** AppKit does not pass them through a masked layer. The likely fix is to poll the cursor position while it is over a shaped window's rectangle and turn the window's hit-testing off outside the mask (winit's `set_cursor_hittest`, i.e. `ignoresMouseEvents`). That still needs proving.
+- **Decision (the spec's rule):** shaped skins move into Stage 3, as their own PR after the daily-use items. Click-through is part of that PR.
+
 ### Stage 3: daily use (several small PRs)
 
 1. **Retina size.** Popamp sizes windows in physical pixels (`zoom` percent
@@ -355,8 +363,8 @@ skins, radio from `.pls` in Finder and from Open URL.
 
 ### Stage 5: everything else
 
-- **Shaped skins** (`region.txt`), unless the spike after Stage 2 moved
-  them into Stage 3.
+- **Shaped skins** (`region.txt`): moved into Stage 3 by the spike after
+  Stage 2 (see its result).
 - **Media keys and Now Playing**: `media/nowplaying.rs` with
   `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter`, fed by the same
   `Snapshot`s, commands sent back the same way. Main-thread work is
