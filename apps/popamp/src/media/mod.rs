@@ -2,10 +2,7 @@
 //! The UI thread sends [`Snapshot`]s through [`Controls`]; each system's
 //! service turns them into its own notifications and sends method calls
 //! back as remote commands. MPRIS2 over D-Bus on Linux, the System Media
-//! Transport Controls on Windows, Now Playing on macOS (not yet).
-
-// The services' shared helpers go unused on macOS until Now Playing is there.
-#![cfg_attr(target_os = "macos", allow(dead_code))]
+//! Transport Controls on Windows, Now Playing on macOS.
 
 use crate::cli::Remote;
 use crate::ipc::Request;

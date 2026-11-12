@@ -1,8 +1,9 @@
 //! Global hotkeys: Ctrl+Alt with Insert, Home, End, Page Up/Down and the
 //! arrows work from any program, as in Winamp. Grabbed through X11 on
 //! Linux, asked of the desktop portal under Wayland, and registered with
-//! RegisterHotKey on Windows, on a thread of their own; a key another
-//! program holds already is left to it. Not on macOS yet.
+//! RegisterHotKey on Windows, on a thread of their own, and with Carbon's
+//! RegisterEventHotKey on macOS (⌃⌥ there); a key another program holds
+//! already is left to it.
 
 use popamp_core::Command;
 use std::sync::Arc;
@@ -14,7 +15,6 @@ mod portal;
 pub type Send = Arc<dyn Fn(Command) + std::marker::Send + Sync>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(target_os = "macos", allow(dead_code))]
 enum Key {
     Insert,
     Home,
@@ -28,7 +28,6 @@ enum Key {
 }
 
 /// Each key, pressed with Ctrl+Alt, and what it does.
-#[cfg_attr(target_os = "macos", allow(dead_code))]
 const BINDINGS: [(Key, Command); 9] = [
     (Key::Insert, Command::Play),
     (Key::Home, Command::Pause),
@@ -187,16 +186,156 @@ mod os {
     }
 }
 
-/// Not there yet on macOS: no keys are grabbed.
+/// Carbon's RegisterEventHotKey: the keys come as events to the
+/// application's own event target, on the main thread, from the run loop
+/// AppKit already runs. Unlike an event tap it asks for no Accessibility
+/// permission.
 #[cfg(target_os = "macos")]
 mod os {
-    use super::Send;
+    use super::{Key, Send, BINDINGS};
+    use std::ffi::c_void;
 
-    pub struct Grab;
+    type OsStatus = i32;
+    type Ref = *mut c_void;
+    type Handler = extern "C" fn(Ref, Ref, *mut c_void) -> OsStatus;
 
-    pub fn grab(_send: Send) -> Option<Grab> {
-        log::info!("global hotkeys are not there on macOS yet");
-        None
+    #[repr(C)]
+    struct EventTypeSpec {
+        class: u32,
+        kind: u32,
+    }
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct HotKeyId {
+        signature: u32,
+        id: u32,
+    }
+
+    #[link(name = "Carbon", kind = "framework")]
+    extern "C" {
+        fn GetApplicationEventTarget() -> Ref;
+        fn InstallEventHandler(
+            target: Ref,
+            handler: Handler,
+            count: usize,
+            types: *const EventTypeSpec,
+            data: *mut c_void,
+            out: *mut Ref,
+        ) -> OsStatus;
+        fn RemoveEventHandler(handler: Ref) -> OsStatus;
+        fn RegisterEventHotKey(code: u32, modifiers: u32, id: HotKeyId, target: Ref, options: u32, out: *mut Ref) -> OsStatus;
+        fn UnregisterEventHotKey(hotkey: Ref) -> OsStatus;
+        fn GetEventParameter(
+            event: Ref,
+            name: u32,
+            kind: u32,
+            actual: *mut u32,
+            size: usize,
+            actual_size: *mut usize,
+            out: *mut c_void,
+        ) -> OsStatus;
+    }
+
+    const KEYBOARD: u32 = u32::from_be_bytes(*b"keyb");
+    const HOTKEY_PRESSED: u32 = 6;
+    const DIRECT_OBJECT: u32 = u32::from_be_bytes(*b"----");
+    const HOTKEY_ID: u32 = u32::from_be_bytes(*b"hkid");
+    const SIGNATURE: u32 = u32::from_be_bytes(*b"popa");
+    /// ⌃ and ⌥: Carbon's controlKey and optionKey.
+    const CONTROL_OPTION: u32 = 0x1000 | 0x0800;
+
+    /// The key's virtual key code. Insert is where Help is on Mac keyboards.
+    pub fn mac_keycode(key: Key) -> u32 {
+        match key {
+            Key::Insert => 0x72,
+            Key::Home => 0x73,
+            Key::PageUp => 0x74,
+            Key::End => 0x77,
+            Key::PageDown => 0x79,
+            Key::Left => 0x7B,
+            Key::Right => 0x7C,
+            Key::Down => 0x7D,
+            Key::Up => 0x7E,
+        }
+    }
+
+    /// The registered keys, the event handler and what it sends with.
+    pub struct Grab {
+        handler: Ref,
+        hotkeys: Vec<Ref>,
+        send: *mut Send,
+    }
+
+    /// A hotkey was pressed: sends its command.
+    extern "C" fn pressed(_call: Ref, event: Ref, data: *mut c_void) -> OsStatus {
+        let mut id = HotKeyId::default();
+        // SAFETY: a hotkey event's direct object is its HotKeyId.
+        let status = unsafe {
+            GetEventParameter(
+                event,
+                DIRECT_OBJECT,
+                HOTKEY_ID,
+                std::ptr::null_mut(),
+                size_of::<HotKeyId>(),
+                std::ptr::null_mut(),
+                (&mut id as *mut HotKeyId).cast(),
+            )
+        };
+        if status == 0 && id.signature == SIGNATURE {
+            // SAFETY: `data` is the Grab's boxed Send, alive while the
+            // handler is installed.
+            let send = unsafe { &*(data as *const Send) };
+            if let Some((_, command)) = BINDINGS.get(id.id as usize) {
+                send(*command);
+            }
+        }
+        0
+    }
+
+    /// Installs the handler and registers each key; one another program
+    /// holds is left to it.
+    pub fn grab(send: Send) -> Option<Grab> {
+        let send = Box::into_raw(Box::new(send));
+        let types = [EventTypeSpec { class: KEYBOARD, kind: HOTKEY_PRESSED }];
+        let mut handler: Ref = std::ptr::null_mut();
+        // SAFETY: the application's target, a handler of Carbon's type and
+        // a pointer it hands back to it.
+        let status =
+            unsafe { InstallEventHandler(GetApplicationEventTarget(), pressed, types.len(), types.as_ptr(), send.cast(), &mut handler) };
+        if status != 0 {
+            log::warn!("cannot listen for global hotkeys (error {status})");
+            // SAFETY: the box made above, not handed to anyone.
+            drop(unsafe { Box::from_raw(send) });
+            return None;
+        }
+        let mut hotkeys = Vec::new();
+        for (n, (key, _)) in BINDINGS.iter().enumerate() {
+            let mut hotkey: Ref = std::ptr::null_mut();
+            let id = HotKeyId { signature: SIGNATURE, id: n as u32 };
+            // SAFETY: registering one key for the application's target.
+            let status = unsafe { RegisterEventHotKey(mac_keycode(*key), CONTROL_OPTION, id, GetApplicationEventTarget(), 0, &mut hotkey) };
+            if status == 0 {
+                hotkeys.push(hotkey);
+            } else {
+                log::info!("the global hotkey ⌃⌥{key:?} is taken by another program (error {status})");
+            }
+        }
+        Some(Grab { handler, hotkeys, send })
+    }
+
+    impl Drop for Grab {
+        fn drop(&mut self) {
+            // SAFETY: the keys and handler registered in `grab`; once they
+            // are gone nothing calls `pressed`, so the box can go.
+            unsafe {
+                for hotkey in &self.hotkeys {
+                    UnregisterEventHotKey(*hotkey);
+                }
+                RemoveEventHandler(self.handler);
+                drop(Box::from_raw(self.send));
+            }
+        }
     }
 }
 
@@ -290,10 +429,19 @@ mod os {
     }
 }
 
-// Each system's grab has its test; macOS has no grab yet.
-#[cfg(all(test, not(target_os = "macos")))]
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn each_hotkey_is_a_mac_key() {
+        assert_eq!(os::mac_keycode(Key::Home), 0x73);
+        assert_eq!(os::mac_keycode(Key::Insert), 0x72);
+        assert_eq!(os::mac_keycode(Key::Right), 0x7C);
+        let codes: std::collections::HashSet<u32> = BINDINGS.iter().map(|(k, _)| os::mac_keycode(*k)).collect();
+        assert_eq!(codes.len(), BINDINGS.len(), "no two keys share a code");
+    }
 
     #[test]
     #[cfg(linux_like)]
