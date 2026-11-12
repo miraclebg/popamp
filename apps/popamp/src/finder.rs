@@ -1,7 +1,8 @@
 //! Files Finder opens with Popamp (a double-click, "Open With", a drop on
-//! the Dock icon). macOS sends them as an Apple Event, not on the command
-//! line, and winit does not pass it on; this takes it and hands the files
-//! over as the control socket would.
+//! the Dock icon), and a click on the Dock icon of a running Popamp. macOS
+//! sends these as Apple Events, not on the command line, and winit does not
+//! pass them on; this takes them and hands them over as the control socket
+//! would.
 
 use crate::cli::Remote;
 use crate::ipc::Request;
@@ -16,6 +17,8 @@ use winit::event_loop::EventLoopProxy;
 /// of files.
 const CORE_EVENT_CLASS: u32 = u32::from_be_bytes(*b"aevt");
 const OPEN_DOCUMENTS: u32 = u32::from_be_bytes(*b"odoc");
+/// `'rapp'`: the Dock icon of the running app was clicked.
+const REOPEN_APPLICATION: u32 = u32::from_be_bytes(*b"rapp");
 const DIRECT_OBJECT: u32 = u32::from_be_bytes(*b"----");
 
 /// What the receiver needs: the way to the event loop.
@@ -38,15 +41,30 @@ define_class!(
         #[unsafe(method(willFinishLaunching:))]
         fn will_finish_launching(&self, _notification: &AnyObject) {
             log::debug!("listening for files from Finder");
-            // SAFETY: `self` has the selector, with the arguments it takes.
+            let events = NSAppleEventManager::sharedAppleEventManager();
+            // SAFETY: `self` has the selectors, with the arguments they take.
             unsafe {
-                NSAppleEventManager::sharedAppleEventManager().setEventHandler_andSelector_forEventClass_andEventID(
+                events.setEventHandler_andSelector_forEventClass_andEventID(
                     self,
                     sel!(openDocuments:withReplyEvent:),
                     CORE_EVENT_CLASS as _,
                     OPEN_DOCUMENTS as _,
-                )
-            };
+                );
+                events.setEventHandler_andSelector_forEventClass_andEventID(
+                    self,
+                    sel!(reopen:withReplyEvent:),
+                    CORE_EVENT_CLASS as _,
+                    REOPEN_APPLICATION as _,
+                );
+            }
+        }
+
+        /// The Dock icon was clicked: the windows come back, minimized or
+        /// hidden ones too.
+        #[unsafe(method(reopen:withReplyEvent:))]
+        fn reopen(&self, _event: &NSAppleEventDescriptor, _reply: &NSAppleEventDescriptor) {
+            let (tx, _rx) = crossbeam_channel::bounded(1);
+            let _ = self.ivars().proxy.send_event(AppEvent::Remote(Request { remotes: vec![Remote::Show], reply: tx }));
         }
 
         #[unsafe(method(openDocuments:withReplyEvent:))]
@@ -94,6 +112,12 @@ fn file_paths(list: &NSAppleEventDescriptor) -> Vec<String> {
 mod tests {
     use super::*;
     use objc2_foundation::{NSString, NSURL};
+
+    #[test]
+    fn the_dock_icon_and_finder_send_different_events() {
+        assert_eq!(REOPEN_APPLICATION, u32::from_be_bytes(*b"rapp"));
+        assert_ne!(REOPEN_APPLICATION, OPEN_DOCUMENTS);
+    }
 
     #[test]
     fn an_open_event_gives_the_paths_of_its_files() {
