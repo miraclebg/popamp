@@ -32,15 +32,19 @@ pub(crate) fn load(name: &str) -> Result<libloading::Library, String> {
 }
 
 /// The places to load the library `name` from on macOS, best first: the
-/// `Frameworks` folder of the app bundle `exe` is in, then Homebrew's
-/// folders (Apple Silicon, then Intel). Only whole paths: given a bare
-/// name, the system's loader also looks in the current folder, where
-/// anyone could have left a library of that name.
+/// `Frameworks` folder of the app bundle `exe` is in, if it is in one,
+/// then Homebrew's folders (Apple Silicon, then Intel). Only whole paths:
+/// given a bare name, the system's loader also looks in the current
+/// folder, where anyone could have left a library of that name; and a
+/// program outside a bundle (unpacked in `/tmp`, say) gets no folder
+/// beside its own.
 #[cfg(any(target_os = "macos", test))]
 pub(crate) fn macos_candidates(name: &str, exe: Option<&Path>) -> Vec<PathBuf> {
-    let bundle = exe.and_then(Path::parent).and_then(Path::parent).map(|contents| contents.join("Frameworks").join(name));
+    let named = |p: &Path, n: &str| p.file_name().is_some_and(|f| f == n);
+    let contents = exe.and_then(Path::parent).filter(|dir| named(dir, "MacOS")).and_then(Path::parent).filter(|dir| named(dir, "Contents"));
+    let bundle = contents.map(|contents| contents.join("Frameworks").join(name));
     let homebrew = ["/opt/homebrew/lib", "/usr/local/lib"].map(|dir| Path::new(dir).join(name));
-    bundle.into_iter().chain(homebrew).filter(|p| p.is_absolute()).collect()
+    bundle.into_iter().chain(homebrew).collect()
 }
 
 #[cfg(test)]
@@ -72,7 +76,13 @@ mod tests {
     // where anyone could have left a library of that name.
     #[test]
     fn macos_never_loads_by_bare_name() {
-        assert!(macos_candidates("x.dylib", Some(Path::new("popamp"))).iter().all(|p| p.is_absolute()));
+        assert!(macos_candidates("x.dylib", Some(Path::new("popamp"))).iter().all(|p| p.has_root()));
+    }
+
+    // Unpacked in /tmp, the folder beside the program's folder is anyone's.
+    #[test]
+    fn a_program_outside_an_app_bundle_has_no_bundle_to_look_in() {
+        assert_eq!(macos_candidates("x.dylib", Some(Path::new("/tmp/popamp-1.0/popamp"))), macos_candidates("x.dylib", None));
     }
 
     #[cfg(target_os = "macos")]
