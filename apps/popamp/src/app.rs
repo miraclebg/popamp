@@ -125,13 +125,14 @@ pub struct App {
     /// `POPAMP_SNAPSHOT=<dir>`: write each window as PNG after a few frames and exit.
     snapshot: Option<(std::path::PathBuf, u32)>,
     platform: Platform,
-    media: Option<crate::media::Controls>,
+    media: crate::media::Controls,
+    hotkeys: crate::hotkeys::Hotkeys,
     /// The monitor the main window is on.
     monitor: Option<Screen>,
 }
 
 impl App {
-    pub fn new(model: Model, start_minimized: bool, media: Option<crate::media::Controls>) -> App {
+    pub fn new(model: Model, start_minimized: bool, media: crate::media::Controls, hotkeys: crate::hotkeys::Hotkeys) -> App {
         let fonts = Fonts::for_skin(&model.skin);
         App {
             model,
@@ -158,6 +159,7 @@ impl App {
             snapshot: std::env::var_os("POPAMP_SNAPSHOT").map(|d| (std::path::PathBuf::from(d), 0)),
             platform: Platform::connect(),
             media,
+            hotkeys,
             monitor: None,
         }
     }
@@ -175,7 +177,7 @@ impl App {
     }
 
     fn wanted_visible(&self, k: WindowKey) -> bool {
-        crate::bind::shown(&self.model, k)
+        !self.model.in_tray && crate::bind::shown(&self.model, k)
     }
 
     fn saved_pos(&self, k: WindowKey) -> (i32, i32) {
@@ -248,7 +250,7 @@ impl App {
         self.attach_docked();
         self.apply_layout(WindowKey::Main);
         if self.start_minimized {
-            self.set_minimized(true);
+            self.model.exec(Command::Minimize);
         }
     }
 
@@ -1200,6 +1202,7 @@ impl App {
             K::KeyE if ctrl => Some(C::ToggleEasyMove),
             K::KeyT if ctrl => Some(C::ToggleTimeMode),
             K::KeyJ if ctrl => Some(C::JumpToTime),
+            K::KeyH if ctrl => Some(C::History),
             K::KeyP if ctrl => Some(C::Preferences),
             K::KeyK if ctrl && shift => Some(C::ToggleVis),
             K::KeyK if ctrl || alt => Some(C::SelectVisPlugin),
@@ -1339,14 +1342,12 @@ impl App {
                 }
             }
         }
-        if let Some(m) = &mut self.media {
-            m.update(self.model.media_snapshot());
-        }
         for i in 0..self.panels.len() {
             if self.panels[i].panel.refresh(&self.model) {
                 self.render_panel(i);
             }
         }
+        self.panels.retain(|p| !p.panel.wants_close());
         if self.model.pl_dirty != self.seen_pl_dirty {
             self.seen_pl_dirty = self.model.pl_dirty;
             for i in 0..self.panels.len() {
@@ -1409,6 +1410,10 @@ impl App {
         } else if settings.pe_width >= 350 && state == PlayState::Playing {
             self.render(WindowKey::Playlist);
         }
+        // Here, not after each command: the engine pauses and stops on its
+        // own thread, and nothing else wakes the UI to tell the desktop.
+        self.media.update(self.model.media_snapshot());
+        self.hotkeys.want(settings.global_hotkeys);
     }
 }
 
@@ -1518,6 +1523,7 @@ impl ApplicationHandler<AppEvent> for App {
             }
             AppEvent::Meta(id, m) => self.model.on_meta(id, m),
             AppEvent::Expanded { items, mode } => self.model.on_expanded(items, mode),
+            AppEvent::Scan(ev) => self.model.on_scan(ev),
             AppEvent::Dialog(r) if matches!(r.kind, crate::dialogs::DialogKind::PickCover { .. }) => {
                 if let (Some(i), Some(f)) = (self.panels.iter().position(|p| p.panel.kind() == PanelKind::FileInfo), r.values.first()) {
                     self.panels[i].panel.cover_picked(std::path::Path::new(f));

@@ -42,6 +42,8 @@ jobs:
             echo "tag $GITHUB_REF_NAME does not match Cargo.toml version $version" >&2
             exit 1
           fi
+      # The tests play Opus and tracker modules through these system libraries.
+      - run: sudo apt-get update && sudo apt-get install -y libopus0 libopenmpt0
       - run: cargo test --release --locked --workspace
       - run: cargo test --release --locked --workspace --features popamp/plus
       - name: Install appimagetool

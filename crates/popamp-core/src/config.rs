@@ -188,6 +188,8 @@ settings! {
     output_device: String = "default".to_string(),
     buffer_ms: u32 = 150,
     fade_ms: u32 = 1000,
+    /// How long one track fades into the next, 0 = gapless.
+    crossfade_ms: u32 = 0,
     enqueuedef: bool = false,
     // Window behaviour.
     snap: bool = true,
@@ -249,6 +251,17 @@ settings! {
     replaygain_mode: i32 = 0,
     replaygain_preamp: f32 = 0.0,
     replaygain_non_rg_gain: f32 = -6.0,
+    /// The scan window stays open until OK when the scan ends.
+    rg_scan_keep_open: bool = true,
+    // Desktop.
+    /// An icon in the system tray (StatusNotifierItem on Linux).
+    tray_icon: bool = true,
+    /// Minimizing hides the windows; the tray icon brings them back.
+    minimize_to_tray: bool = false,
+    /// A desktop notification when the track changes.
+    notify_tracks: bool = false,
+    /// Ctrl+Alt+Insert/Home/End/PgUp/PgDn and arrows from any program.
+    global_hotkeys: bool = false,
     // Network.
     proxy: String = String::new(),
     // MIDI.
@@ -271,6 +284,7 @@ impl Settings {
         self.vis_fps = self.vis_fps.clamp(1, 70);
         self.sa = self.sa.clamp(0, 2);
         self.buffer_ms = self.buffer_ms.clamp(40, 2000);
+        self.crossfade_ms = self.crossfade_ms.min(10_000);
         if self.output_device.trim().is_empty() {
             self.output_device = "default".to_string();
         }
@@ -366,6 +380,12 @@ impl Paths {
     }
     pub fn bookmarks_file(&self) -> PathBuf {
         self.config_dir.join("bookmarks.m3u8")
+    }
+    pub fn history_file(&self) -> PathBuf {
+        self.config_dir.join("history.txt")
+    }
+    pub fn replaygain_file(&self) -> PathBuf {
+        self.config_dir.join("replaygain.txt")
     }
     pub fn eq_library(&self) -> PathBuf {
         self.config_dir.join("popamp.q1")

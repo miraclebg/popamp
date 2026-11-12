@@ -202,7 +202,9 @@ impl Stream {
         Ok(())
     }
 
-    /// Stops the device and empties its buffer.
+    /// Stops the device and empties its buffer. A pause ends with it: the
+    /// next write starts afresh, and a stream left paused would never
+    /// start, so that write would wait for room forever.
     fn stop(&mut self) {
         // SAFETY: calls on our client; Reset needs it stopped.
         unsafe {
@@ -210,6 +212,7 @@ impl Stream {
             let _ = self.client.Reset();
         }
         self.running = false;
+        self.paused = false;
     }
 
     /// Waits for room in the buffer (or the time to check again).
