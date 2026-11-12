@@ -381,7 +381,7 @@ mod tests {
 
     #[test]
     fn the_soundfont_in_an_app_bundle_is_found() {
-        let app = std::env::temp_dir().join(format!("popamp-sf-{}", std::process::id())).join("Popamp.app/Contents");
+        let app = std::env::temp_dir().join(format!("popamp-sf-app-{}", std::process::id())).join("Popamp.app/Contents");
         std::fs::create_dir_all(app.join("MacOS")).unwrap();
         std::fs::create_dir_all(app.join("Resources")).unwrap();
         std::fs::write(app.join("Resources").join(BUNDLED_SOUNDFONT), b"x").unwrap();
