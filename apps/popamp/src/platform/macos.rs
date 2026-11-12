@@ -91,7 +91,8 @@ impl Platform {
         }
     }
 
-    /// Nothing to reserve: macOS keeps no strip for other programs' bars.
+    /// Nothing to reserve: macOS keeps no strip for other programs' bars;
+    /// the bar keeps clear of the menu bar and Dock through the work areas.
     pub fn reserve(&self, _window: &Window, _strip: Strip) -> Result<(), String> {
         Ok(())
     }
@@ -152,15 +153,41 @@ impl Platform {
         }
     }
 
-    /// None known yet; the bar then spans its whole monitor.
+    /// Each screen less the menu bar and the Dock, as macOS keeps them
+    /// clear for windows.
     pub fn work_areas(&self) -> Vec<Screen> {
-        Vec::new()
+        let Some(mtm) = objc2::MainThreadMarker::new() else { return Vec::new() };
+        let screens = objc2_app_kit::NSScreen::screens(mtm).to_vec();
+        let Some(primary_h) = screens.first().map(|s| s.frame().size.height) else { return Vec::new() };
+        screens
+            .iter()
+            .map(|s| {
+                let v = s.visibleFrame();
+                flip((v.origin.x, v.origin.y, v.size.width, v.size.height), primary_h)
+            })
+            .collect()
     }
+}
+
+/// An area AppKit gives as `(x, y, w, h)` in points from the bottom left of
+/// the main screen, `primary_h` points high, counted from its top left as
+/// winit and Popamp count.
+fn flip(area: (f64, f64, f64, f64), primary_h: f64) -> Screen {
+    let (x, y, w, h) = area;
+    Screen { x: x.round() as i32, y: (primary_h - (y + h)).round() as i32, w: w.round() as i32, h: h.round() as i32 }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn work_areas_count_from_the_top_left() {
+        // 1512x982 points, a 24-point menu bar on top, a 70-point Dock below.
+        assert_eq!(flip((0.0, 70.0, 1512.0, 888.0), 982.0), Screen { x: 0, y: 24, w: 1512, h: 888 });
+        // A screen above the main one: negative y in Popamp's units.
+        assert_eq!(flip((0.0, 982.0, 2560.0, 1415.0), 982.0), Screen { x: 0, y: -1415, w: 2560, h: 1415 });
+    }
 
     #[test]
     fn only_dialogs_have_a_title_bar() {
