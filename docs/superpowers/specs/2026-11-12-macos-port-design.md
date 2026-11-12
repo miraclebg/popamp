@@ -384,6 +384,31 @@ skins, radio from `.pls` in Finder and from Open URL.
 - **Visualizers** (`--features plus`) on Metal: verify; any change belongs in
   `popamp/popamp-visual`, a separate repository.
 
+### Stage 5, as approved on 2026-11-12 (after 0.9)
+
+0.9 added a tray icon, desktop notifications and global hotkeys, with
+macOS placeholders since stage 1. Stage 5 starts by merging upstream 0.9
+into the fork's `main`, then comes in two parts, 5a first:
+
+- **5a: control Popamp from anywhere.**
+  - *Media keys and Now Playing* (`media/nowplaying.rs`): MediaPlayer's
+    `MPNowPlayingInfoCenter` gets title, artist, album, length, position,
+    rate and the cover; `MPRemoteCommandCenter` sends play, pause,
+    toggle, next, previous, stop and seek back as remote commands. It is fed
+    by the same `Snapshot`s as MPRIS.
+  - *Menu-bar icon* (`media/tray_macos.rs`): an `NSStatusItem` with the
+    tray's menu (`tray_menu`), shown while the tray setting is on. AppKit
+    calls go to the main thread.
+  - *Global hotkeys* (macOS `os` module in `hotkeys/mod.rs`): Carbon's
+    `RegisterEventHotKey` for ⌃⌥ with the same keys (Help/Insert, Home,
+    End, Page Up/Down, arrows). It needs no Accessibility permission.
+- **5b: the rest.** "Open with Popamp" in Preferences (NSWorkspace
+  defaults by UTI), keep-awake for visualizers (an IOPM assertion), the
+  bar skin's work areas from `NSScreen` (menu bar and Dock), the Dock
+  icon bringing minimized windows back, Intel and universal builds.
+- **Not done:** desktop notifications on track change. Now Playing shows
+  the track, and notifications would need their own permission prompt.
+
 ### Testing
 
 - CI on macOS covers what runs without a screen and sound card: unit tests,
