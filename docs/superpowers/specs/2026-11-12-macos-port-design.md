@@ -393,6 +393,28 @@ skins, radio from `.pls` in Finder and from Open URL.
   what was checked in `docs/testing.md` as the project does.
 - UI-visible PRs include `/RENDER` images (CONTRIBUTING.md).
 
+## The maintainers' answer (popamp/popamp#32, 2026-11-12)
+
+- macOS is welcome as a **community-maintained, experimental** platform:
+  the contributor keeps it building and answers macOS bug reports; a
+  failing macOS job does not block Linux and Windows releases, and a
+  release may ship without macOS. The label goes after a couple of stable
+  releases.
+- The build-script cfg `linux_like` is approved.
+- `~/Library/Application Support/popamp` is approved; `/INIDIR` keeps
+  overriding it.
+- The keymap and ⌘V paste are agreed; platform differences stay in one
+  table in the code that menus and docs follow (`mac_keys.rs`).
+- Signing is decided at Stage 4 upstream; they would rather not publish
+  under another company's identity without thinking it through. Release
+  builds must come from the repository's CI, from the tag.
+- CI: GitHub's hosted macOS runners after merges to `main`; no
+  self-hosted runners on a public repository.
+- **Timing:** wait for their 0.9 release (it adds tray, global hotkeys and
+  media-control platform modules the cfg split touches), then base Stage 1
+  on `main` and send one stage at a time, small PRs, no behaviour change
+  on Linux or Windows.
+
 ## Open questions for the maintainers (in the Stage 0 issue)
 
 1. Do they want macOS as a supported platform, and with what expectation of
