@@ -119,6 +119,9 @@ impl Platform {
         Ok(())
     }
 
+    /// Nothing to do: owned windows come up with their owner.
+    pub fn raise_together(&self, _windows: &[&Window]) {}
+
     /// Gives back the strip of `window`, a bar about to go.
     pub fn release(&self, window: &Window) {
         if hwnd(window).is_some_and(|h| h == self.bar.get()) {

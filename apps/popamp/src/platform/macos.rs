@@ -55,6 +55,26 @@ impl Platform {
     /// Nothing to give back.
     pub fn release(&self, _window: &Window) {}
 
+    /// Brings `windows` above other programs' windows, back to front,
+    /// without making any of them the key window: macOS brings up only the
+    /// window clicked, not its companions.
+    pub fn raise_together(&self, windows: &[&Window]) {
+        use objc2::runtime::AnyObject;
+        use objc2::{msg_send, rc::Retained};
+        use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        for window in windows {
+            let Ok(handle) = window.window_handle() else { continue };
+            let RawWindowHandle::AppKit(h) = handle.as_raw() else { continue };
+            // SAFETY: winit's view, alive with its window, on the main thread.
+            let view: &AnyObject = unsafe { h.ns_view.cast().as_ref() };
+            let ns_window: Option<Retained<AnyObject>> = unsafe { msg_send![view, window] };
+            if let Some(ns_window) = ns_window {
+                // SAFETY: `orderFront:` takes any sender, nil included.
+                let _: () = unsafe { msg_send![&*ns_window, orderFront: std::ptr::null::<AnyObject>()] };
+            }
+        }
+    }
+
     /// None known yet; the bar then spans its whole monitor.
     pub fn work_areas(&self) -> Vec<Screen> {
         Vec::new()
