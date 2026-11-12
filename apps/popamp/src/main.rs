@@ -1,4 +1,4 @@
-//! Popamp: a Winamp-style skinnable audio player for Linux and Windows.
+//! Popamp: a Winamp-style skinnable audio player for macOS, Linux and Windows.
 
 // A window program on Windows, so none opens a console of its own; output
 // for the command line goes to the console it was started from.
@@ -13,12 +13,16 @@ mod dialogs;
 mod edition;
 mod fileinfo;
 mod filetypes;
+#[cfg(target_os = "macos")]
+mod finder;
 mod font;
 mod gallery;
 mod headless;
 mod ipc;
 #[cfg(feature = "visualizers")]
 mod keep_awake;
+#[cfg(any(target_os = "macos", test))]
+mod mac_keys;
 mod media;
 mod menu;
 mod model;
@@ -120,6 +124,8 @@ fn main() {
         }
     };
     let proxy = event_loop.create_proxy();
+    #[cfg(target_os = "macos")]
+    finder::listen(proxy.clone());
     let mut model = Model::new(paths, config, proxy.clone());
     model.load_session();
 
