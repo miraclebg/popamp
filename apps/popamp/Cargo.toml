@@ -51,7 +51,9 @@ objc2 = "0.6"
 objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["std", "objc2-core-foundation", "CALayer", "CATransaction"] }
 objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["std", "CGImage", "CGColorSpace", "CGDataProvider", "CGEvent", "CGEventTypes"] }
 # The clipboard, for ⌘V.
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSPasteboard", "NSImage"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSPasteboard", "NSImage", "NSStatusBar", "NSStatusItem", "NSStatusBarButton", "NSButton", "NSControl", "NSView", "NSResponder", "NSMenu", "NSMenuItem", "NSCell", "objc2-core-foundation"] }
+# AppKit work handed to the main thread.
+dispatch2 = "0.3"
 # Now Playing and the media keys.
 objc2-media-player = { version = "0.3.2", default-features = false, features = ["std", "block2", "objc2-app-kit", "objc2-core-foundation", "MPNowPlayingInfoCenter", "MPRemoteCommandCenter", "MPRemoteCommand", "MPRemoteCommandEvent", "MPMediaItem"] }
 block2 = "0.6"
