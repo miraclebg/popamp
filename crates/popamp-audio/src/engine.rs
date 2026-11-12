@@ -1077,11 +1077,26 @@ mod tests {
     }
 
     fn engine_with(sources: Sources) -> (Engine, Receiver<EngineEvent>) {
+        engine_given(sources, Vec::new())
+    }
+
+    /// An engine whose worker finds `commands` already queued when it
+    /// starts. On `null` a short track plays out at once, so a `SetNext`
+    /// sent after the `Open` could otherwise come after the track ended.
+    fn engine_given(sources: Sources, commands: Vec<EngineCmd>) -> (Engine, Receiver<EngineEvent>) {
+        let (event_tx, event_rx) = crossbeam_channel::unbounded();
         let (tx, rx) = crossbeam_channel::unbounded();
-        let engine = Engine::spawn("null".into(), Arc::new(sources), move |e| {
-            let _ = tx.send(e);
+        for cmd in commands {
+            tx.send(cmd).expect("the receiver is here");
+        }
+        let shared = Arc::new(Shared::new());
+        let worker_shared = shared.clone();
+        let on_event = Box::new(move |e| {
+            let _ = event_tx.send(e);
         });
-        (engine, rx)
+        let thread = std::thread::spawn(move || Worker::new("null".into(), Arc::new(sources), rx, worker_shared, on_event).run());
+        let engine = Engine { tx, shared, thread: Some(thread), seeks: AtomicU64::new(0), seek_to: AtomicU64::new(0) };
+        (engine, event_rx)
     }
 
     /// The events up to the first `Finished`, in short form.
@@ -1174,10 +1189,14 @@ mod tests {
 
     #[test]
     fn plays_a_track_and_continues_with_the_next_one() {
-        let (engine, events, _server) = engine_and_silent_server();
         let (a, b) = (silent_wav("a", 300), silent_wav("b", 300));
-        engine.send(EngineCmd::Open { id: 1, location: a.to_string_lossy().into(), start_ms: 0 });
-        engine.send(EngineCmd::SetNext(Some((2, b.to_string_lossy().into()))));
+        let (_engine, events) = engine_given(
+            Sources::default(),
+            vec![
+                EngineCmd::Open { id: 1, location: a.to_string_lossy().into(), start_ms: 0 },
+                EngineCmd::SetNext(Some((2, b.to_string_lossy().into()))),
+            ],
+        );
         let seen = events_until_finished(&events);
         let _ = (std::fs::remove_file(a), std::fs::remove_file(b));
         assert_eq!(seen, ["started 1", "changed 2", "finished 2"]);
@@ -1225,14 +1244,18 @@ mod tests {
     /// Plays 1 s then 0.5 s at half scale, overlapping by `crossfade_ms`;
     /// the events, the frames played and the loudest sample.
     fn play_two_halves(crossfade_ms: u32) -> (Vec<String>, u64, f32) {
-        let (engine, events) = engine_with(Sources::default());
         let meter = Arc::new(parking_lot::Mutex::new((0, 0.0)));
-        engine.send(EngineCmd::Config { device: "null".into(), buffer_ms: 150, fade_ms: 1000, crossfade_ms, cx: Context::default() });
-        engine.send(EngineCmd::Effects(vec![Box::new(Meter(meter.clone()))]));
         let name = format!("xfade{crossfade_ms}");
         let (a, b) = (level_wav(&format!("{name}a"), 1000, 16_384), level_wav(&format!("{name}b"), 500, 16_384));
-        engine.send(EngineCmd::Open { id: 1, location: a.to_string_lossy().into(), start_ms: 0 });
-        engine.send(EngineCmd::SetNext(Some((2, b.to_string_lossy().into()))));
+        let (_engine, events) = engine_given(
+            Sources::default(),
+            vec![
+                EngineCmd::Config { device: "null".into(), buffer_ms: 150, fade_ms: 1000, crossfade_ms, cx: Context::default() },
+                EngineCmd::Effects(vec![Box::new(Meter(meter.clone()))]),
+                EngineCmd::Open { id: 1, location: a.to_string_lossy().into(), start_ms: 0 },
+                EngineCmd::SetNext(Some((2, b.to_string_lossy().into()))),
+            ],
+        );
         let seen = events_until_finished(&events);
         let _ = (std::fs::remove_file(a), std::fs::remove_file(b));
         let (frames, peak) = *meter.lock();
