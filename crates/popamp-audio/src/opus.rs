@@ -21,13 +21,15 @@ struct Lib {
 
 #[cfg(windows)]
 const LIB_NAME: &str = "opus.dll";
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+const LIB_NAME: &str = "libopus.0.dylib";
+#[cfg(linux_like)]
 const LIB_NAME: &str = "libopus.so.0";
 
 fn lib() -> std::result::Result<&'static Lib, String> {
     static LIB: OnceLock<std::result::Result<Lib, String>> = OnceLock::new();
     LIB.get_or_init(|| unsafe {
-        let lib = libloading::Library::new(LIB_NAME).map_err(|e| format!("cannot load {LIB_NAME}: {e}"))?;
+        let lib = crate::dylib::load(LIB_NAME)?;
         macro_rules! sym {
             ($name:literal) => {
                 *lib.get(concat!($name, "\0").as_bytes()).map_err(|e| format!("libopus: missing {}: {e}", $name))?
