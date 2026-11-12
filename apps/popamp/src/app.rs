@@ -1548,8 +1548,14 @@ impl ApplicationHandler<AppEvent> for App {
         if matches!(cause, StartCause::ResumeTimeReached { .. } | StartCause::Poll) || Instant::now() >= self.next_frame {
             let s = self.model.settings();
             let fps = if self.model.state() == PlayState::Playing && s.sa != 0 { s.vis_fps.max(1) } else { 6 };
+            // A shaped window follows the cursor often enough to catch it.
+            let fps = if self.platform.tracks_cursor() { fps.max(30) } else { fps };
             self.next_frame = Instant::now() + Duration::from_millis(1000 / fps as u64);
             self.tick();
+            if self.platform.tracks_cursor() {
+                let windows: Vec<&Window> = WindowKey::ALL.iter().filter_map(|&k| self.win(k)).map(|w| &*w.window).collect();
+                self.platform.track_cursor(&windows, self.drag.is_some() || self.capture.is_some());
+            }
             self.update_tooltip(el);
             self.flush_drops(el);
             if let Some((dir, frames)) = &mut self.snapshot {

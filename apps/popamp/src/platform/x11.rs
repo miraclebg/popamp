@@ -95,6 +95,14 @@ impl Platform {
     /// which the window manager never focuses.
     pub fn no_activate(&self, _window: &Window) {}
 
+    /// Nothing to follow: the system cuts the window and passes clicks.
+    pub fn tracks_cursor(&self) -> bool {
+        false
+    }
+
+    /// Nothing to do: the system passes clicks through a shape.
+    pub fn track_cursor(&self, _windows: &[&Window], _button_down: bool) {}
+
     /// Nothing to do: owned windows come up with their owner.
     pub fn raise_together(&self, _windows: &[&Window]) {}
 
