@@ -1,6 +1,6 @@
 //! Loads the libraries Popamp opens at run time (libopus, libopenmpt) by
-//! name. On macOS they are looked for in more places than the system's
-//! loader searches: the app bundle, then Homebrew.
+//! name. On macOS they are looked for in the app bundle, then Homebrew,
+//! which the system's loader does not search.
 
 #[cfg(any(target_os = "macos", test))]
 use std::path::{Path, PathBuf};
@@ -32,14 +32,15 @@ pub(crate) fn load(name: &str) -> Result<libloading::Library, String> {
 }
 
 /// The places to load the library `name` from on macOS, best first: the
-/// `Frameworks` folder of the app bundle `exe` is in, the bare name for
-/// the system's own search, then Homebrew's folders, which it does not
-/// search.
+/// `Frameworks` folder of the app bundle `exe` is in, then Homebrew's
+/// folders (Apple Silicon, then Intel). Only whole paths: given a bare
+/// name, the system's loader also looks in the current folder, where
+/// anyone could have left a library of that name.
 #[cfg(any(target_os = "macos", test))]
 pub(crate) fn macos_candidates(name: &str, exe: Option<&Path>) -> Vec<PathBuf> {
     let bundle = exe.and_then(Path::parent).and_then(Path::parent).map(|contents| contents.join("Frameworks").join(name));
     let homebrew = ["/opt/homebrew/lib", "/usr/local/lib"].map(|dir| Path::new(dir).join(name));
-    bundle.into_iter().chain([PathBuf::from(name)]).chain(homebrew).collect()
+    bundle.into_iter().chain(homebrew).filter(|p| p.is_absolute()).collect()
 }
 
 #[cfg(test)]
@@ -47,13 +48,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn macos_looks_in_the_bundle_then_where_dyld_looks_then_homebrew() {
+    fn macos_looks_in_the_bundle_then_homebrew() {
         let exe = Path::new("/Applications/Popamp.app/Contents/MacOS/popamp");
         assert_eq!(
             macos_candidates("libopus.0.dylib", Some(exe)),
             [
                 PathBuf::from("/Applications/Popamp.app/Contents/Frameworks/libopus.0.dylib"),
-                PathBuf::from("libopus.0.dylib"),
                 PathBuf::from("/opt/homebrew/lib/libopus.0.dylib"),
                 PathBuf::from("/usr/local/lib/libopus.0.dylib"),
             ]
@@ -62,8 +62,17 @@ mod tests {
 
     #[test]
     fn without_the_program_path_there_is_no_bundle_to_look_in() {
-        assert_eq!(macos_candidates("x.dylib", None)[0], PathBuf::from("x.dylib"));
-        assert_eq!(macos_candidates("x.dylib", None).len(), 3);
+        assert_eq!(
+            macos_candidates("x.dylib", None),
+            [PathBuf::from("/opt/homebrew/lib/x.dylib"), PathBuf::from("/usr/local/lib/x.dylib")]
+        );
+    }
+
+    // A bare name makes the system's loader look in the current folder too,
+    // where anyone could have left a library of that name.
+    #[test]
+    fn macos_never_loads_by_bare_name() {
+        assert!(macos_candidates("x.dylib", Some(Path::new("popamp"))).iter().all(|p| p.is_absolute()));
     }
 
     #[cfg(target_os = "macos")]
