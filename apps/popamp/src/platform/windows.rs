@@ -53,6 +53,9 @@ pub fn use_parent_console() {
 /// the main window is minimized or restored by hand.
 pub const OWNED_FOLLOW_OWNER: bool = true;
 
+/// Each window is minimized as the owner rule above says.
+pub const MINIMIZE_HIDES_COMPANIONS: bool = false;
+
 /// Nothing to connect to: the calls go straight to the system. Holds the
 /// window registered as an application desktop toolbar, if any.
 pub struct Platform {

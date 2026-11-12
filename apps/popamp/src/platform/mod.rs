@@ -10,15 +10,15 @@ use winit::monitor::MonitorHandle;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use windows::{attributes, use_parent_console, Platform, OWNED_FOLLOW_OWNER};
+pub use windows::{attributes, use_parent_console, Platform, MINIMIZE_HIDES_COMPANIONS, OWNED_FOLLOW_OWNER};
 #[cfg(linux_like)]
 mod x11;
 #[cfg(linux_like)]
-pub use x11::{attributes, Platform, OWNED_FOLLOW_OWNER};
+pub use x11::{attributes, Platform, MINIMIZE_HIDES_COMPANIONS, OWNED_FOLLOW_OWNER};
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::{attributes, Platform, OWNED_FOLLOW_OWNER};
+pub use macos::{attributes, Platform, MINIMIZE_HIDES_COMPANIONS, OWNED_FOLLOW_OWNER};
 
 /// Whether the desktop counts in points rather than screen pixels. macOS
 /// lays its screens out in points, two pixels each on a Retina screen, so a
