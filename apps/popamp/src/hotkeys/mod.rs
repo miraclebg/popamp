@@ -238,7 +238,11 @@ mod os {
     }
 
     const KEYBOARD: u32 = u32::from_be_bytes(*b"keyb");
-    const HOTKEY_PRESSED: u32 = 6;
+    /// kEventHotKeyPressed (6 is the release).
+    pub(super) const HOTKEY_PRESSED: u32 = 5;
+    /// kEventHotKeyExclusive: a key another program holds fails to
+    /// register and stays its own, rather than going to both.
+    pub(super) const EXCLUSIVE: u32 = 1;
     const DIRECT_OBJECT: u32 = u32::from_be_bytes(*b"----");
     const HOTKEY_ID: u32 = u32::from_be_bytes(*b"hkid");
     const SIGNATURE: u32 = u32::from_be_bytes(*b"popa");
@@ -314,7 +318,8 @@ mod os {
             let mut hotkey: Ref = std::ptr::null_mut();
             let id = HotKeyId { signature: SIGNATURE, id: n as u32 };
             // SAFETY: registering one key for the application's target.
-            let status = unsafe { RegisterEventHotKey(mac_keycode(*key), CONTROL_OPTION, id, GetApplicationEventTarget(), 0, &mut hotkey) };
+            let status =
+                unsafe { RegisterEventHotKey(mac_keycode(*key), CONTROL_OPTION, id, GetApplicationEventTarget(), EXCLUSIVE, &mut hotkey) };
             if status == 0 {
                 hotkeys.push(hotkey);
             } else {
@@ -432,6 +437,14 @@ mod os {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Carbon's kEventHotKeyPressed and kEventHotKeyExclusive: act on the
+    // press, and leave a key another program holds to it.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_keys_are_taken_on_press_and_alone() {
+        assert_eq!((os::HOTKEY_PRESSED, os::EXCLUSIVE), (5, 1));
+    }
 
     #[cfg(target_os = "macos")]
     #[test]

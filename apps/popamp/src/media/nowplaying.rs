@@ -2,12 +2,15 @@
 //! shows the track, its cover and where it is, in Control Center and on the
 //! lock screen, and its command centre hands the media keys, AirPods and
 //! Control Center's buttons to Popamp while it is the player macOS chose.
-//! Fed by the same snapshots as MPRIS on Linux.
+//! Fed by the same snapshots as MPRIS on Linux. MediaPlayer is touched only
+//! on the main thread: the service's thread works out what to show and
+//! hands it to the main queue.
 
 use super::{Covers, Snapshot};
 use crate::cli::Remote;
 use crate::model::AppEvent;
 use block2::RcBlock;
+use dispatch2::DispatchQueue;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::AnyThread;
@@ -17,12 +20,13 @@ use objc2_foundation::{NSDictionary, NSNumber, NSString};
 use objc2_media_player::{
     MPChangePlaybackPositionCommandEvent, MPMediaItemArtwork, MPMediaItemPropertyAlbumTitle, MPMediaItemPropertyArtist,
     MPMediaItemPropertyArtwork, MPMediaItemPropertyPlaybackDuration, MPMediaItemPropertyTitle, MPNowPlayingInfoCenter,
-    MPNowPlayingInfoPropertyElapsedPlaybackTime, MPNowPlayingInfoPropertyPlaybackRate, MPNowPlayingPlaybackState, MPRemoteCommand,
-    MPRemoteCommandCenter, MPRemoteCommandEvent, MPRemoteCommandHandlerStatus,
+    MPNowPlayingInfoPropertyElapsedPlaybackTime, MPNowPlayingInfoPropertyIsLiveStream, MPNowPlayingInfoPropertyPlaybackRate,
+    MPNowPlayingPlaybackState, MPRemoteCommand, MPRemoteCommandCenter, MPRemoteCommandEvent, MPRemoteCommandHandlerStatus,
 };
 use parking_lot::Mutex;
 use popamp_audio::Shared;
 use popamp_core::Command;
+use std::cell::RefCell;
 use std::ptr::NonNull;
 use std::sync::Arc;
 use std::time::Duration;
@@ -68,13 +72,16 @@ enum Mac {
 }
 
 /// What `command` asks of a player that is `status`, as its buttons would.
+/// Play/Pause is left to the UI thread, which knows the true state; Play
+/// while playing would restart the song, and pausing a paused player would
+/// resume it, so those ask nothing.
 fn remotes(command: Mac, status: &str) -> Vec<Remote> {
     let cmd = |c| vec![Remote::Cmd(c)];
     match command {
+        Mac::Play if status == "Playing" => Vec::new(),
         Mac::Play => cmd(Command::Play),
         Mac::Pause => super::pause(status).map(Remote::Cmd).into_iter().collect(),
-        Mac::Toggle if status == "Playing" => cmd(Command::Pause),
-        Mac::Toggle => cmd(Command::Play),
+        Mac::Toggle => cmd(Command::PlayPause),
         Mac::Stop => cmd(Command::Stop),
         Mac::Next => cmd(Command::Next),
         Mac::Previous => cmd(Command::Previous),
@@ -82,31 +89,61 @@ fn remotes(command: Mac, status: &str) -> Vec<Remote> {
     }
 }
 
+/// What the main thread puts up: the track as `Info`, the state, and the
+/// track's id with its cover file, if it has one.
+struct Update {
+    info: Option<Info>,
+    state: MPNowPlayingPlaybackState,
+    cover: Option<(u64, Option<String>)>,
+}
+
+thread_local! {
+    /// The seek command, enabled only for a track with a length.
+    static SEEK: RefCell<Option<Retained<MPRemoteCommand>>> = const { RefCell::new(None) };
+    /// The artwork of the track on show, made once per track.
+    static ARTWORK: RefCell<Option<(u64, Option<Retained<AnyObject>>)>> = const { RefCell::new(None) };
+}
+
 /// Answers the command centre's commands and feeds Now Playing. Called on
 /// the main thread, where the handlers are registered.
 pub fn spawn(proxy: EventLoopProxy<AppEvent>, shared: Arc<Shared>, _instance: &str) -> Option<crossbeam_channel::Sender<Snapshot>> {
     let status = Arc::new(Mutex::new("Stopped"));
-    // SAFETY: MediaPlayer's shared command centre.
+    // SAFETY: MediaPlayer's shared command centre, on the main thread.
     let center = unsafe { MPRemoteCommandCenter::sharedCommandCenter() };
     let seek = listen(&center, &proxy, &status);
+    SEEK.with(|s| *s.borrow_mut() = Some(seek));
     let (tx, rx) = crossbeam_channel::unbounded::<Snapshot>();
     let run = move || {
         let mut covers = Covers::default();
+        let mut cover: Option<(u64, Option<String>)> = None;
         let mut last: Option<Snapshot> = None;
         loop {
-            // A new snapshot, or every two seconds the same one, so a seek
-            // shows: Now Playing moves the time on by itself between them.
+            // A new snapshot, or, while playing, every two seconds the same
+            // one, so a seek shows: Now Playing moves the time on by itself.
             match rx.recv_timeout(Duration::from_secs(2)) {
                 Ok(snap) => last = Some(snap),
-                Err(crossbeam_channel::RecvTimeoutError::Timeout) => {}
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) if last.as_ref().is_some_and(|s| s.status == "Playing") => {}
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) => continue,
                 Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
             }
             let Some(snap) = &last else { continue };
             *status.lock() = snap.status;
-            publish(snap, shared.position_ms(), &mut covers, &seek);
+            // The cover is looked up once per track, as MPRIS does.
+            let id = snap.track.as_ref().map(|t| t.id);
+            if cover.as_ref().map(|c| c.0) != id {
+                cover = snap.track.as_ref().map(|t| (t.id, covers.of(t).map(|p| p.to_string_lossy().into_owned())));
+            }
+            let update = Update { info: info(snap, shared.position_ms()), state: state(snap.status), cover: cover.clone() };
+            DispatchQueue::main().exec_async(move || publish(update));
         }
-        // SAFETY: clearing what Popamp put up.
-        unsafe { MPNowPlayingInfoCenter::defaultCenter().setNowPlayingInfo(None) };
+        DispatchQueue::main().exec_async(|| {
+            // SAFETY: clearing what Popamp put up, on the main thread.
+            unsafe {
+                let center = MPNowPlayingInfoCenter::defaultCenter();
+                center.setNowPlayingInfo(None);
+                center.setPlaybackState(MPNowPlayingPlaybackState::Stopped);
+            }
+        });
     };
     match std::thread::Builder::new().name("popamp-nowplaying".into()).spawn(run) {
         Ok(_) => Some(tx),
@@ -117,15 +154,22 @@ pub fn spawn(proxy: EventLoopProxy<AppEvent>, shared: Arc<Shared>, _instance: &s
     }
 }
 
-/// The seek command, enabled only for a track with a length.
-struct Seek(Retained<MPRemoteCommand>);
+/// Now Playing's state for a player that is `status`.
+fn state(status: &str) -> MPNowPlayingPlaybackState {
+    match status {
+        "Playing" => MPNowPlayingPlaybackState::Playing,
+        "Paused" => MPNowPlayingPlaybackState::Paused,
+        _ => MPNowPlayingPlaybackState::Stopped,
+    }
+}
 
-// SAFETY: MPRemoteCommand's `enabled` may be set from any thread.
-unsafe impl Send for Seek {}
-
-/// Registers a handler for each command; they stay for the program's life,
-/// as the media service does.
-fn listen(center: &MPRemoteCommandCenter, proxy: &EventLoopProxy<AppEvent>, status: &Arc<Mutex<&'static str>>) -> Seek {
+/// Registers a handler for each command and gives back the seek command;
+/// they stay for the program's life, as the media service does.
+fn listen(
+    center: &MPRemoteCommandCenter,
+    proxy: &EventLoopProxy<AppEvent>,
+    status: &Arc<Mutex<&'static str>>,
+) -> Retained<MPRemoteCommand> {
     let on = |command: Retained<MPRemoteCommand>, mac: fn(&MPRemoteCommandEvent) -> Mac| {
         let (proxy, status) = (proxy.clone(), status.clone());
         let handler = RcBlock::new(move |event: NonNull<MPRemoteCommandEvent>| {
@@ -139,7 +183,7 @@ fn listen(center: &MPRemoteCommandCenter, proxy: &EventLoopProxy<AppEvent>, stat
         std::mem::forget(target);
         command
     };
-    // SAFETY: the command centre's commands.
+    // SAFETY: the command centre's commands, on the main thread.
     unsafe {
         on(center.playCommand(), |_| Mac::Play);
         on(center.pauseCommand(), |_| Mac::Pause);
@@ -147,35 +191,28 @@ fn listen(center: &MPRemoteCommandCenter, proxy: &EventLoopProxy<AppEvent>, stat
         on(center.stopCommand(), |_| Mac::Stop);
         on(center.nextTrackCommand(), |_| Mac::Next);
         on(center.previousTrackCommand(), |_| Mac::Previous);
-        let seek = on(center.changePlaybackPositionCommand().into_super(), |event| {
+        on(center.changePlaybackPositionCommand().into_super(), |event| {
             // SAFETY: this command's events are position changes.
             let event: &MPChangePlaybackPositionCommandEvent = &*(event as *const MPRemoteCommandEvent).cast();
             Mac::Seek(event.positionTime())
-        });
-        Seek(seek)
+        })
     }
 }
 
-/// Puts `snap` up in Now Playing, `position_ms` into its track.
-fn publish(snap: &Snapshot, position_ms: u64, covers: &mut Covers, seek: &Seek) {
-    // SAFETY: MediaPlayer's shared Now Playing centre; its setters may be
-    // called from any thread.
+/// Puts `update` up in Now Playing. On the main thread.
+fn publish(update: Update) {
+    // SAFETY: MediaPlayer's shared Now Playing centre, on the main thread.
     let center = unsafe { MPNowPlayingInfoCenter::defaultCenter() };
-    let state = match snap.status {
-        "Playing" => MPNowPlayingPlaybackState::Playing,
-        "Paused" => MPNowPlayingPlaybackState::Paused,
-        _ => MPNowPlayingPlaybackState::Stopped,
-    };
-    let Some(i) = info(snap, position_ms) else {
+    let Some(i) = update.info else {
         // SAFETY: as above.
         unsafe {
             center.setNowPlayingInfo(None);
-            center.setPlaybackState(state);
+            center.setPlaybackState(update.state);
         }
         return;
     };
-    // SAFETY: setting `enabled` on a command.
-    unsafe { seek.0.setEnabled(i.length_s.is_some()) };
+    // SAFETY: the seek command registered on this thread.
+    SEEK.with(|s| s.borrow().as_ref().map(|seek| unsafe { seek.setEnabled(i.length_s.is_some()) }));
     let text = |s: &str| -> Retained<AnyObject> { NSString::from_str(s).into() };
     let number = |n: f64| -> Retained<AnyObject> { NSNumber::new_f64(n).into() };
     // SAFETY: MediaPlayer's property names, constant strings.
@@ -194,10 +231,12 @@ fn publish(snap: &Snapshot, position_ms: u64, covers: &mut Covers, seek: &Seek) 
         if let Some(album) = &i.album {
             entries.push((MPMediaItemPropertyAlbumTitle, text(album)));
         }
-        if let Some(length) = i.length_s {
-            entries.push((MPMediaItemPropertyPlaybackDuration, number(length)));
+        match i.length_s {
+            Some(length) => entries.push((MPMediaItemPropertyPlaybackDuration, number(length))),
+            // A stream: Control Center says "Live" rather than counting up.
+            None => entries.push((MPNowPlayingInfoPropertyIsLiveStream, NSNumber::new_bool(true).into())),
         }
-        if let Some(art) = snap.track.as_ref().and_then(|t| covers.of(t)).and_then(|p| artwork(&p.to_string_lossy())) {
+        if let Some(art) = update.cover.and_then(artwork_of) {
             entries.push((MPMediaItemPropertyArtwork, art));
         }
     }
@@ -207,8 +246,20 @@ fn publish(snap: &Snapshot, position_ms: u64, covers: &mut Covers, seek: &Seek) 
     // SAFETY: a dictionary of Now Playing's keys and values of their types.
     unsafe {
         center.setNowPlayingInfo(Some(&dict));
-        center.setPlaybackState(state);
+        center.setPlaybackState(update.state);
     }
+}
+
+/// The artwork of track `id` from its cover file, made the first time the
+/// track is shown and kept until another one is.
+fn artwork_of((id, path): (u64, Option<String>)) -> Option<Retained<AnyObject>> {
+    ARTWORK.with(|a| {
+        let mut a = a.borrow_mut();
+        if a.as_ref().map(|(shown, _)| *shown) != Some(id) {
+            *a = Some((id, path.as_deref().and_then(artwork)));
+        }
+        a.as_ref().and_then(|(_, art)| art.clone())
+    })
 }
 
 /// The cover at `path` as Now Playing's artwork.
@@ -251,9 +302,12 @@ mod tests {
 
     #[test]
     fn the_media_keys_ask_what_the_buttons_ask() {
-        assert_eq!(remotes(Mac::Toggle, "Playing"), [Remote::Cmd(Command::Pause)]);
-        assert_eq!(remotes(Mac::Toggle, "Stopped"), [Remote::Cmd(Command::Play)]);
-        assert_eq!(remotes(Mac::Toggle, "Paused"), [Remote::Cmd(Command::Play)]);
+        // Play/Pause is decided on the UI thread from the true state, so
+        // two quick presses never restart the song.
+        assert_eq!(remotes(Mac::Toggle, "Playing"), [Remote::Cmd(Command::PlayPause)]);
+        assert_eq!(remotes(Mac::Toggle, "Stopped"), [Remote::Cmd(Command::PlayPause)]);
+        assert!(remotes(Mac::Play, "Playing").is_empty(), "Play while playing would restart the song");
+        assert_eq!(remotes(Mac::Play, "Paused"), [Remote::Cmd(Command::Play)]);
         assert!(remotes(Mac::Pause, "Paused").is_empty(), "pausing a paused player would resume it");
         assert_eq!(remotes(Mac::Seek(12.25), "Playing"), [Remote::SeekMs(12_250)]);
         assert_eq!(remotes(Mac::Next, "Playing"), [Remote::Cmd(Command::Next)]);
