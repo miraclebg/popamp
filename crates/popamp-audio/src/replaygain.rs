@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use popamp_core::replaygain::{Gains, Level, Stamp, REFERENCE_LUFS};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 /// What a track's scan gave.
 pub type Outcome = Result<(Stamp, Gains), String>;
@@ -26,14 +26,24 @@ struct Measured {
 }
 
 /// Scans `locations` on a few threads, calling `progress` with the number
-/// done after each. Tracks of one album get its album gain too.
-pub fn scan(locations: &[String], sources: &Sources, cx: &Context, progress: &(dyn Fn(usize) + Sync)) -> Vec<Outcome> {
+/// done after each. Tracks of one album get its album gain too. Setting
+/// `cancel` stops it after the tracks under way, and it gives `None`.
+pub fn scan(
+    locations: &[String],
+    sources: &Sources,
+    cx: &Context,
+    progress: &(dyn Fn(usize) + Sync),
+    cancel: &AtomicBool,
+) -> Option<Vec<Outcome>> {
     let slots: Vec<Mutex<Option<Result<Measured, String>>>> = locations.iter().map(|_| Mutex::new(None)).collect();
     let (next, done) = (AtomicUsize::new(0), AtomicUsize::new(0));
     let workers = std::thread::available_parallelism().map_or(2, |n| n.get()).clamp(1, 4).min(locations.len());
     std::thread::scope(|s| {
         for _ in 0..workers {
             s.spawn(|| loop {
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
                 let i = next.fetch_add(1, Ordering::Relaxed);
                 let Some(location) = locations.get(i) else { break };
                 *slots[i].lock() = Some(measure(location, sources, cx));
@@ -41,8 +51,11 @@ pub fn scan(locations: &[String], sources: &Sources, cx: &Context, progress: &(d
             });
         }
     });
+    if cancel.load(Ordering::Relaxed) {
+        return None;
+    }
     let measured = slots.into_iter().map(|m| m.into_inner().unwrap_or_else(|| Err("not scanned".into()))).collect();
-    with_album_gains(measured)
+    Some(with_album_gains(measured))
 }
 
 /// Decodes the whole track at `location`, feeding the loudness meter.
@@ -142,11 +155,38 @@ mod tests {
     /// Scans, checking that progress counted every track.
     fn run(locations: &[String]) -> Vec<Outcome> {
         let most = AtomicUsize::new(0);
-        let out = scan(locations, &Sources::default(), &Context::default(), &|done| {
-            most.fetch_max(done, Ordering::Relaxed);
-        });
+        let out = scan(
+            locations,
+            &Sources::default(),
+            &Context::default(),
+            &|done| {
+                most.fetch_max(done, Ordering::Relaxed);
+            },
+            &AtomicBool::new(false),
+        );
         assert_eq!(most.into_inner(), locations.len());
-        out
+        out.expect("not cancelled")
+    }
+
+    #[test]
+    fn a_cancelled_scan_stops_and_gives_nothing() {
+        let wav = sine_wav("cancel", &[(1, peak_of(-23.0))]);
+        let locations = vec![wav.to_string_lossy().into_owned(); 12];
+        let cancel = AtomicBool::new(false);
+        let most = AtomicUsize::new(0);
+        let out = scan(
+            &locations,
+            &Sources::default(),
+            &Context::default(),
+            &|done| {
+                most.fetch_max(done, Ordering::Relaxed);
+                cancel.store(true, Ordering::Relaxed);
+            },
+            &cancel,
+        );
+        let _ = std::fs::remove_dir_all(wav.parent().unwrap());
+        assert!(out.is_none());
+        assert!(most.into_inner() < locations.len(), "the tracks left are not measured");
     }
 
     /// The level of a sine that reads `lufs` (K-weighting is ~0 dB at 1 kHz).

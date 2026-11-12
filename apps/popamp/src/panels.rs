@@ -28,6 +28,7 @@ pub enum PanelKind {
     AlbumArt,
     SkinBrowser,
     History,
+    ReplayGainScan,
 }
 
 /// What a button or check box in a panel stands for.
@@ -72,6 +73,7 @@ pub enum Panel {
     Art(AlbumArt),
     Skins(SkinBrowser),
     History(crate::history::HistoryPanel),
+    Scan(crate::scan::ScanPanel),
 }
 
 impl Panel {
@@ -89,6 +91,7 @@ impl Panel {
             PanelKind::AlbumArt => Panel::Art(AlbumArt::new(model)),
             PanelKind::SkinBrowser => Panel::Skins(SkinBrowser::new(model)),
             PanelKind::History => Panel::History(crate::history::HistoryPanel::new(model)),
+            PanelKind::ReplayGainScan => Panel::Scan(crate::scan::ScanPanel::new(model)),
         }
     }
 
@@ -104,6 +107,7 @@ impl Panel {
             Panel::Art(_) => PanelKind::AlbumArt,
             Panel::Skins(_) => PanelKind::SkinBrowser,
             Panel::History(_) => PanelKind::History,
+            Panel::Scan(_) => PanelKind::ReplayGainScan,
         }
     }
 
@@ -119,6 +123,7 @@ impl Panel {
             Panel::Art(_) => "Album art",
             Panel::Skins(_) => "Skin browser",
             Panel::History(_) => "History",
+            Panel::Scan(_) => "ReplayGain scan",
         }
     }
 
@@ -134,6 +139,7 @@ impl Panel {
             Panel::Art(p) => &p.form,
             Panel::Skins(p) => &p.form,
             Panel::History(p) => &p.form,
+            Panel::Scan(p) => &p.form,
         }
     }
 
@@ -149,6 +155,7 @@ impl Panel {
             Panel::Art(p) => &mut p.form,
             Panel::Skins(p) => &mut p.form,
             Panel::History(p) => &mut p.form,
+            Panel::Scan(p) => &mut p.form,
         }
     }
 
@@ -166,6 +173,7 @@ impl Panel {
             Panel::Art(p) => p.handle(ev),
             Panel::Skins(p) => p.handle(ev, model),
             Panel::History(p) => p.handle(ev, model),
+            Panel::Scan(p) => p.handle(ev, model),
         }
     }
 
@@ -213,8 +221,14 @@ impl Panel {
             Panel::Art(p) => p.refresh(model),
             Panel::Skins(p) => p.refresh(model),
             Panel::History(p) => p.refresh(model),
+            Panel::Scan(p) => p.refresh(model),
             _ => false,
         }
+    }
+
+    /// The panel's work is over and it closes by itself.
+    pub fn wants_close(&self) -> bool {
+        matches!(self, Panel::Scan(p) if p.wants_close())
     }
 
     /// The picture the user chose for a cover.
@@ -321,11 +335,13 @@ pub enum Flag {
     MinimizeToTray,
     NotifyTracks,
     GlobalHotkeys,
+    KeepScanOpen,
 }
 
 impl Flag {
     const WINDOWS: [Flag; 6] = [Flag::Snap, Flag::EasyMove, Flag::KeepOnScreen, Flag::AlwaysOnTop, Flag::DoubleSize, Flag::SkinCursors];
-    const DISPLAY: [Flag; 5] = [Flag::ScrollTitle, Flag::DimInactive, Flag::ShowNumbers, Flag::ZeroPad, Flag::AutoAdvance];
+    const DISPLAY: [Flag; 6] =
+        [Flag::ScrollTitle, Flag::DimInactive, Flag::ShowNumbers, Flag::ZeroPad, Flag::AutoAdvance, Flag::KeepScanOpen];
     const DESKTOP: [Flag; 4] = [Flag::TrayIcon, Flag::MinimizeToTray, Flag::NotifyTracks, Flag::GlobalHotkeys];
 
     fn label(self) -> &'static str {
@@ -345,6 +361,7 @@ impl Flag {
             Flag::MinimizeToTray => "Minimize to the tray",
             Flag::NotifyTracks => "Notify of each new track",
             Flag::GlobalHotkeys => "Global hotkeys (Ctrl+Alt)",
+            Flag::KeepScanOpen => "Keep the scan window open",
         }
     }
 
@@ -378,6 +395,7 @@ impl Flag {
             Flag::MinimizeToTray => &mut s.minimize_to_tray,
             Flag::NotifyTracks => &mut s.notify_tracks,
             Flag::GlobalHotkeys => &mut s.global_hotkeys,
+            Flag::KeepScanOpen => &mut s.rg_scan_keep_open,
         }
     }
 

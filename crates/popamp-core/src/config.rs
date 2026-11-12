@@ -251,6 +251,8 @@ settings! {
     replaygain_mode: i32 = 0,
     replaygain_preamp: f32 = 0.0,
     replaygain_non_rg_gain: f32 = -6.0,
+    /// The scan window stays open until OK when the scan ends.
+    rg_scan_keep_open: bool = true,
     // Desktop.
     /// An icon in the system tray (StatusNotifierItem on Linux).
     tray_icon: bool = true,

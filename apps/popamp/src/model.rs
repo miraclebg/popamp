@@ -119,8 +119,8 @@ pub struct Model {
     pub history: History,
     /// The ReplayGain values Popamp measured, kept in `replaygain.txt`.
     pub scanned: Arc<Scanned>,
-    /// True while a ReplayGain scan runs.
-    pub scanning: bool,
+    /// Where the ReplayGain scan is; its window shows it.
+    pub scan: crate::scan::ScanState,
     pub vis: Vis,
     pub ui: Vec<UiReq>,
     /// The windows are hidden; the tray icon is there to bring them back.
@@ -257,7 +257,7 @@ impl Model {
             bookmarks,
             history,
             scanned,
-            scanning: false,
+            scan: Default::default(),
             vis: Vis::new(),
             ui: Vec::new(),
             in_tray: false,

@@ -43,6 +43,10 @@ All notable changes to this project are documented here. The format follows
 - **ReplayGain scanner:** select tracks, then *Scan ReplayGain* in the
   playlist's menu. It measures track and album gain (EBU R128) and keeps
   the values in `replaygain.txt`; the audio files are never written.
+  A window counts the tracks and can cancel the scan (nothing is saved
+  then). At the end it waits for OK, unless "Keep the scan window open"
+  (in it and in Preferences) is off. Playback uses the values once
+  *Options > ReplayGain* is on.
 - **Tray icon** on Linux (StatusNotifierItem) and Windows, on by default:
   a click brings Popamp up, a middle click plays or pauses, and its menu
   has the transport buttons. "Minimize to the tray" hides the windows

@@ -1347,6 +1347,7 @@ impl App {
                 self.render_panel(i);
             }
         }
+        self.panels.retain(|p| !p.panel.wants_close());
         if self.model.pl_dirty != self.seen_pl_dirty {
             self.seen_pl_dirty = self.model.pl_dirty;
             for i in 0..self.panels.len() {
