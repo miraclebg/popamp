@@ -29,9 +29,6 @@ pub fn attributes(role: WindowRole) -> WindowAttributes {
 /// their owner, so every window is minimized and restored by itself.
 pub const OWNED_FOLLOW_OWNER: bool = false;
 
-/// The zoom counts in screen pixels; the desktop's scaling is not Popamp's.
-pub const SKIN_COUNTS_IN_POINTS: bool = false;
-
 /// A connection to the X server for what winit does not cover.
 pub struct Platform {
     x11: Option<RustConnection>,

@@ -142,9 +142,6 @@ pub struct Model {
     /// What a bar spans: the main window's monitor less the desktop's
     /// panels.
     pub screen: Option<crate::bar::Screen>,
-    /// The main window's screen pixels per 100 points: 200 on a Retina
-    /// screen. Counts only where the skin is sized in points (macOS).
-    pub backing_pct: i32,
 }
 
 /// How a bookmark shows in menus and lists: its title, else its location.
@@ -254,7 +251,6 @@ impl Model {
             status: Status::default(),
             stop_after_current: false,
             screen: None,
-            backing_pct: 100,
             transient: None,
             eq_presets,
             eq_auto,
@@ -1996,7 +1992,7 @@ mod tests {
         m.exec(Command::ToggleDoubleSize);
         assert!(!m.settings().dsize);
         m.exec(Command::ToggleDoubleSize);
-        assert_eq!(crate::scale::Scale::of(m.settings(), 100).px(100), 150, "Ctrl+D returns to the chosen size");
+        assert_eq!(crate::scale::Scale::of(m.settings()).px(100), 150, "Ctrl+D returns to the chosen size");
         m.on_menu(MenuAction::Zoom(100));
         assert!(!m.settings().dsize && m.settings().zoom == 150);
     }

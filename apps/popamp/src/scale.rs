@@ -14,10 +14,8 @@ pub struct Scale {
 impl Scale {
     pub const ONE: Scale = Scale { pct: 100, mode: Scaling::Nearest };
 
-    /// The window scale `s` asks for, on a screen with `backing_pct`
-    /// pixels per 100 of the units the zoom counts in.
-    pub fn of(s: &Settings, backing_pct: i32) -> Scale {
-        Scale::new(if s.dsize { s.zoom } else { 100 } * backing_pct / 100, s.wsz_scaling)
+    pub fn of(s: &Settings) -> Scale {
+        Scale::new(if s.dsize { s.zoom } else { 100 }, s.wsz_scaling)
     }
 
     /// `pct` screen pixels per 100 skin pixels.
@@ -39,6 +37,15 @@ impl Scale {
     /// How many skin pixels it takes to cover `p` screen pixels.
     pub fn skin_up(self, p: i32) -> i32 {
         (p * 100 + self.pct - 1).div_euclid(self.pct)
+    }
+
+    /// This scale on a screen with `factor` pixels to each unit the
+    /// desktop counts in (2 on a Retina Mac): what a window is drawn at.
+    pub fn on_screen(self, factor: f64) -> Scale {
+        if factor == 1.0 {
+            return self;
+        }
+        Scale::new((self.pct as f64 * factor).round() as i32, self.mode)
     }
 
     /// Screen pixels per skin pixel.
@@ -143,11 +150,11 @@ mod tests {
 
     #[test]
     fn double_size_switches_to_the_chosen_zoom() {
-        assert_eq!(Scale::of(&settings(false, 150, Scaling::Sharp), 100).px(275), 275);
-        let s = Scale::of(&settings(true, 150, Scaling::Sharp), 100);
+        assert_eq!(Scale::of(&settings(false, 150, Scaling::Sharp)).px(275), 275);
+        let s = Scale::of(&settings(true, 150, Scaling::Sharp));
         assert_eq!((s.px(275), s.px(116)), (413, 174));
         assert_eq!((s.skin(0), s.skin(2), s.skin(3), s.skin(412)), (0, 1, 2, 274));
-        assert_eq!(Scale::of(&settings(true, 250, Scaling::Integer), 100).px(10), 20, "integer rounds down");
+        assert_eq!(Scale::of(&settings(true, 250, Scaling::Integer)).px(10), 20, "integer rounds down");
     }
 
     fn strip(px: &[u32]) -> Bitmap {
@@ -165,7 +172,7 @@ mod tests {
     #[test]
     fn whole_multiples_copy_pixels_in_any_mode() {
         let src = strip(&[0x000000, 0xffffff]);
-        let sharp = Scale::of(&settings(true, 200, Scaling::Sharp), 100);
+        let sharp = Scale::of(&settings(true, 200, Scaling::Sharp));
         assert_eq!(present(sharp, &src, 4, 2), [0, 0, 0xffffff, 0xffffff, 0, 0, 0xffffff, 0xffffff]);
     }
 
@@ -173,16 +180,24 @@ mod tests {
     fn sharp_blends_only_the_pixel_on_an_edge() {
         // Two pixels at x1.5: black, a half-and-half column, white.
         let src = strip(&[0x000000, 0xffffff]);
-        let sharp = Scale::of(&settings(true, 150, Scaling::Sharp), 100);
+        let sharp = Scale::of(&settings(true, 150, Scaling::Sharp));
         assert_eq!(present(sharp, &src, 3, 1), [0x000000, 0x808080, 0xffffff]);
-        let nearest = Scale::of(&settings(true, 150, Scaling::Nearest), 100);
+        let nearest = Scale::of(&settings(true, 150, Scaling::Nearest));
         assert_eq!(present(nearest, &src, 3, 1), [0x000000, 0x000000, 0xffffff]);
     }
 
     #[test]
     fn flat_areas_stay_flat() {
         let src = strip(&[0x123456; 7]);
-        let sharp = Scale::of(&settings(true, 175, Scaling::Sharp), 100);
+        let sharp = Scale::of(&settings(true, 175, Scaling::Sharp));
         assert!(present(sharp, &src, 12, 2).iter().all(|&p| p == 0x123456));
+    }
+
+    #[test]
+    fn a_window_draws_at_its_screens_density() {
+        let s = Scale::new(150, Scaling::Sharp);
+        assert_eq!(s.on_screen(2.0).px(100), 300, "x1.5 on a Retina screen");
+        assert_eq!(s.on_screen(1.0), s);
+        assert_eq!(Scale::new(150, Scaling::Integer).on_screen(2.0).px(10), 20, "whole multiples of what the zoom gives");
     }
 }
