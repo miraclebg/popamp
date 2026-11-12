@@ -53,9 +53,6 @@ pub fn use_parent_console() {
 /// the main window is minimized or restored by hand.
 pub const OWNED_FOLLOW_OWNER: bool = true;
 
-/// The zoom counts in screen pixels; the desktop's scaling is not Popamp's.
-pub const SKIN_COUNTS_IN_POINTS: bool = false;
-
 /// Nothing to connect to: the calls go straight to the system. Holds the
 /// window registered as an application desktop toolbar, if any.
 pub struct Platform {

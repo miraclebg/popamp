@@ -236,13 +236,12 @@ pub fn resize(model: &mut Model, key: WindowKey, start: (i32, i32), dx: i32, dy:
 
 /// The scale a window is shown at: a bar's own size for a bar, the
 /// window size for the rest.
-/// On macOS the zoom counts in points, so a Retina screen doubles it.
+/// In the desktop's units: screen pixels, or points on macOS.
 pub fn scale(model: &Model, key: WindowKey) -> Scale {
     let s = model.settings();
-    let backing = if crate::platform::SKIN_COUNTS_IN_POINTS { model.backing_pct } else { 100 };
     match key {
-        WindowKey::Main if crate::bar::edge(model).is_some() => Scale::new(s.bar_zoom * backing / 100, s.wsz_scaling),
-        _ => Scale::of(s, backing),
+        WindowKey::Main if crate::bar::edge(model).is_some() => Scale::new(s.bar_zoom, s.wsz_scaling),
+        _ => Scale::of(s),
     }
 }
 
@@ -262,24 +261,6 @@ mod tests {
     use super::*;
     use popamp_core::config::BarEdge;
     use popamp_skin::layout::Placement;
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn a_retina_screen_counts_the_skin_in_points() {
-        let mut m = Model::for_tests();
-        m.backing_pct = 200;
-        assert_eq!(scale(&m, WindowKey::Main).px(275), 550, "x1 is 275 points: 550 pixels");
-        m.settings_mut().dsize = true; // zoom 200
-        assert_eq!(scale(&m, WindowKey::Main).px(275), 1100);
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    #[test]
-    fn elsewhere_the_zoom_is_in_screen_pixels() {
-        let mut m = Model::for_tests();
-        m.backing_pct = 200;
-        assert_eq!(scale(&m, WindowKey::Main).px(275), 275);
-    }
 
     #[test]
     fn sizes_come_from_the_layout_and_settings() {

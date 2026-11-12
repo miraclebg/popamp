@@ -26,7 +26,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
-use winit::dpi::{PhysicalPosition, PhysicalSize};
+use winit::dpi::PhysicalPosition;
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
@@ -211,9 +211,7 @@ impl App {
     }
 
     fn monitors(el: &ActiveEventLoop) -> Vec<Screen> {
-        el.available_monitors()
-            .map(|m| Screen { x: m.position().x, y: m.position().y, w: m.size().width as i32, h: m.size().height as i32 })
-            .collect()
+        el.available_monitors().map(|m| platform::monitor(&m)).collect()
     }
 
     /// The monitor with the main window's top-left corner, else the first.
@@ -254,21 +252,6 @@ impl App {
 
     /// Makes the window for `k`, hidden; false if the system cannot.
     fn create_window(&mut self, el: &ActiveEventLoop, k: WindowKey, monitors: &[Screen]) -> bool {
-        if k == WindowKey::Main {
-            // The screen it opens on decides its size where the skin counts
-            // in points; the window itself confirms it below.
-            let at = self.saved_pos(k);
-            let monitor = el
-                .available_monitors()
-                .find(|m| {
-                    let (p, s) = (m.position(), m.size());
-                    at.0 >= p.x && at.0 < p.x + s.width as i32 && at.1 >= p.y && at.1 < p.y + s.height as i32
-                })
-                .or_else(|| el.primary_monitor());
-            if let Some(m) = monitor {
-                self.model.backing_pct = (m.scale_factor() * 100.0).round() as i32;
-            }
-        }
         let scale = self.scale(k);
         let (w, h) = self.logical_size(k);
         let mut pos = self.saved_pos(k);
@@ -283,8 +266,8 @@ impl App {
         let role = self.role(k);
         let mut attrs = platform::attributes(role)
             .with_title(crate::bind::title(k))
-            .with_inner_size(PhysicalSize::new(scale.px(w) as u32, scale.px(h) as u32))
-            .with_position(PhysicalPosition::new(pos.0, pos.1))
+            .with_inner_size(platform::size(scale.px(w), scale.px(h)))
+            .with_position(platform::position(pos.0, pos.1))
             .with_visible(false)
             .with_window_icon(window_icon());
         if self.model.settings().aot {
@@ -321,13 +304,6 @@ impl App {
             cursor_kind: None,
         });
         self.store_pos(k, pos);
-        if k == WindowKey::Main {
-            let backing = (self.wins[k.index()].as_ref().map_or(1.0, |w| w.window.scale_factor()) * 100.0).round() as i32;
-            if backing != self.model.backing_pct {
-                self.model.backing_pct = backing;
-                self.model.ui.push(UiReq::Layout);
-            }
-        }
         true
     }
 
@@ -386,7 +362,7 @@ impl App {
                 let pos = self.saved_pos(k);
                 if let Some(w) = self.win_mut(k) {
                     w.pos = pos;
-                    w.window.set_outer_position(PhysicalPosition::new(pos.0, pos.1));
+                    w.window.set_outer_position(platform::position(pos.0, pos.1));
                 }
             }
         }
@@ -415,9 +391,9 @@ impl App {
             let pos = new_pos[i];
             let scale = self.scale(k);
             if let Some(w) = self.win_mut(k) {
-                let _ = w.window.request_inner_size(PhysicalSize::new(scale.px(lw) as u32, scale.px(lh) as u32));
+                let _ = w.window.request_inner_size(platform::size(scale.px(lw), scale.px(lh)));
                 if w.pos != pos {
-                    w.window.set_outer_position(PhysicalPosition::new(pos.0, pos.1));
+                    w.window.set_outer_position(platform::position(pos.0, pos.1));
                     w.pos = pos;
                 }
                 w.size = (lw, lh);
@@ -467,11 +443,7 @@ impl App {
     fn keep_playlist_grip_on_screen(&mut self, old: Option<Rect>, pos: (i32, i32)) -> bool {
         let (Some(old), Some(w)) = (old, self.win(WindowKey::Playlist)) else { return false };
         let Some(def) = self.model.skin.layout.window(WindowKey::Playlist) else { return false };
-        let monitors: Vec<Screen> = w
-            .window
-            .available_monitors()
-            .map(|m| Screen { x: m.position().x, y: m.position().y, w: m.size().width as i32, h: m.size().height as i32 })
-            .collect();
+        let monitors: Vec<Screen> = w.window.available_monitors().map(|m| platform::monitor(&m)).collect();
         let Some(monitor) = monitors.into_iter().find(|m| pos.0 >= m.x && pos.0 < m.x + m.w && pos.1 >= m.y && pos.1 < m.y + m.h) else {
             return false;
         };
@@ -525,12 +497,15 @@ impl App {
     }
 
     fn render(&mut self, k: WindowKey) {
-        let scale = self.scale(k);
         let i = k.index();
+        let layout = self.scale(k);
         let Some(w) = self.wins[i].as_mut() else { return };
         if !w.visible {
             return;
         }
+        // In screen pixels: the window's size in the desktop's units at its
+        // screen's pixels per unit (2 on a Retina Mac, else 1).
+        let scale = layout.on_screen(if platform::DESKTOP_IN_POINTS { w.window.scale_factor() } else { 1.0 });
         let (lw, lh) = w.size;
         // Vector skins are drawn at screen size, classic ones at x1 and scaled.
         let drawn = if self.model.skin.vector { scale } else { Scale::ONE };
@@ -576,16 +551,13 @@ impl App {
         let pct = self.dialog_pct();
         let layout = menu::layout(&items, &mut self.fonts.list, pct);
         let (w, h) = layout.screen();
-        let monitor = self.win(WindowKey::Main).and_then(|w| w.window.current_monitor()).map(|m| Screen {
-            x: m.position().x,
-            y: m.position().y,
-            w: m.size().width as i32,
-            h: m.size().height as i32,
-        });
-        let (x, y) = monitor.map_or(at, |m| menu_origin(at, (w, h), m, !sub));
+        let monitor = self.win(WindowKey::Main).and_then(|w| w.window.current_monitor()).map(|m| platform::monitor(&m));
+        // Placed in the desktop's units, as the cursor and the monitor are.
+        let units = if platform::DESKTOP_IN_POINTS { (w * 100 / pct, h * 100 / pct) } else { (w, h) };
+        let (x, y) = monitor.map_or(at, |m| menu_origin(at, units, m, !sub));
         let attrs = platform::attributes(WindowRole::Popup)
-            .with_inner_size(PhysicalSize::new(w as u32, h as u32))
-            .with_position(PhysicalPosition::new(x, y));
+            .with_inner_size(platform::drawn_size(w, h, pct))
+            .with_position(platform::position(x, y));
         let Ok(window) = el.create_window(attrs).map(Arc::new) else { return };
         self.platform.no_activate(&window);
         let Ok(ctx) = softbuffer::Context::new(window.clone()) else { return };
@@ -634,14 +606,13 @@ impl App {
         let pct = self.dialog_pct();
         let (w, h) = (crate::pen::screen(pct, panel.form().w), crate::pen::screen(pct, panel.form().h));
         // Centred on the main window's monitor, so the title bar is on screen.
-        let monitor = self.win(WindowKey::Main).and_then(|m| m.window.current_monitor());
-        let (cx, cy) = monitor
-            .map(|m| (m.position().x + m.size().width as i32 / 2, m.position().y + m.size().height as i32 / 2))
-            .unwrap_or((640, 400));
+        let monitor = self.win(WindowKey::Main).and_then(|m| m.window.current_monitor()).map(|m| platform::monitor(&m));
+        let (cx, cy) = monitor.map_or((640, 400), |m| (m.x + m.w / 2, m.y + m.h / 2));
+        let (uw, uh) = if platform::DESKTOP_IN_POINTS { (w * 100 / pct, h * 100 / pct) } else { (w, h) };
         let attrs = platform::attributes(WindowRole::Dialog)
             .with_title(panel.title())
-            .with_inner_size(PhysicalSize::new(w as u32, h as u32))
-            .with_position(PhysicalPosition::new((cx - w / 2).max(0), (cy - h / 2).max(0)));
+            .with_inner_size(platform::drawn_size(w, h, pct))
+            .with_position(platform::position((cx - uw / 2).max(0), (cy - uh / 2).max(0)));
         let Ok(window) = el.create_window(attrs).map(Arc::new) else { return };
         let Ok(ctx) = softbuffer::Context::new(window.clone()) else { return };
         let Ok(surface) = Surface::new(&ctx, window.clone()) else { return };
@@ -680,7 +651,7 @@ impl App {
             // The windows changed size while the dialog was open.
             p.frame = Bitmap::new(w, h, 0);
             p.pct = pct;
-            let _ = p.window.request_inner_size(PhysicalSize::new(w as u32, h as u32));
+            let _ = p.window.request_inner_size(platform::drawn_size(w, h, pct));
         }
         form.draw(&mut Pen::new(&mut p.frame, &mut self.fonts.list, pct));
         present_unscaled(&mut p.surface, &p.frame);
@@ -800,8 +771,8 @@ impl App {
         let (x, y) = self.cursor_screen(WindowKey::Main);
         let attrs = platform::attributes(WindowRole::Tooltip)
             .with_title(text)
-            .with_inner_size(PhysicalSize::new(frame.w as u32, frame.h as u32))
-            .with_position(PhysicalPosition::new(x, y + 20))
+            .with_inner_size(platform::drawn_size(frame.w, frame.h, pct))
+            .with_position(platform::position(x, y + 20))
             .with_window_level(WindowLevel::AlwaysOnTop);
         let Ok(window) = el.create_window(attrs).map(Arc::new) else { return };
         self.platform.no_activate(&window);
@@ -946,7 +917,7 @@ impl App {
         let mut targets: Vec<(i32, i32, i32, i32)> =
             WindowKey::ALL.iter().filter(|&&k| !in_group(k)).filter_map(|&k| self.rect(k)).collect();
         if let Some(m) = self.win(WindowKey::Main).and_then(|w| w.window.current_monitor()) {
-            let (mx, my, mw, mh) = (m.position().x, m.position().y, m.size().width as i32, m.size().height as i32);
+            let Screen { x: mx, y: my, w: mw, h: mh } = platform::monitor(&m);
             // Screen edges as zero-thickness rectangles around the monitor.
             targets.push((mx - 10_000, my - 10_000, 10_000 + mx + mw + 10_000 - mx, 10_000));
             targets.push((mx - 10_000, my + mh, 30_000, 10_000));
@@ -997,7 +968,7 @@ impl App {
                     if let Some(w) = self.win_mut(g) {
                         if w.pos != p {
                             w.pos = p;
-                            w.window.set_outer_position(PhysicalPosition::new(p.0, p.1));
+                            w.window.set_outer_position(platform::position(p.0, p.1));
                         }
                     }
                     self.store_pos(g, p);
@@ -1617,16 +1588,9 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::CursorLeft { .. } => self.tip = None,
             WindowEvent::CloseRequested => self.run(el, Command::Exit),
             WindowEvent::RedrawRequested => self.render(k),
-            // The main window moved to a screen with other pixels per point:
-            // every window takes the size the zoom gives there.
-            WindowEvent::ScaleFactorChanged { scale_factor, .. } if k == WindowKey::Main => {
-                let backing = (scale_factor * 100.0).round() as i32;
-                if backing != self.model.backing_pct {
-                    self.model.backing_pct = backing;
-                    self.apply_layout(WindowKey::Main);
-                    self.redraw_all();
-                }
-            }
+            // Moved to a screen with other pixels per point: the window keeps
+            // its size in points and is drawn again at the new density.
+            WindowEvent::ScaleFactorChanged { .. } => self.render(k),
             WindowEvent::Focused(f) => {
                 if let Some(w) = self.win_mut(k) {
                     w.focused = f;
@@ -1640,11 +1604,16 @@ impl ApplicationHandler<AppEvent> for App {
                 self.render(k);
             }
             WindowEvent::Moved(p) => {
+                let factor = self.win(k).map_or(1.0, |w| w.window.scale_factor());
+                let p = {
+                    let (x, y) = platform::from_screen(p.x as f64, p.y as f64, factor);
+                    PhysicalPosition::new(x, y)
+                };
                 // Windows moves a window out of a work area that shrank,
                 // the bar out of the strip just reserved for it: it goes back.
                 if let Some(w) = self.win(k).filter(|w| w.role == WindowRole::Bar && w.strip.is_some() && w.pos != (p.x, p.y)) {
                     log::debug!(target: "moves", "{k:?} moved to ({},{}) by the system; back to {:?}", p.x, p.y, w.pos);
-                    w.window.set_outer_position(PhysicalPosition::new(w.pos.0, w.pos.1));
+                    w.window.set_outer_position(platform::position(w.pos.0, w.pos.1));
                     return;
                 }
                 log::debug!(target: "moves", "{k:?} moved to ({},{}); we had {:?}, dragging {}", p.x, p.y, self.win(k).map(|w| w.pos), self.drag.is_some());
@@ -1659,7 +1628,7 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::ModifiersChanged(m) => self.mods = m.state(),
             WindowEvent::CursorMoved { position, .. } => {
                 if let Some(w) = self.win_mut(k) {
-                    w.cursor = (position.x as i32, position.y as i32);
+                    w.cursor = platform::from_screen(position.x, position.y, w.window.scale_factor());
                 }
                 self.mouse_moved(k);
             }
