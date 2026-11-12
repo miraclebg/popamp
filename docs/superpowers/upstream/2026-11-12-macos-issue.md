@@ -55,3 +55,7 @@ Linux and Windows keep their keys and labels.
 - **CI:** the macOS job runs only after a merge to `main`, not on every pull request, so PRs don't wait for the slower macOS runners. GitHub's hosted macOS runners are free for public repositories. If you'd rather not use them, we have our own Mac build servers and can run the checks ourselves.
 
 The first PR (stage 1) is nearly ready: it builds and passes the tests on macOS, with CI green on all three systems. I'll wait for your answer before sending it.
+
+## Contact
+
+Martin Kovachev, miracle@nimasystems.com, +359 896 610 876
