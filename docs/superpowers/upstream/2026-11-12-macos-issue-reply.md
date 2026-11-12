@@ -9,7 +9,7 @@ Thank you, that all works for me. In order:
 
 **Timing:** understood. I'll wait for 0.9, rebase onto `main`, and give the new tray, global-hotkey and media-control modules their macOS placeholders in the cfg split. Then I'll send stage 1 on its own.
 
-Meanwhile I built every stage in my fork, so the PRs you get will have been used for a while. Everything runs on an Apple Silicon MacBook Pro with a second, non-Retina screen: CoreAudio playback and device switching, the Mac dialogs, CoreText fonts, opening files from Finder, the Mac keys, shaped skins, and a disk image built in CI that installs and plays Opus, tracker modules and MIDI on its own. Linux and Windows CI stayed green throughout.
+Meanwhile I built every stage in my fork (https://github.com/miraclebg/popamp), so the PRs you get will have been used for a while. Everything runs on an Apple Silicon MacBook Pro with a second, non-Retina screen: CoreAudio playback and device switching, the Mac dialogs, CoreText fonts, opening files from Finder, the Mac keys, shaped skins, and a disk image built in CI that installs and plays Opus, tracker modules and MIDI on its own. Linux and Windows CI stayed green throughout.
 
 Two things I noticed in passing that are yours, not macOS's:
 
