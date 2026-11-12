@@ -2,11 +2,12 @@
 //!
 //! On Linux the choice is the user's `mimeapps.list`, as `xdg-mime
 //! default` writes it. Windows lets only the user pick a default, in its
-//! Settings, so there Popamp opens that page.
+//! Settings, so there Popamp opens that page. On macOS the user picks one
+//! in Finder, for now.
 
 /// A kind of file, as Preferences offers them (on Windows, only the
 /// tests of the installer use them).
-#[cfg(any(unix, test))]
+#[cfg(any(linux_like, test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Group {
     Audio,
@@ -14,11 +15,11 @@ pub enum Group {
     Skins,
 }
 
-#[cfg(any(unix, test))]
+#[cfg(any(linux_like, test))]
 impl Group {
     pub const ALL: [Group; 3] = [Group::Audio, Group::Playlists, Group::Skins];
 
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     pub fn label(self) -> &'static str {
         match self {
             Group::Audio => "Audio files",
@@ -28,7 +29,7 @@ impl Group {
     }
 
     /// Its MIME types, as `popamp.desktop` lists them.
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     pub fn mimes(self) -> &'static [&'static str] {
         match self {
             Group::Audio => &[
@@ -80,10 +81,10 @@ impl Group {
     }
 }
 
-#[cfg(unix)]
+#[cfg(linux_like)]
 pub use linux::Desktop;
 
-#[cfg(unix)]
+#[cfg(linux_like)]
 mod linux {
     use super::Group;
     use std::path::PathBuf;

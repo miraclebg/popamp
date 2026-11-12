@@ -1,16 +1,21 @@
 //! TrueType text for the playlist, menus and vector skins (fontdue).
 //! Characters the font lacks come from a system font that has them,
-//! found through fontconfig, or the registry on Windows.
+//! found through fontconfig, the registry on Windows, or (later) CoreText
+//! on macOS.
 
 use popamp_skin::bitmap::mix;
 use popamp_skin::{Bitmap, Skin, TextStyle};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-#[cfg(unix)]
+#[cfg(linux_like)]
 mod fontconfig;
-#[cfg(unix)]
+#[cfg(linux_like)]
 use fontconfig as system;
+#[cfg(target_os = "macos")]
+mod coretext;
+#[cfg(target_os = "macos")]
+use coretext as system;
 #[cfg(any(windows, test))]
 mod windows;
 #[cfg(windows)]

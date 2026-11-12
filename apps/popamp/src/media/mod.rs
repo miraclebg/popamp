@@ -1,8 +1,11 @@
 //! The desktop's media controls: media keys, desktop widgets, playerctl.
 //! The UI thread sends [`Snapshot`]s through [`Controls`]; each system's
 //! service turns them into its own notifications and sends method calls
-//! back as remote commands. MPRIS2 over D-Bus on Unix, the System Media
-//! Transport Controls on Windows.
+//! back as remote commands. MPRIS2 over D-Bus on Linux, the System Media
+//! Transport Controls on Windows, Now Playing on macOS (not yet).
+
+// The services' shared helpers go unused on macOS until Now Playing is there.
+#![cfg_attr(target_os = "macos", allow(dead_code))]
 
 use crate::cli::Remote;
 use crate::ipc::Request;
@@ -14,10 +17,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use winit::event_loop::EventLoopProxy;
 
-#[cfg(unix)]
+#[cfg(linux_like)]
 mod mpris;
-#[cfg(unix)]
+#[cfg(linux_like)]
 use mpris as service;
+#[cfg(target_os = "macos")]
+mod nowplaying;
+#[cfg(target_os = "macos")]
+use nowplaying as service;
 #[cfg(windows)]
 mod smtc;
 #[cfg(windows)]

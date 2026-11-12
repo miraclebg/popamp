@@ -1,5 +1,6 @@
 //! Everything that depends on the windowing system: X11 (or Xwayland) on
-//! Linux, Win32 on Windows. The rest of the program sees only this module.
+//! Linux, Win32 on Windows, AppKit on macOS. The rest of the program sees
+//! only this module.
 
 use crate::scale::Scale;
 
@@ -7,10 +8,14 @@ use crate::scale::Scale;
 mod windows;
 #[cfg(windows)]
 pub use windows::{attributes, use_parent_console, Platform, OWNED_FOLLOW_OWNER};
-#[cfg(unix)]
+#[cfg(linux_like)]
 mod x11;
-#[cfg(unix)]
+#[cfg(linux_like)]
 pub use x11::{attributes, Platform, OWNED_FOLLOW_OWNER};
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+pub use macos::{attributes, Platform, OWNED_FOLLOW_OWNER};
 
 /// What a window is for, which decides how the window manager treats it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +45,7 @@ pub struct Mask {
 
 /// The visible part of a window as `(x, y, w, h)` rectangles in screen
 /// pixels: one per horizontal run of the mask.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn shape_rects(mask: Option<&Mask>, size: (i32, i32)) -> Vec<(i16, i16, u16, u16)> {
     let whole = vec![(0, 0, size.0 as u16, size.1 as u16)];
     let Some(Mask { w, h, on: mask, scale }) = mask else { return whole };

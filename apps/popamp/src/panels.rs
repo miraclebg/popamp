@@ -5,7 +5,7 @@
 //! the [`Model`]; the windows themselves live in `app.rs`.
 
 use crate::fileinfo::{AlbumArt, FileInfo};
-#[cfg(unix)]
+#[cfg(linux_like)]
 use crate::filetypes::Group;
 use crate::model::{Model, UiReq};
 use crate::museum::{self, Fetched, Job};
@@ -39,7 +39,7 @@ pub enum Act {
     RemoveCover,
     Flag(Flag),
     /// A file type check box, read on OK.
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     FileType,
     /// Opens the system's default apps.
     #[cfg(windows)]
@@ -451,12 +451,12 @@ impl Field {
     }
 }
 
-#[cfg(unix)]
+#[cfg(linux_like)]
 type FileTypes = crate::filetypes::Desktop;
-/// Windows keeps the choice to itself.
-#[cfg(windows)]
+/// Windows and macOS keep the choice to themselves.
+#[cfg(not(linux_like))]
 struct FileTypes;
-#[cfg(windows)]
+#[cfg(not(linux_like))]
 impl FileTypes {
     fn from_env() -> FileTypes {
         FileTypes
@@ -467,9 +467,9 @@ pub struct Preferences {
     form: Form<Act>,
     /// Where the default players are chosen, and the check box of each
     /// group in [`Group::ALL`] order.
-    #[cfg_attr(windows, allow(dead_code))]
+    #[cfg_attr(not(linux_like), allow(dead_code))]
     file_types: FileTypes,
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     type_checks: [usize; 3],
     fields: Vec<(Field, usize)>,
     /// The devices to play on, and the list that shows them.
@@ -499,7 +499,7 @@ impl Preferences {
             y += 30 + rows * 22;
         }
         form.add(Rect::new(10, y, w - 20, 44), Widget::Group { label: "Open with Popamp".into() });
-        #[cfg(unix)]
+        #[cfg(linux_like)]
         let type_checks = {
             let on = file_types.defaults();
             let third = (w - 44) / 3;
@@ -516,6 +516,11 @@ impl Preferences {
             let note = "Windows lets you choose the default player in its Settings.".into();
             form.add(Rect::new(22, y + 18, w - BUTTON.0 - 54, 24), Widget::Label { text: note, dim: false });
             button(&mut form, w - BUTTON.0 - 22, y + 16, "Default apps", Act::DefaultApps, false);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let note = "Choose Popamp in Finder: Get Info, then Open with.".into();
+            form.add(Rect::new(22, y + 18, w - 44, 24), Widget::Label { text: note, dim: false });
         }
         y += 52;
         let mut fields = Vec::new();
@@ -544,7 +549,7 @@ impl Preferences {
         Preferences {
             form,
             file_types,
-            #[cfg(unix)]
+            #[cfg(linux_like)]
             type_checks,
             fields,
             devices,
@@ -595,7 +600,7 @@ impl Preferences {
         }
         model.pl_dirty += 1;
         // The rest is kept either way; a file that cannot be written says so.
-        #[cfg(unix)]
+        #[cfg(linux_like)]
         if let Err(e) = self.file_types.set(self.type_checks.map(|i| self.form.checked(i))) {
             self.form.set_label(self.status, e);
             return true;
@@ -1080,26 +1085,35 @@ pub(crate) mod tests {
         Panel::Prefs(Preferences::new(m.settings(), cards, test_types("devices")))
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn preferences_say_where_a_mac_chooses_the_player() {
+        let m = songs(&[]);
+        let p = Panel::Prefs(Preferences::new(m.settings(), vec![], test_types("mac")));
+        let Panel::Prefs(pr) = &p else { unreachable!() };
+        assert!(pr.form.labels().iter().any(|l| l.starts_with("Choose Popamp in Finder")));
+    }
+
     /// File types kept in a folder of the test's own.
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     fn test_types(name: &str) -> FileTypes {
         let root = std::env::temp_dir().join(format!("popamp-prefs-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         test_types_at(&root)
     }
 
-    #[cfg(windows)]
+    #[cfg(not(linux_like))]
     fn test_types(_: &str) -> FileTypes {
         FileTypes
     }
 
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     fn type_check(p: &Panel, g: Group) -> Rect {
         let Panel::Prefs(pr) = p else { panic!("not preferences") };
         pr.form.rect(pr.type_checks[Group::ALL.iter().position(|&x| x == g).unwrap()])
     }
 
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     #[test]
     fn ticked_file_types_open_with_popamp_after_ok() {
         let mut m = songs(&[]);
@@ -1118,12 +1132,12 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     fn test_types_at(root: &std::path::Path) -> FileTypes {
         FileTypes { config: root.join("config"), data: root.join("data"), dirs: vec![], exe: Some("/usr/bin/popamp".into()) }
     }
 
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     #[test]
     fn cancel_leaves_the_file_types() {
         let mut m = songs(&[]);
