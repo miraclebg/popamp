@@ -57,6 +57,26 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked --features popamp/plus -- -D warnings
       - run: cargo test --workspace --locked --features popamp/plus
 
+  macos:
+    name: macOS - clippy, test
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # Loaded at run time by the Opus and tracker module decoders.
+      - run: brew install opus libopenmpt
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - run: cargo clippy --workspace --all-targets --locked --features popamp/plugins -- -D warnings
+      - run: cargo test --workspace --locked --features popamp/plugins
+      # And Popamp Plus, with the GPU visualizers (--features plus).
+      - run: cargo clippy --workspace --all-targets --locked --features popamp/plus -- -D warnings
+      - run: cargo test --workspace --locked --features popamp/plus
+
   msrv:
     name: minimum Rust version (1.96)
     runs-on: ubuntu-24.04
