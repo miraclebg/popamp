@@ -22,6 +22,9 @@ pub fn attributes(role: WindowRole) -> WindowAttributes {
 /// Popamp moves and minimizes the docked windows itself, as on Linux.
 pub const OWNED_FOLLOW_OWNER: bool = false;
 
+/// The zoom counts in points: a Retina screen has two pixels to each.
+pub const SKIN_COUNTS_IN_POINTS: bool = true;
+
 /// Nothing to connect to yet.
 pub struct Platform;
 

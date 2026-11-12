@@ -254,6 +254,21 @@ impl App {
 
     /// Makes the window for `k`, hidden; false if the system cannot.
     fn create_window(&mut self, el: &ActiveEventLoop, k: WindowKey, monitors: &[Screen]) -> bool {
+        if k == WindowKey::Main {
+            // The screen it opens on decides its size where the skin counts
+            // in points; the window itself confirms it below.
+            let at = self.saved_pos(k);
+            let monitor = el
+                .available_monitors()
+                .find(|m| {
+                    let (p, s) = (m.position(), m.size());
+                    at.0 >= p.x && at.0 < p.x + s.width as i32 && at.1 >= p.y && at.1 < p.y + s.height as i32
+                })
+                .or_else(|| el.primary_monitor());
+            if let Some(m) = monitor {
+                self.model.backing_pct = (m.scale_factor() * 100.0).round() as i32;
+            }
+        }
         let scale = self.scale(k);
         let (w, h) = self.logical_size(k);
         let mut pos = self.saved_pos(k);
@@ -306,6 +321,13 @@ impl App {
             cursor_kind: None,
         });
         self.store_pos(k, pos);
+        if k == WindowKey::Main {
+            let backing = (self.wins[k.index()].as_ref().map_or(1.0, |w| w.window.scale_factor()) * 100.0).round() as i32;
+            if backing != self.model.backing_pct {
+                self.model.backing_pct = backing;
+                self.model.ui.push(UiReq::Layout);
+            }
+        }
         true
     }
 
@@ -1595,6 +1617,16 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::CursorLeft { .. } => self.tip = None,
             WindowEvent::CloseRequested => self.run(el, Command::Exit),
             WindowEvent::RedrawRequested => self.render(k),
+            // The main window moved to a screen with other pixels per point:
+            // every window takes the size the zoom gives there.
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } if k == WindowKey::Main => {
+                let backing = (scale_factor * 100.0).round() as i32;
+                if backing != self.model.backing_pct {
+                    self.model.backing_pct = backing;
+                    self.apply_layout(WindowKey::Main);
+                    self.redraw_all();
+                }
+            }
             WindowEvent::Focused(f) => {
                 if let Some(w) = self.win_mut(k) {
                     w.focused = f;
