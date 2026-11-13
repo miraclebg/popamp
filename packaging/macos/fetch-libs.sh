@@ -6,13 +6,13 @@
 # <dir>/licenses. Each library's install name points into the bundle's
 # Frameworks folder.
 # Usage: packaging/macos/fetch-libs.sh <dir>
-# Needs: the Xcode Command Line Tools, curl and shasum. ARCH (default
-# arm64) picks the architecture: arm64, x86_64, or universal for both,
+# Needs: the Xcode Command Line Tools, curl and shasum. ARCH (by default this
+# Mac's: arm64 or x86_64) picks the architecture, or universal for both,
 # built one after the other and joined with lipo.
 set -eu
 
 dir=${1:?usage: fetch-libs.sh <dir>}
-arch=${ARCH:-arm64}
+arch=${ARCH:-$(uname -m)}
 target=12.0
 case "$arch" in
     arm64 | x86_64) archs=$arch ;;
@@ -58,6 +58,10 @@ build() { # <arch>
     mkdir -p "$src" "$tmp/$a"
     tar -xzf "$tmp/opus.tar.gz" -C "$src"
     tar -xzf "$tmp/openmpt.tar.gz" -C "$src"
+    # The arch goes into the tools as well as the flags: libtool links C++
+    # and joins objects (ld -r) without CFLAGS, which would build those
+    # steps for this Mac and leave the other slice empty.
+    export CC="clang -arch $a" CXX="clang++ -arch $a" LD="ld -arch $a"
     export CFLAGS="-arch $a -mmacosx-version-min=$target -O2"
     export CXXFLAGS="$CFLAGS"
     export LDFLAGS="-arch $a -mmacosx-version-min=$target"

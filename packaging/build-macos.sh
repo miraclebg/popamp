@@ -12,9 +12,10 @@
 #
 # Usage: packaging/build-macos.sh [target/release/popamp] [output-dir] [libs-dir]
 # libs-dir (default dist/libs) holds what packaging/macos/fetch-libs.sh
-# made. Build popamp with MACOSX_DEPLOYMENT_TARGET=12.0. ARCH (default
-# arm64): arm64, x86_64, or universal for a popamp and libraries that hold
-# both (lipo -create), packaged as …-macos-universal.dmg.
+# made. Build popamp with MACOSX_DEPLOYMENT_TARGET=12.0. ARCH is this
+# Mac's (arm64 or x86_64) by default, or universal for a popamp and
+# libraries that hold both (lipo -create), packaged as
+# …-macos-universal.dmg.
 # Needs: the Xcode Command Line Tools.
 set -eu
 
@@ -23,7 +24,7 @@ root=$(cd "$here/.." && pwd)
 bin=${1:-"$root/target/release/popamp"}
 outdir=${2:-"$root/dist"}
 libs=${3:-"$root/dist/libs"}
-arch=${ARCH:-arm64}
+arch=${ARCH:-$(uname -m)}
 target=12.0
 case "$arch" in
     arm64 | x86_64) archs=$arch ;;
@@ -81,6 +82,17 @@ for f in "$app/Contents/MacOS/popamp" "$app/Contents/Frameworks/"*.dylib; do
         [ "$minos" = "$target" ] || { echo "error: $(basename "$f") ($a) needs macOS $minos, not $target" >&2; exit 1; }
         outside=$(otool -arch "$a" -L "$f" | tail -n +2 | awk '{ print $1 }' | grep -v -e '^/usr/lib/' -e '^/System/' -e '^@executable_path/\.\./Frameworks/' || true)
         [ -z "$outside" ] || { echo "error: $(basename "$f") ($a) links $outside" >&2; exit 1; }
+        # A slice can be there and still be empty: each must hold what
+        # Popamp looks up.
+        case "$(basename "$f")" in
+            libopus.0.dylib) symbol=_opus_multistream_decoder_create ;;
+            libopenmpt.0.dylib) symbol=_openmpt_module_create_from_memory2 ;;
+            *) symbol= ;;
+        esac
+        if [ -n "$symbol" ] && ! nm -arch "$a" -gU "$f" 2>/dev/null | grep -q " $symbol\$"; then
+            echo "error: $(basename "$f") ($a) lacks $symbol" >&2
+            exit 1
+        fi
     done
 done
 "$app/Contents/MacOS/popamp" /VERSION >/dev/null

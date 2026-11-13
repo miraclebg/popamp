@@ -94,7 +94,7 @@ To make a disk image for this Mac's kind only:
 ```sh
 sh packaging/macos/fetch-libs.sh dist/libs     # libopus, libopenmpt for macOS 12, the SoundFont
 MACOSX_DEPLOYMENT_TARGET=12.0 cargo build --release -p popamp
-sh packaging/build-macos.sh                    # dist/Popamp-<version>-macos-arm64.dmg
+sh packaging/build-macos.sh                    # dist/Popamp-<version>-macos-arm64.dmg (x86_64 on Intel)
 MACOSX_DEPLOYMENT_TARGET=12.0 cargo build --release -p popamp --features plus
 sh packaging/build-macos.sh                    # dist/Popamp-Plus-<version>-macos-arm64.dmg
 ```
