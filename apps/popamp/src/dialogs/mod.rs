@@ -4,10 +4,14 @@
 
 use std::path::PathBuf;
 
-#[cfg(unix)]
+#[cfg(linux_like)]
 mod zenity;
-#[cfg(unix)]
+#[cfg(linux_like)]
 pub use zenity::execute;
+#[cfg(target_os = "macos")]
+mod osascript;
+#[cfg(target_os = "macos")]
+pub use osascript::execute;
 #[cfg(any(windows, test))]
 mod windows;
 #[cfg(windows)]
@@ -63,6 +67,8 @@ pub struct DialogResult {
 }
 
 /// The request for a dialog; built on the UI thread, executed elsewhere.
+// macOS reads none of it until its dialogs are there.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 #[derive(Debug, Clone)]
 pub enum Request {
     Files { title: String, multiple: bool, filter: Vec<String>, start: Option<PathBuf> },

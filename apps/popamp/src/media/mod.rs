@@ -1,8 +1,11 @@
 //! The desktop's media controls: media keys, desktop widgets, playerctl.
 //! The UI thread sends [`Snapshot`]s through [`Controls`]; each system's
 //! service turns them into its own notifications and sends method calls
-//! back as remote commands. MPRIS2 over D-Bus on Unix, the System Media
-//! Transport Controls on Windows.
+//! back as remote commands. MPRIS2 over D-Bus on Linux, the System Media
+//! Transport Controls on Windows, Now Playing on macOS (not yet).
+
+// The services' shared helpers go unused on macOS until Now Playing is there.
+#![cfg_attr(target_os = "macos", allow(dead_code))]
 
 use crate::cli::Remote;
 use crate::ipc::Request;
@@ -14,17 +17,24 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use winit::event_loop::EventLoopProxy;
 
-#[cfg(unix)]
+#[cfg(linux_like)]
 mod mpris;
-#[cfg(unix)]
+#[cfg(linux_like)]
 mod notify;
-#[cfg(unix)]
+#[cfg(linux_like)]
 mod tray;
 #[cfg(windows)]
 #[path = "tray_windows.rs"]
 mod tray;
-#[cfg(unix)]
+#[cfg(target_os = "macos")]
+#[path = "tray_macos.rs"]
+mod tray;
+#[cfg(linux_like)]
 use mpris as service;
+#[cfg(target_os = "macos")]
+mod nowplaying;
+#[cfg(target_os = "macos")]
+use nowplaying as service;
 #[cfg(windows)]
 mod smtc;
 #[cfg(windows)]
@@ -88,9 +98,15 @@ fn running(pid: u32) -> bool {
     }
 }
 
-#[cfg(unix)]
+#[cfg(linux_like)]
 fn running(pid: u32) -> bool {
     Path::new(&format!("/proc/{pid}")).exists()
+}
+
+/// macOS has no `/proc`; `ps` knows.
+#[cfg(target_os = "macos")]
+fn running(pid: u32) -> bool {
+    std::process::Command::new("ps").args(["-p", &pid.to_string()]).output().is_ok_and(|o| o.status.success())
 }
 
 impl Covers {
@@ -167,12 +183,12 @@ impl Default for Snapshot {
 /// Picks the tracks worth a notification: each new track, or new stream
 /// title, once, when it plays. Pausing and resuming is no news.
 #[derive(Default)]
-#[cfg(unix)] // Windows shows its own media flyout.
+#[cfg(linux_like)] // Windows shows its own media flyout; macOS, later, Now Playing.
 struct News {
     told: Option<(u64, String)>,
 }
 
-#[cfg(unix)]
+#[cfg(linux_like)]
 impl News {
     fn of<'a>(&mut self, snap: &'a Snapshot) -> Option<&'a Track> {
         let track = snap.track.as_ref().filter(|_| snap.notify && snap.status == "Playing")?;
@@ -319,7 +335,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     fn playing(id: u64, title: &str) -> Snapshot {
         Snapshot {
             status: "Playing",
@@ -330,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     fn each_new_track_is_news_once() {
         let mut news = News::default();
         let title = |s: &Snapshot, news: &mut News| news.of(s).map(|t| t.title.clone());

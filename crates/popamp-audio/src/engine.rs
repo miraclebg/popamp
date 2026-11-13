@@ -1331,6 +1331,21 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn without_sound_output_a_track_fails_instead_of_racing() {
+        let wav = silent_wav("no-output", 1000);
+        let (tx, events) = crossbeam_channel::unbounded();
+        let engine = Engine::spawn(crate::output::DEFAULT.into(), Arc::new(Sources::default()), move |e| {
+            let _ = tx.send(e);
+        });
+        engine.send(EngineCmd::Open { id: 1, location: wav.to_string_lossy().into(), start_ms: 0 });
+        let seen: Vec<EngineEvent> = std::iter::from_fn(|| events.recv_timeout(Duration::from_secs(2)).ok()).collect();
+        let _ = std::fs::remove_file(wav);
+        assert!(seen.iter().any(|e| matches!(e, EngineEvent::Error { id: 1, message } if message.contains("macOS"))), "{seen:?}");
+        assert!(!seen.iter().any(|e| matches!(e, EngineEvent::Finished { .. })), "{seen:?}");
+    }
+
     // The program is a shell script.
     #[cfg(unix)]
     #[test]
@@ -1344,7 +1359,7 @@ mod tests {
     }
 
     /// A worker driven by hand, playing `location` on ALSA's `null`.
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     fn worker_playing(location: &str) -> Worker {
         let sources = Sources::default();
         sources.set_plugins(vec![Arc::new(ShellSource)], Default::default());
@@ -1358,8 +1373,9 @@ mod tests {
         w
     }
 
-    // ALSA's `plug:null` is a second device that plays nothing.
-    #[cfg(unix)]
+    // ALSA's `plug:null` is a second device that plays nothing, so these
+    // need ALSA.
+    #[cfg(linux_like)]
     #[test]
     fn a_new_device_goes_on_from_where_the_track_was() {
         let wav = silent_wav("device", 1000);
@@ -1375,7 +1391,7 @@ mod tests {
         assert!(w.state == PlayState::Playing && w.position_ms() > after, "{:?} at {} ms", w.state, w.position_ms());
     }
 
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     #[test]
     fn a_stream_goes_on_counting_on_the_new_device() {
         let mut w = worker_playing("live:head -c 384000 /dev/zero");
@@ -1385,7 +1401,7 @@ mod tests {
         assert!(before > 0 && w.position_ms() == before, "{before} ms, then {} ms", w.position_ms());
     }
 
-    #[cfg(unix)]
+    #[cfg(linux_like)]
     #[test]
     fn a_paused_track_resumes_on_the_new_device_where_it_was() {
         let wav = silent_wav("device-paused", 1000);

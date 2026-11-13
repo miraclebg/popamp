@@ -3,6 +3,7 @@
 pub mod cover;
 pub mod decoder;
 pub mod dsp;
+mod dylib;
 pub mod engine;
 pub mod formats;
 mod midi;
