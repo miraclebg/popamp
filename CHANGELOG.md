@@ -10,12 +10,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- **macOS:** Popamp runs on macOS 12 and newer on Apple Silicon, from a
-  disk image with Popamp.app. Sound through CoreAudio, the Mac's own
-  dialogs and fonts, files opened from Finder, the Mac's keys (⌘ first,
-  ⌘V pastes links and files into the playlist), Retina screens and
-  screens of different density side by side, and classic skins cut to
-  their shape. Settings live in `~/Library/Application Support/popamp`.
+- **macOS:** Popamp runs on macOS 12 and newer, on Apple Silicon and
+  Intel Macs, from one disk image with Popamp.app. Sound through
+  CoreAudio, the Mac's own dialogs and fonts, files opened from Finder,
+  the Mac's keys (⌘ first, ⌘V pastes links and files into the playlist),
+  Retina screens and screens of different density side by side, and
+  classic skins cut to their shape. The media keys and Now Playing
+  control it, its tray menu is in the menu bar, the global hotkeys are
+  ⌃⌥ with the same keys, its Dock icon brings it back, and Preferences can
+  make it the Mac's player for audio, playlists and skins. Settings live
+  in `~/Library/Application Support/popamp`.
 
 - **Opus:** `.opus` files (and Opus in Matroska and WebM) play, seek and
   have their tags read and changed. Decoding goes through the system's
