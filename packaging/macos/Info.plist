@@ -8,6 +8,8 @@
 	<string>Popamp</string>
 	<key>CFBundleDisplayName</key>
 	<string>Popamp</string>
+	<key>CFBundleIconFile</key>
+	<string>popamp</string>
 	<key>CFBundleExecutable</key>
 	<string>popamp</string>
 	<key>CFBundlePackageType</key>

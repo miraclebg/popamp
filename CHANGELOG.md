@@ -10,6 +10,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **macOS:** Popamp runs on macOS 12 and newer on Apple Silicon, from a
+  disk image with Popamp.app. Sound through CoreAudio, the Mac's own
+  dialogs and fonts, files opened from Finder, the Mac's keys (⌘ first,
+  ⌘V pastes links and files into the playlist), Retina screens and
+  screens of different density side by side, and classic skins cut to
+  their shape. Settings live in `~/Library/Application Support/popamp`.
+
 - **Opus:** `.opus` files (and Opus in Matroska and WebM) play, seek and
   have their tags read and changed. Decoding goes through the system's
   libopus, loaded when the first Opus track opens, so building needs no

@@ -14,6 +14,26 @@
 | Tags and cover / album art | `Alt+3` (File info) / `Alt+A` |
 | Double size / shade | `Ctrl+D` / `Ctrl+W` (or double-click the title bar) |
 
+On a Mac, ⌘ does what Ctrl does above and Ctrl+click is a right click;
+the menus show each shortcut as it is on the Mac. Where macOS or Mac habits
+already use a key, it moves (the table in `apps/popamp/src/mac_keys.rs`
+is the one the program and its menus follow):
+
+| Action | Linux, Windows | macOS |
+|---|---|---|
+| Quit | `Alt+F4` | `⌘Q` |
+| Preferences | `Ctrl+P` | `⌘,` |
+| Close window / minimize | none | `⌘W` / `⌘M` |
+| Shade | `Ctrl+W` | `⇧⌘W` |
+| Cycle Popamp's windows | `Ctrl+Tab` | ``⌘` `` |
+| Always on top | `Ctrl+A` | `⌥⌘A` (`⌘A` selects all in the playlist) |
+| File info / invert selection | `Alt+3` / `Ctrl+I` | `⌘I` / `⇧⌘I` |
+| Sort by title, file name, path | `Ctrl+Shift+1`/`2`/`3` | `⌥⌘1`/`2`/`3` |
+| Stop after current | `Ctrl+V` | `⌥⌘V` |
+| Paste links or files into the playlist | none | `⌘V` |
+| Remove / crop / clear / remove missing | `Del` / `Ctrl+Del` / `Ctrl+Shift+Del` / `Alt+Del` | `⌫` / `⌘⌫` / `⇧⌘⌫` / `⌥⌫` |
+| Top / bottom of the playlist | `Home` / `End` | also `⌘↑` / `⌘↓` |
+
 ## Remote control
 
 The same program sends commands to the running instance (`popamp.exe` on
@@ -30,11 +50,11 @@ popamp /HELP               # all options
 
 ## Folders
 
-| | Linux | Windows |
-|---|---|---|
-| Settings, playlist, bookmarks | `~/.config/popamp/` | `%APPDATA%\popamp\` |
-| Skins, plug-ins | `~/.local/share/popamp/skins/`, `plugins/` | `%APPDATA%\popamp\skins\`, `plugins\` |
-| Skins, plug-ins from packages | `/usr/share/popamp/skins/`, `plugins/` (each of `$XDG_DATA_DIRS`) | none |
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| Settings, playlist, bookmarks | `~/.config/popamp/` | `%APPDATA%\popamp\` | `~/Library/Application Support/popamp/` |
+| Skins, plug-ins | `~/.local/share/popamp/skins/`, `plugins/` | `%APPDATA%\popamp\skins\`, `plugins\` | `~/Library/Application Support/popamp/skins/`, `plugins/` |
+| Skins, plug-ins from packages | `/usr/share/popamp/skins/`, `plugins/` (each of `$XDG_DATA_DIRS`) | none | none |
 
 Settings are in `popamp.ini`, whose key names follow `winamp.ini`; the
 playlist is saved to `popamp.m3u8`. A `popamp.ini` next to the program
