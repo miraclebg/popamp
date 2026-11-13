@@ -1032,7 +1032,8 @@ pub(crate) fn open_playback(playback: Playback, location: &str, start_ms: u64, c
         }
         Playback::Http(url) => {
             let (src, ext, headers, title) = stream::open(&url, &cx.proxy)?;
-            let (dec, mut meta) = Decoder::open_source(src, ext, false)?;
+            let (mut dec, mut meta) = Decoder::open_source(src, ext, false)?;
+            dec.name_songs_in(title.clone());
             if meta.title.is_none() {
                 meta.title = headers.name.clone();
             }

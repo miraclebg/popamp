@@ -1,5 +1,6 @@
 //! Symphonia-based decoding to interleaved stereo `f32`, plus tag reading.
 
+use crate::stream::TitleSlot;
 use popamp_core::meta::{parse_gain, TrackMeta};
 use std::path::Path;
 use std::sync::LazyLock;
@@ -62,6 +63,8 @@ pub struct Decoder {
     frames_acc: u64,
     packets_seen: u64,
     length_known: bool,
+    /// Where to name each next song of a chain, for a radio.
+    songs: Option<TitleSlot>,
 }
 
 /// Symphonia's codecs plus Opus.
@@ -175,9 +178,27 @@ impl Decoder {
                 frames_acc: 0,
                 packets_seen: 0,
                 length_known: length_ms.is_some(),
+                songs: None,
             },
             meta,
         ))
+    }
+
+    /// Names each next song of a chain in `songs`, as a radio's titles are.
+    pub(crate) fn name_songs_in(&mut self, songs: TitleSlot) {
+        self.songs = Some(songs);
+    }
+
+    /// Names the song of the stream just started, from its tags.
+    fn name_song(&mut self) {
+        let Some(songs) = &self.songs else { return };
+        let mut meta = TrackMeta::default();
+        if let Some(rev) = self.reader.metadata().skip_to_latest() {
+            apply_tags(&mut meta, rev);
+        }
+        if let Some(name) = song_name(&meta) {
+            *songs.lock() = Some(name);
+        }
     }
 
     /// Appends the next chunk of interleaved stereo samples to `out`.
@@ -191,6 +212,7 @@ impl Decoder {
                 Err(SymError::ResetRequired) => {
                     let (track, codec) = audio_track(self.reader.as_ref())?;
                     (self.track_id, self.codec) = (track.id, codec);
+                    self.name_song();
                     continue;
                 }
                 Err(e) => return Err(format!("read error: {e}")),
@@ -272,6 +294,12 @@ impl Decoder {
         };
         Ok(reached)
     }
+}
+
+/// "Artist - Title", as radios name a song, or the title alone.
+fn song_name(meta: &TrackMeta) -> Option<String> {
+    let title = meta.title.as_deref()?;
+    Some(meta.artist.as_ref().map_or_else(|| title.to_string(), |artist| format!("{artist} - {title}")))
 }
 
 /// The first audio track of `reader`, and a decoder for it.
@@ -360,12 +388,12 @@ mod tests {
         }
     }
 
-    /// `name` twice in a row, as an Ogg radio sends one song after another:
+    /// `first`, then `second`, as an Ogg radio sends one song after another:
     /// a chain of two streams, the second with a serial number of its own.
     /// Read as a stream is, without seeking.
-    fn chained(name: &str) -> Decoder {
-        let one = std::fs::read(fixture(name)).unwrap();
-        let two = with_serial(&one, 0x5EC0_0D02);
+    fn chained(first: &str, second: &str) -> Decoder {
+        let one = std::fs::read(fixture(first)).unwrap();
+        let two = with_serial(&std::fs::read(fixture(second)).unwrap(), 0x5EC0_0D02);
         let radio = symphonia::core::io::ReadOnlySource::new(std::io::Cursor::new([one, two].concat()));
         Decoder::open_source(Box::new(radio), None, false).unwrap().0
     }
@@ -408,11 +436,33 @@ mod tests {
     fn a_chained_ogg_plays_every_stream_in_it() {
         for name in ["tone.opus", "silence.ogg"] {
             let (_, once) = decode_all(&fixture(name));
-            let (mut dec, mut twice) = (chained(name), Vec::new());
+            let (mut dec, mut twice) = (chained(name, name), Vec::new());
             while let Status::Data = dec.next(&mut twice).unwrap() {}
             let (once, twice) = (once.len() / 2, twice.len() / 2);
             assert!(twice.abs_diff(2 * once) < once / 20, "{name}: {once} frames once, {twice} chained");
         }
+    }
+
+    // An Ogg radio names the next song in the tags of its stream, not in
+    // ICY metadata.
+    #[test]
+    fn the_next_stream_of_a_chain_names_its_song() {
+        let (mut dec, titles) = (chained("tone.opus", "tone-tagged.opus"), TitleSlot::default());
+        dec.name_songs_in(titles.clone());
+        while let Status::Data = dec.next(&mut Vec::new()).unwrap() {}
+        assert_eq!(titles.lock().as_deref(), Some("Band - Second"));
+    }
+
+    #[test]
+    fn a_song_is_named_by_artist_and_title_or_its_title_alone() {
+        let meta = |artist: Option<&str>, title: Option<&str>| TrackMeta {
+            artist: artist.map(Into::into),
+            title: title.map(Into::into),
+            ..Default::default()
+        };
+        assert_eq!(song_name(&meta(Some("Band"), Some("Song"))).as_deref(), Some("Band - Song"));
+        assert_eq!(song_name(&meta(None, Some("Song"))).as_deref(), Some("Song"));
+        assert_eq!(song_name(&meta(Some("Band"), None)), None);
     }
 
     #[test]
