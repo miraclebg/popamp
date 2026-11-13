@@ -55,14 +55,45 @@ mod os {
     }
 }
 
-/// Not there yet on macOS: the screen sleeps as usual.
+/// An IOKit power assertion against the display sleeping; macOS ends it
+/// with the process should Popamp die.
 #[cfg(target_os = "macos")]
 mod os {
-    pub struct Hold;
+    use objc2_core_foundation::CFString;
+
+    #[link(name = "IOKit", kind = "framework")]
+    extern "C" {
+        fn IOPMAssertionCreateWithName(kind: &CFString, level: u32, name: &CFString, id: *mut u32) -> i32;
+        fn IOPMAssertionRelease(id: u32) -> i32;
+    }
+
+    /// kIOPMAssertionLevelOn.
+    const ON: u32 = 255;
+
+    pub struct Hold {
+        id: u32,
+    }
 
     pub fn hold() -> Option<Hold> {
-        log::warn!("cannot keep the screen on: not on macOS yet");
-        None
+        let (kind, name) = (CFString::from_str("PreventUserIdleDisplaySleep"), CFString::from_str("Popamp visualizer"));
+        let mut id = 0;
+        // SAFETY: two CFStrings and an out-pointer, as IOKit asks.
+        let status = unsafe { IOPMAssertionCreateWithName(&kind, ON, &name, &mut id) };
+        if status != 0 {
+            log::warn!("cannot keep the screen on (IOKit error {status})");
+            return None;
+        }
+        Some(Hold { id })
+    }
+
+    impl Drop for Hold {
+        fn drop(&mut self) {
+            // SAFETY: the assertion made in `hold`, released once.
+            let status = unsafe { IOPMAssertionRelease(self.id) };
+            if status != 0 {
+                log::warn!("cannot let the screen sleep again (IOKit error {status})");
+            }
+        }
     }
 }
 
@@ -88,5 +119,22 @@ mod os {
             // SAFETY: as above.
             unsafe { SetThreadExecutionState(ES_CONTINUOUS) };
         }
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_hold_keeps_the_screen_on_until_dropped() {
+        let listed = || {
+            let out = std::process::Command::new("pmset").args(["-g", "assertions"]).output().unwrap();
+            String::from_utf8_lossy(&out.stdout).contains("Popamp visualizer")
+        };
+        let hold = os::hold().expect("a power assertion");
+        assert!(listed(), "macOS lists the hold");
+        drop(hold);
+        assert!(!listed(), "and forgets it once dropped");
     }
 }

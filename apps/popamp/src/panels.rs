@@ -5,7 +5,7 @@
 //! the [`Model`]; the windows themselves live in `app.rs`.
 
 use crate::fileinfo::{AlbumArt, FileInfo};
-#[cfg(linux_like)]
+#[cfg(not(windows))]
 use crate::filetypes::Group;
 use crate::model::{Model, UiReq};
 use crate::museum::{self, Fetched, Job};
@@ -41,7 +41,7 @@ pub enum Act {
     RemoveCover,
     Flag(Flag),
     /// A file type check box, read on OK.
-    #[cfg(linux_like)]
+    #[cfg(not(windows))]
     FileType,
     /// Opens the system's default apps.
     #[cfg(windows)]
@@ -497,12 +497,12 @@ impl Field {
     }
 }
 
-#[cfg(linux_like)]
+#[cfg(not(windows))]
 type FileTypes = crate::filetypes::Desktop;
-/// Windows and macOS keep the choice to themselves.
-#[cfg(not(linux_like))]
+/// Windows keeps the choice to itself.
+#[cfg(windows)]
 struct FileTypes;
-#[cfg(not(linux_like))]
+#[cfg(windows)]
 impl FileTypes {
     fn from_env() -> FileTypes {
         FileTypes
@@ -513,9 +513,9 @@ pub struct Preferences {
     form: Form<Act>,
     /// Where the default players are chosen, and the check box of each
     /// group in [`Group::ALL`] order.
-    #[cfg_attr(not(linux_like), allow(dead_code))]
+    #[cfg_attr(windows, allow(dead_code))]
     file_types: FileTypes,
-    #[cfg(linux_like)]
+    #[cfg(not(windows))]
     type_checks: [usize; 3],
     fields: Vec<(Field, usize)>,
     /// The devices to play on, and the list that shows them.
@@ -547,7 +547,7 @@ impl Preferences {
             y += 30 + rows * 22;
         }
         form.add(Rect::new(10, y, w - 20, 44), Widget::Group { label: "Open with Popamp".into() });
-        #[cfg(linux_like)]
+        #[cfg(not(windows))]
         let type_checks = {
             let on = file_types.defaults();
             let third = (w - 44) / 3;
@@ -564,11 +564,6 @@ impl Preferences {
             let note = "Windows lets you choose the default player in its Settings.".into();
             form.add(Rect::new(22, y + 18, w - BUTTON.0 - 54, 24), Widget::Label { text: note, dim: false });
             button(&mut form, w - BUTTON.0 - 22, y + 16, "Default apps", Act::DefaultApps, false);
-        }
-        #[cfg(target_os = "macos")]
-        {
-            let note = "Choose Popamp in Finder: Get Info, then Open with.".into();
-            form.add(Rect::new(22, y + 18, w - 44, 24), Widget::Label { text: note, dim: false });
         }
         y += 52;
         let mut fields = Vec::new();
@@ -597,7 +592,7 @@ impl Preferences {
         Preferences {
             form,
             file_types,
-            #[cfg(linux_like)]
+            #[cfg(not(windows))]
             type_checks,
             fields,
             devices,
@@ -648,7 +643,7 @@ impl Preferences {
         }
         model.pl_dirty += 1;
         // The rest is kept either way; a file that cannot be written says so.
-        #[cfg(linux_like)]
+        #[cfg(not(windows))]
         if let Err(e) = self.file_types.set(self.type_checks.map(|i| self.form.checked(i))) {
             self.form.set_label(self.status, e);
             return true;
@@ -1135,13 +1130,18 @@ pub(crate) mod tests {
         Panel::Prefs(Preferences::new(m.settings(), cards, test_types("devices")))
     }
 
+    // Outside Popamp.app there is no app to make the default: OK says so
+    // and keeps the window open, and NSWorkspace is never asked.
     #[cfg(target_os = "macos")]
     #[test]
-    fn preferences_say_where_a_mac_chooses_the_player() {
-        let m = songs(&[]);
-        let p = Panel::Prefs(Preferences::new(m.settings(), vec![], test_types("mac")));
+    fn a_mac_offers_the_file_types_and_says_when_it_cannot() {
+        let mut m = songs(&[]);
+        let mut p = Panel::Prefs(Preferences::new(m.settings(), vec![], test_types("mac")));
+        let r = type_check(&p, Group::Playlists);
+        click(&mut p, &mut m, r);
+        assert!(press(&mut p, &mut m, Key::Enter), "still open");
         let Panel::Prefs(pr) = &p else { unreachable!() };
-        assert!(pr.form.labels().iter().any(|l| l.starts_with("Choose Popamp in Finder")));
+        assert!(pr.form.labels().iter().any(|l| l.contains("Popamp.app")), "{:?}", pr.form.labels());
     }
 
     /// File types kept in a folder of the test's own.
@@ -1152,12 +1152,18 @@ pub(crate) mod tests {
         test_types_at(&root)
     }
 
-    #[cfg(not(linux_like))]
+    #[cfg(windows)]
     fn test_types(_: &str) -> FileTypes {
         FileTypes
     }
 
-    #[cfg(linux_like)]
+    /// No Popamp.app: nothing asks NSWorkspace, so nothing changes.
+    #[cfg(target_os = "macos")]
+    fn test_types(_: &str) -> FileTypes {
+        FileTypes { app: None }
+    }
+
+    #[cfg(not(windows))]
     fn type_check(p: &Panel, g: Group) -> Rect {
         let Panel::Prefs(pr) = p else { panic!("not preferences") };
         pr.form.rect(pr.type_checks[Group::ALL.iter().position(|&x| x == g).unwrap()])

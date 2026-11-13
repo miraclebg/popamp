@@ -1,13 +1,13 @@
 //! The files Popamp opens, and making it their default player.
 //!
 //! On Linux the choice is the user's `mimeapps.list`, as `xdg-mime
-//! default` writes it. Windows lets only the user pick a default, in its
-//! Settings, so there Popamp opens that page. On macOS the user picks one
-//! in Finder, for now.
+//! default` writes it. On macOS it is Launch Services', asked through
+//! NSWorkspace for each file type. Windows lets only the user pick a
+//! default, in its Settings, so there Popamp opens that page.
 
 /// A kind of file, as Preferences offers them (on Windows, only the
 /// tests of the installer use them).
-#[cfg(any(linux_like, test))]
+#[cfg(any(not(windows), test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Group {
     Audio,
@@ -15,11 +15,11 @@ pub enum Group {
     Skins,
 }
 
-#[cfg(any(linux_like, test))]
+#[cfg(any(not(windows), test))]
 impl Group {
     pub const ALL: [Group; 3] = [Group::Audio, Group::Playlists, Group::Skins];
 
-    #[cfg(linux_like)]
+    #[cfg(not(windows))]
     pub fn label(self) -> &'static str {
         match self {
             Group::Audio => "Audio files",
@@ -69,9 +69,10 @@ impl Group {
         }
     }
 
-    /// Its file name extensions, as the Windows installer registers them:
-    /// every audio type but the video containers.
-    #[cfg(test)]
+    /// Its file name extensions, as the Windows installer registers them
+    /// and macOS's file types are made from: every audio type but the video
+    /// containers.
+    #[cfg(any(target_os = "macos", test))]
     pub fn extensions(self) -> Vec<&'static str> {
         match self {
             Group::Audio => popamp_core::audio_extensions().filter(|e| !["mp4", "mkv", "webm"].contains(e)).collect(),
@@ -83,6 +84,89 @@ impl Group {
 
 #[cfg(linux_like)]
 pub use linux::Desktop;
+#[cfg(target_os = "macos")]
+pub use mac::Desktop;
+
+/// Launch Services, through NSWorkspace: the app opening each file type.
+#[cfg(target_os = "macos")]
+mod mac {
+    use super::Group;
+    use block2::RcBlock;
+    use objc2::rc::Retained;
+    use objc2_app_kit::NSWorkspace;
+    use objc2_foundation::{NSError, NSString, NSURL};
+    use objc2_uniform_type_identifiers::UTType;
+    use std::path::{Path, PathBuf};
+
+    /// The Popamp.app this program runs in, if it runs in one: only an app
+    /// can be made the default.
+    pub struct Desktop {
+        pub app: Option<PathBuf>,
+    }
+
+    /// The file types of `group`, one for each of its extensions.
+    pub fn types(group: Group) -> Vec<Retained<UTType>> {
+        group.extensions().iter().filter_map(|e| UTType::typeWithFilenameExtension(&NSString::from_str(e))).collect()
+    }
+
+    impl Desktop {
+        pub fn from_env() -> Desktop {
+            let named = |p: &Path, n: &str| p.file_name().is_some_and(|f| f == n);
+            let exe = std::env::current_exe().ok();
+            let app = exe
+                .as_deref()
+                .and_then(Path::parent)
+                .filter(|d| named(d, "MacOS"))
+                .and_then(Path::parent)
+                .filter(|d| named(d, "Contents"))
+                .and_then(Path::parent)
+                .map(Path::to_path_buf);
+            Desktop { app }
+        }
+
+        /// Whether Popamp opens every file type of each group, in
+        /// [`Group::ALL`] order.
+        pub fn defaults(&self) -> [bool; 3] {
+            let Some(app) = &self.app else { return [false; 3] };
+            let workspace = NSWorkspace::sharedWorkspace();
+            let opens = |t: &UTType| {
+                workspace.URLForApplicationToOpenContentType(t).and_then(|u| u.path()).is_some_and(|p| Path::new(&p.to_string()) == app)
+            };
+            Group::ALL.map(|g| {
+                let types = types(g);
+                !types.is_empty() && types.iter().all(|t| opens(t))
+            })
+        }
+
+        /// Makes Popamp the app for the groups newly ticked in `chosen`.
+        /// Unticking leaves the user's other choices as they are: macOS has
+        /// no "no default". macOS answers later; a refusal is logged.
+        pub fn set(&self, chosen: [bool; 3]) -> Result<(), String> {
+            let before = self.defaults();
+            if (0..3).all(|n| !chosen[n] || before[n]) {
+                return Ok(());
+            }
+            let Some(app) = &self.app else {
+                return Err("Popamp is not running as Popamp.app, so it cannot be the default".into());
+            };
+            let workspace = NSWorkspace::sharedWorkspace();
+            let url = NSURL::fileURLWithPath(&NSString::from_str(&app.to_string_lossy()));
+            let done = RcBlock::new(|error: *mut NSError| {
+                // SAFETY: an NSError or null, alive for the call.
+                if let Some(error) = unsafe { error.as_ref() } {
+                    log::warn!("cannot make Popamp the default: {}", error.localizedDescription());
+                }
+            });
+            for (n, group) in Group::ALL.iter().enumerate().filter(|&(n, _)| chosen[n] && !before[n]) {
+                log::debug!("making Popamp the default for {group:?} ({n})");
+                for t in types(*group) {
+                    workspace.setDefaultApplicationAtURL_toOpenContentType_completionHandler(&url, &t, Some(&done));
+                }
+            }
+            Ok(())
+        }
+    }
+}
 
 #[cfg(linux_like)]
 mod linux {
@@ -359,6 +443,36 @@ pub fn open_default_apps() {
 #[cfg(test)]
 mod tests {
     use super::Group;
+
+    // Without Popamp.app there is nothing to register: nothing asked of
+    // NSWorkspace, and so nothing changed on the machine the tests run on.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn defaults_need_an_app_bundle() {
+        let d = super::Desktop { app: None };
+        assert_eq!(d.defaults(), [false; 3]);
+        assert!(d.set([true, true, true]).unwrap_err().contains("Popamp.app"));
+        assert_eq!(d.set([false; 3]), Ok(()), "nothing ticked, nothing to refuse");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn each_group_has_types() {
+        for g in Group::ALL {
+            assert!(!super::mac::types(g).is_empty(), "{g:?}");
+        }
+    }
+
+    // Launch Services hands Popamp only the types Popamp.app claims, and a
+    // tracker module (say) has no system type to claim it by: Info.plist
+    // lists every extension by name.
+    #[test]
+    fn popamp_app_claims_every_extension() {
+        let plist = include_str!("../../../packaging/macos/Info.plist");
+        let missing: Vec<_> =
+            Group::ALL.iter().flat_map(|g| g.extensions()).filter(|e| !plist.contains(&format!("<string>{e}</string>"))).collect();
+        assert!(missing.is_empty(), "Info.plist claims none of {missing:?}");
+    }
 
     #[test]
     fn the_installer_registers_every_extension() {

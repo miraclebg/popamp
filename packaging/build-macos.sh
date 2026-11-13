@@ -12,7 +12,10 @@
 #
 # Usage: packaging/build-macos.sh [target/release/popamp] [output-dir] [libs-dir]
 # libs-dir (default dist/libs) holds what packaging/macos/fetch-libs.sh
-# made. Build popamp with MACOSX_DEPLOYMENT_TARGET=12.0. ARCH: arm64.
+# made. Build popamp with MACOSX_DEPLOYMENT_TARGET=12.0. ARCH is this
+# Mac's (arm64 or x86_64) by default, or universal for a popamp and
+# libraries that hold both (lipo -create), packaged as
+# …-macos-universal.dmg.
 # Needs: the Xcode Command Line Tools.
 set -eu
 
@@ -21,8 +24,13 @@ root=$(cd "$here/.." && pwd)
 bin=${1:-"$root/target/release/popamp"}
 outdir=${2:-"$root/dist"}
 libs=${3:-"$root/dist/libs"}
-arch=${ARCH:-arm64}
+arch=${ARCH:-$(uname -m)}
 target=12.0
+case "$arch" in
+    arm64 | x86_64) archs=$arch ;;
+    universal) archs="arm64 x86_64" ;;
+    *) echo "error: ARCH is $arch, not arm64, x86_64 or universal" >&2; exit 1 ;;
+esac
 
 if [ ! -x "$bin" ]; then
     echo "error: binary not found: $bin" >&2
@@ -64,14 +72,28 @@ cp "$root/LICENSE-MIT" "$root/LICENSE-APACHE" "$root/THIRD_PARTY.md" "$app/Conte
 sed "s/@VERSION@/$version/g" "$here/macos/Info.plist" > "$app/Contents/Info.plist"
 plutil -lint "$app/Contents/Info.plist" >/dev/null
 
-# Every binary inside must start on macOS 12 and need nothing outside the
-# system and the bundle.
+# Every binary inside must hold each architecture, and each of those must
+# start on macOS 12 and need nothing outside the system and the bundle.
 for f in "$app/Contents/MacOS/popamp" "$app/Contents/Frameworks/"*.dylib; do
-    minos=$(otool -l "$f" | awk '/LC_BUILD_VERSION/ { found = 1 } found && /minos/ { print $2; exit }')
-    [ "$minos" = "$target" ] || { echo "error: $(basename "$f") needs macOS $minos, not $target" >&2; exit 1; }
-    [ "$(lipo -archs "$f")" = "$arch" ] || { echo "error: $(basename "$f") is $(lipo -archs "$f"), not $arch" >&2; exit 1; }
-    outside=$(otool -L "$f" | tail -n +2 | awk '{ print $1 }' | grep -v -e '^/usr/lib/' -e '^/System/' -e '^@executable_path/\.\./Frameworks/' || true)
-    [ -z "$outside" ] || { echo "error: $(basename "$f") links $outside" >&2; exit 1; }
+    has=$(lipo -archs "$f" | tr ' ' '\n' | sort | xargs)
+    [ "$has" = "$archs" ] || { echo "error: $(basename "$f") is $has, not $archs" >&2; exit 1; }
+    for a in $archs; do
+        minos=$(otool -arch "$a" -l "$f" | awk '/LC_BUILD_VERSION/ { found = 1 } found && /minos/ { print $2; exit }')
+        [ "$minos" = "$target" ] || { echo "error: $(basename "$f") ($a) needs macOS $minos, not $target" >&2; exit 1; }
+        outside=$(otool -arch "$a" -L "$f" | tail -n +2 | awk '{ print $1 }' | grep -v -e '^/usr/lib/' -e '^/System/' -e '^@executable_path/\.\./Frameworks/' || true)
+        [ -z "$outside" ] || { echo "error: $(basename "$f") ($a) links $outside" >&2; exit 1; }
+        # A slice can be there and still be empty: each must hold what
+        # Popamp looks up.
+        case "$(basename "$f")" in
+            libopus.0.dylib) symbol=_opus_multistream_decoder_create ;;
+            libopenmpt.0.dylib) symbol=_openmpt_module_create_from_memory2 ;;
+            *) symbol= ;;
+        esac
+        if [ -n "$symbol" ] && ! nm -arch "$a" -gU "$f" 2>/dev/null | grep -q " $symbol\$"; then
+            echo "error: $(basename "$f") ($a) lacks $symbol" >&2
+            exit 1
+        fi
+    done
 done
 "$app/Contents/MacOS/popamp" /VERSION >/dev/null
 
