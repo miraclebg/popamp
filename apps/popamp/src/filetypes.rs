@@ -463,6 +463,17 @@ mod tests {
         }
     }
 
+    // Launch Services hands Popamp only the types Popamp.app claims, and a
+    // tracker module (say) has no system type to claim it by: Info.plist
+    // lists every extension by name.
+    #[test]
+    fn popamp_app_claims_every_extension() {
+        let plist = include_str!("../../../packaging/macos/Info.plist");
+        let missing: Vec<_> =
+            Group::ALL.iter().flat_map(|g| g.extensions()).filter(|e| !plist.contains(&format!("<string>{e}</string>"))).collect();
+        assert!(missing.is_empty(), "Info.plist claims none of {missing:?}");
+    }
+
     #[test]
     fn the_installer_registers_every_extension() {
         let iss = include_str!("../../../packaging/windows/popamp.iss");
