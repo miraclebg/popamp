@@ -41,3 +41,16 @@ them beside `popamp.exe`, with their licences in `licenses/`
 | `opus.dll` | [Opus](https://opus-codec.org), built by vcpkg | BSD-3-Clause |
 | `libopenmpt.dll`, `openmpt-*.dll` | [libopenmpt](https://lib.openmpt.org), the official build, with mpg123, Ogg, Vorbis and zlib | BSD-3-Clause; LGPL-2.1 (mpg123); BSD (Ogg, Vorbis); zlib |
 | `GeneralUser-GS.sf2` | [GeneralUser GS](https://www.schristiancollins.com/generaluser.php) by S. Christian Collins, the SoundFont for MIDI | GeneralUser GS License v2.0 (free to use and to ship in software) |
+
+## Shipped with the macOS downloads
+
+Popamp.app carries these in `Contents/Frameworks` and
+`Contents/Resources`, with their licences in `Contents/Resources/licenses`
+(`packaging/macos/fetch-libs.sh` builds the libraries from their source
+releases for macOS 12).
+
+| File | Project | Licence |
+|---|---|---|
+| `libopus.0.dylib` | [Opus](https://opus-codec.org) 1.5.2 | BSD-3-Clause |
+| `libopenmpt.0.dylib` | [libopenmpt](https://lib.openmpt.org) 0.8.10, built without its mpg123 and Vorbis decoders | BSD-3-Clause |
+| `GeneralUser-GS.sf2` | [GeneralUser GS](https://www.schristiancollins.com/generaluser.php) by S. Christian Collins, the SoundFont for MIDI | GeneralUser GS License v2.0 (free to use and to ship in software) |
