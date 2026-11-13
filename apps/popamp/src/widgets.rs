@@ -205,7 +205,7 @@ impl<A: Copy + PartialEq> Form<A> {
     }
 
     /// Whether check box `i` is ticked.
-    #[cfg(linux_like)]
+    #[cfg(not(windows))]
     pub fn checked(&self, i: usize) -> bool {
         matches!(self.controls[i].1, Widget::Check { checked: true, .. })
     }
