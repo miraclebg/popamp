@@ -49,12 +49,22 @@ kind=${kind%/*}
 others=$(cd "$tree" && find usr -type f ! -path "$dirs/*" ! -path "usr/share/doc/$package/*")
 [ -z "$others" ] || die "$deb: files outside $dirs: $others"
 
-# The licences go to the top, for %license; the Debian copyright file
-# says the same and has no place in an rpm.
+# The licences go to the top, for %license. The Debian copyright file
+# names the licence of the files: the usual MIT or Apache-2.0 says no more
+# than LICENSE-*, any other (artwork by other authors) goes along as
+# COPYRIGHT.
+doc=$tree/usr/share/doc/$package
+[ -f "$doc/copyright" ] || die "$deb: no copyright file"
+license=$(sed -n 's/^License: *//p' "$doc/copyright" | head -1)
+case $license in
+    "") die "$deb: the copyright file names no licence" ;;
+    "MIT or Apache-2.0") license="MIT OR Apache-2.0" ;;
+    *) mv "$doc/copyright" "$tree/COPYRIGHT" ;;
+esac
 licenses=
-for f in "$tree/usr/share/doc/$package"/LICENSE-*; do
+for f in "$tree/COPYRIGHT" "$doc"/LICENSE-*; do
     [ -f "$f" ] || continue
-    mv "$f" "$tree/"
+    [ "${f%/*}" = "$tree" ] || mv "$f" "$tree/"
     licenses="$licenses ${f##*/}"
 done
 rm -rf "$tree/usr/share/doc"
@@ -74,7 +84,7 @@ Name:           $package
 Version:        $version
 Release:        0
 Summary:        $summary
-License:        MIT OR Apache-2.0
+License:        $license
 %if 0%{?suse_version}
 Group:          Productivity/Multimedia/Sound/Players
 %endif

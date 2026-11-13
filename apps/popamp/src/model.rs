@@ -5,14 +5,17 @@ use crate::dialogs::{DialogKind, DialogResult, Request};
 use crate::menu::{MenuAction, MenuItem};
 use crate::panels::PanelKind;
 use crate::vis::Vis;
+use popamp_audio::formats::Decoders;
 use popamp_audio::source::{Context, Sources};
 use popamp_audio::{Engine, EngineCmd, EngineEvent, EqSettings, PlayState, ReplayGainSettings, StreamInfo};
 use popamp_core::atf::Format;
 use popamp_core::config::{BarEdge, Config, Paths, Settings};
 use popamp_core::eqf::{self, Preset};
+use popamp_core::history::{self, History, Played};
 use popamp_core::meta::TrackMeta;
 use popamp_core::playlist::{is_url, Entry, Playlist, SortKey};
 use popamp_core::plformats::{self, Item};
+use popamp_core::replaygain::Scanned;
 use popamp_core::text::format_duration_ms;
 use popamp_core::Command;
 use popamp_skin::Skin;
@@ -46,6 +49,8 @@ pub enum AppEvent {
     Remote(crate::ipc::Request),
     Museum(crate::museum::Fetched),
     Gallery(crate::gallery::Fetched),
+    /// How a ReplayGain scan goes.
+    Scan(crate::scan::ScanEvent),
     /// The plug-ins, loaded anew, and an instance of each dsp one for the
     /// engine; the number is that of the request.
     #[cfg(feature = "plugins")]
@@ -110,12 +115,22 @@ pub struct Model {
     pub eq_auto: Vec<Preset>,
     /// Favourite files and streams, kept in `bookmarks.m3u8`.
     pub bookmarks: Vec<Item>,
+    /// What was played, kept in `history.txt`.
+    pub history: History,
+    /// The ReplayGain values Popamp measured, kept in `replaygain.txt`.
+    pub scanned: Arc<Scanned>,
+    /// Where the ReplayGain scan is; its window shows it.
+    pub scan: crate::scan::ScanState,
     pub vis: Vis,
     pub ui: Vec<UiReq>,
+    /// The windows are hidden; the tray icon is there to bring them back.
+    pub in_tray: bool,
     pub quit: bool,
     pub(crate) events: Events,
     meta_tx: crossbeam_channel::Sender<(u64, String)>,
     pub(crate) sources: Arc<Sources>,
+    /// The decoder plug-ins that are on; `sources` has them too.
+    pub(crate) decoders: Decoders,
     #[cfg(feature = "plugins")]
     pub plugins: crate::plugins::Plugins,
     error_skips: usize,
@@ -221,6 +236,8 @@ impl Model {
         let eq_presets = eqf::read_file(&paths.eq_library()).unwrap_or_else(|_| eqf::builtin_presets());
         let eq_auto = eqf::read_file(&paths.eq_auto_library()).unwrap_or_default();
         let bookmarks = plformats::read_file(&paths.bookmarks_file()).unwrap_or_default();
+        let history = History::load(&paths.history_file());
+        let scanned = Arc::new(Scanned::load(&paths.replaygain_file()));
         let format = Format::cached(&config.settings.titlefmt);
         let mut m = Model {
             paths,
@@ -238,12 +255,17 @@ impl Model {
             eq_presets,
             eq_auto,
             bookmarks,
+            history,
+            scanned,
+            scan: Default::default(),
             vis: Vis::new(),
             ui: Vec::new(),
+            in_tray: false,
             quit: false,
             events,
             meta_tx,
             sources,
+            decoders: Decoders::default(),
             #[cfg(feature = "plugins")]
             plugins: Default::default(),
             error_skips: 0,
@@ -275,7 +297,12 @@ impl Model {
 
     /// What sources need from the settings.
     pub(crate) fn source_context(&self) -> Context {
-        Context { proxy: self.settings().proxy.clone(), soundfont: self.settings().soundfont.clone() }
+        Context {
+            proxy: self.settings().proxy.clone(),
+            soundfont: self.settings().soundfont.clone(),
+            decoders: self.decoders.clone(),
+            scanned: self.scanned.clone(),
+        }
     }
 
     pub fn push_engine_settings(&mut self) {
@@ -286,6 +313,7 @@ impl Model {
             device: s.output_device.clone(),
             buffer_ms: s.buffer_ms,
             fade_ms: s.fade_ms,
+            crossfade_ms: s.crossfade_ms,
             cx: self.source_context(),
         });
         self.engine.send(EngineCmd::ReplayGain(ReplayGainSettings {
@@ -628,6 +656,8 @@ impl Model {
                 e.refresh_display(&fmt);
             }
             file_name = Some(e.location.rsplit('/').next().unwrap_or("").to_string());
+            let played = Played { at: history::now(), location: e.location.clone(), title: e.display.clone() };
+            self.history.record(&self.paths.history_file(), played);
         }
         if autoload {
             if let Some(name) = file_name {
@@ -677,6 +707,18 @@ impl Model {
 
     pub fn current_preset(&self, name: &str) -> Preset {
         Preset { name: name.to_string(), bands: self.settings().eq_bands(), preamp: self.settings().preamp as u8 }
+    }
+
+    /// Plays a track from the history: from the playlist when it is there,
+    /// else added to its end.
+    pub fn play_again(&mut self, played: &Played) {
+        let at = self.playlist.entries().iter().position(|e| e.location == played.location);
+        let at = at.unwrap_or_else(|| {
+            let item = Item { location: played.location.clone(), title: Some(played.title.clone()), length_ms: None };
+            self.on_expanded(vec![item], AddMode::Append);
+            self.playlist.len() - 1
+        });
+        self.play_index(at);
     }
 
     // --- bookmarks ---------------------------------------------------------------
@@ -782,8 +824,8 @@ impl Model {
     }
 
     pub fn request_dialog(&mut self, kind: DialogKind) {
-        let media_filter: Vec<String> =
-            popamp_core::audio_extensions().chain(["m3u", "m3u8", "pls", "xspf", "cue"]).map(|e| format!("*.{e}")).collect();
+        let own = popamp_core::audio_extensions().chain(["m3u", "m3u8", "pls", "xspf", "cue"]).map(|e| format!("*.{e}"));
+        let media_filter: Vec<String> = own.chain(self.decoders.extensions().iter().map(|e| format!("*.{e}"))).collect();
         let start = self.start_dir();
         let req = match &kind {
             DialogKind::OpenFiles { .. } => Request::Files { title: "Open file(s)".into(), multiple: true, filter: media_filter, start },
@@ -1147,6 +1189,8 @@ impl Model {
             C::SkinMuseum => self.ui.push(UiReq::Panel(PanelKind::SkinMuseum)),
             C::Gallery => self.ui.push(UiReq::Panel(PanelKind::Gallery)),
             C::AlbumArt => self.ui.push(UiReq::Panel(PanelKind::AlbumArt)),
+            C::History => self.ui.push(UiReq::Panel(PanelKind::History)),
+            C::ScanReplayGain => self.scan_replaygain(),
             #[cfg(feature = "plugins")]
             C::Plugins => self.ui.push(UiReq::Panel(PanelKind::Plugins)),
             #[cfg(not(feature = "plugins"))]
@@ -1295,7 +1339,11 @@ impl Model {
                 self.settings_mut().pe_open = v;
                 self.ui.push(UiReq::Layout);
             }
-            C::ToggleMainWindow => self.ui.push(UiReq::Raise),
+            C::ToggleMainWindow => self.raise(),
+            C::Minimize if self.settings().minimize_to_tray => {
+                self.in_tray = true;
+                self.ui.push(UiReq::Layout);
+            }
             C::Minimize => self.ui.push(UiReq::Minimize),
             C::Preferences => self.ui.push(UiReq::Panel(PanelKind::Preferences)),
             C::SelectVisPlugin => {
@@ -1406,6 +1454,7 @@ impl Model {
             ),
             MenuItem::cmd("View file info…", "Alt+3", C::FileInfo),
             MenuItem::cmd("Album art", "Alt+A", C::AlbumArt),
+            MenuItem::cmd("History…", "Ctrl+H", C::History),
             MenuItem::sub("Bookmarks", self.bookmarks_menu()),
             MenuItem::sep(),
             MenuItem::cmd("Main Window", "Alt+W", C::ToggleMainWindow),
@@ -1608,6 +1657,7 @@ impl Model {
             MenuItem::cmd("View file info…", "Alt+3", C::FileInfo),
             MenuItem::cmd("Playlist entry…", "Ctrl+E", C::EditPlaylistEntry),
             MenuItem::cmd("Bookmark item(s)", "Alt+I", C::BookmarkSelected),
+            MenuItem::cmd("Scan ReplayGain", "", C::ScanReplayGain),
             MenuItem::sep(),
             MenuItem::sub("Sort", self.sort_menu()),
         ]
@@ -1659,12 +1709,20 @@ impl Model {
                 }
                 Remote::SeekMs(ms) => self.seek_to(ms),
                 Remote::Clear => self.exec(Command::ClearPlaylist),
-                Remote::Show => self.ui.push(UiReq::Raise),
+                Remote::Show => self.raise(),
                 Remote::Quit => self.exec(Command::Exit),
                 Remote::Status => reply = self.status_json(),
             }
         }
         reply
+    }
+
+    /// Brings the windows up, out of the tray if they are there.
+    fn raise(&mut self) {
+        if std::mem::take(&mut self.in_tray) {
+            self.ui.push(UiReq::Layout);
+        }
+        self.ui.push(UiReq::Raise);
     }
 
     pub fn media_snapshot(&self) -> crate::media::Snapshot {
@@ -1690,7 +1748,15 @@ impl Model {
                 length_ms: e.length_ms,
             }
         });
-        crate::media::Snapshot { status, repeat: s.repeat, shuffle: s.shuffle, volume: s.volume as f64 / 255.0, track }
+        crate::media::Snapshot {
+            status,
+            repeat: s.repeat,
+            shuffle: s.shuffle,
+            volume: s.volume as f64 / 255.0,
+            track,
+            notify: s.notify_tracks,
+            tray: s.tray_icon || self.in_tray,
+        }
     }
 
     pub fn status_json(&self) -> String {
@@ -1865,6 +1931,29 @@ mod tests {
         m.reload_skin_if_changed();
         assert_eq!(m.skin.name, "Second", "a broken edit keeps the skin");
         assert!(m.transient.as_ref().is_some_and(|t| t.0.starts_with("SKIN ERROR: ")));
+    }
+
+    #[test]
+    fn minimizing_to_the_tray_shows_the_icon_until_the_windows_come_back() {
+        let mut m = Model::for_tests();
+        m.settings_mut().tray_icon = false;
+        m.exec(Command::Minimize);
+        assert!(matches!(m.ui.pop(), Some(UiReq::Minimize)), "to the taskbar");
+        assert!(!m.media_snapshot().tray);
+
+        m.settings_mut().minimize_to_tray = true;
+        m.exec(Command::Minimize);
+        assert!(m.in_tray && matches!(m.ui.pop(), Some(UiReq::Layout)), "the windows hide");
+        assert!(m.media_snapshot().tray, "the icon comes for them");
+
+        m.on_remote(vec![Remote::Show]);
+        assert!(!m.in_tray && !m.media_snapshot().tray, "back up, the icon goes");
+        assert!(matches!(m.ui[..], [UiReq::Layout, UiReq::Raise]));
+
+        m.settings_mut().tray_icon = true;
+        m.exec(Command::Minimize);
+        m.exec(Command::ToggleMainWindow);
+        assert!(m.media_snapshot().tray, "an icon asked for stays");
     }
 
     #[test]

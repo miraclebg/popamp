@@ -5,10 +5,12 @@ pub mod command;
 pub mod config;
 pub mod cue;
 pub mod eqf;
+pub mod history;
 pub mod ini;
 pub mod meta;
 pub mod playlist;
 pub mod plformats;
+pub mod replaygain;
 pub mod text;
 pub mod version;
 
@@ -33,8 +35,4 @@ pub const MODULE_EXTENSIONS: &[&str] = &[
 /// Every audio file extension Popamp plays.
 pub fn audio_extensions() -> impl Iterator<Item = &'static str> {
     COMMON_EXTENSIONS.iter().chain(MIDI_EXTENSIONS).chain(MODULE_EXTENSIONS).copied()
-}
-
-pub fn is_audio_file(path: &str) -> bool {
-    path.rsplit_once('.').is_some_and(|(_, ext)| audio_extensions().any(|e| e.eq_ignore_ascii_case(ext)))
 }

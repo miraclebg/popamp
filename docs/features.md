@@ -47,7 +47,14 @@
     comes with Popamp) or the one set in Preferences; tracker
     modules (MOD, XM, S3M, IT, MPTM and more) through the system's
     libopenmpt.
-  - Gapless playback, stop with fadeout, stop after current, ReplayGain.
+  - Gapless playback, crossfade between tracks, stop
+    with fadeout, stop after current.
+  - ReplayGain from tags, or measured by Popamp's own scanner (EBU R128,
+    track and album gain: select tracks, then *Scan ReplayGain* in the
+    playlist's menu). Scanned values are kept in `replaygain.txt` in the
+    settings folder; Popamp never writes them into the files.
+  - History (Ctrl+H): the last 5000 plays, searchable, kept in
+    `history.txt`.
   - HTTP(S)/Icecast/SHOUTcast streams with ICY titles.
   - YouTube videos, playlists and channels through the
     [YouTube plug-in](https://github.com/popamp/plugin-youtube).
@@ -55,8 +62,10 @@
   band set and an optional limiter. Reads and writes `.eqf` and `.q1`
   presets, and can auto-load presets per file.
 - **Plug-ins** (in a build with `--features plugins`): WebAssembly
-  sources such as [YouTube](https://github.com/popamp/plugin-youtube) and
+  sources such as [YouTube](https://github.com/popamp/plugin-youtube),
   sound effects such as [Crossfeed](https://github.com/popamp/plugin-crossfeed),
+  and decoders of more formats such as
+  [Monkey's Audio](https://github.com/popamp/plugin-ape),
   each allowed by you in Options > Plug-ins…. In a build with
   `--features visualizers`, also GPU visualizers such as
   [Spectrum](https://github.com/popamp/plugin-spectrum), in a window that
@@ -79,6 +88,21 @@
   - Media keys and the desktop's player controls, with the track's cover:
     MPRIS2 on Linux (desktop widgets, `playerctl`), the media overlay on
     Windows.
+  - A tray icon, on Windows and on Linux (StatusNotifierItem: KDE, Xfce,
+    GNOME with the AppIndicator extension): a click brings Popamp up, a
+    middle click plays or pauses, the wheel sets the volume (Linux), and
+    its menu has the transport buttons. With "Minimize to the tray",
+    minimizing hides the windows and shows the icon until they come back,
+    even when the icon is otherwise off. On Linux, notifications of each
+    new track with its cover, off by default. Both are in Preferences >
+    Desktop.
+  - Global hotkeys, as in Winamp (off by default, Preferences > Desktop):
+    Ctrl+Alt+Insert play, Home pause, End stop, Page Up/Down previous and
+    next, Up/Down volume, Left/Right 5 seconds back and forward. On X11
+    and Windows; under Wayland through the desktop's GlobalShortcuts
+    portal (KDE Plasma 6, GNOME 48, Hyprland), which asks the user once
+    and lets them pick other keys. GNOME keeps Ctrl+Alt+Left/Right for its
+    workspaces.
   - Bar skins reserve their strip of the screen, like a taskbar.
 
 ## Known limitations
@@ -88,5 +112,5 @@
   in the menus and `popamp.ini`.
 - Tags can be changed in MP3, FLAC, Ogg Vorbis, Opus and MP4 files only, one
   file at a time.
-- No tray icon, media library or Modern (`.wal`) skins yet. See [ROADMAP.md](ROADMAP.md).
+- No media library or Modern (`.wal`) skins yet. See [ROADMAP.md](ROADMAP.md).
 

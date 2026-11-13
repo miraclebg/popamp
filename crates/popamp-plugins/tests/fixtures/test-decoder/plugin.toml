@@ -1,0 +1,15 @@
+id = "test-decoder"
+name = "Test Decoder"
+version = "0.1.0"
+api = "1.1"
+kind = "decoder"
+description = "Answers the host's tests with the module of ../test; see tests/test-plugin."
+
+[decoder]
+extensions = ["ptest"]
+
+[[setting]]
+key = "mode"
+label = "Mode"
+type = "text"
+default = "play"

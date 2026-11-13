@@ -2,8 +2,10 @@
 //! so two worker threads can call it at once, and the host functions it
 //! may use: `popamp_exec`, limited to the commands its manifest writes,
 //! `popamp_http` and the two that read files, limited to what the manifest
-//! asks and the user left open, and `popamp_now`, the time. A dsp plug-in
-//! gets an instance of its own for the engine instead: see [`Dsp`].
+//! asks and the user left open, `popamp_input`, the file a decoder plays,
+//! and `popamp_now`, the time. A dsp plug-in gets an instance of its own
+//! for the engine instead, see [`Dsp`], and so does each file a decoder
+//! opens, see [`Decoding`].
 
 use crate::command::{self, Command, Vars};
 use crate::files::{Closed, Folders};
@@ -11,19 +13,23 @@ use crate::journal::Journal;
 use crate::manifest::{Kind, Manifest, SourceSpec, MODULE};
 use crate::net::Network;
 use extism::{CompiledPlugin, CurrentPlugin, Function, Pool, PoolBuilder, UserData, Val, PTR};
+use popamp_audio::decoder::{AudioSource, Status, StreamInfo};
 use popamp_audio::dsp::Effect;
+use popamp_audio::formats::FileDecoder;
 use popamp_audio::pipe::{Pipe, START};
 use popamp_audio::source::{Context, Playback, Source};
 use popamp_core::meta::TrackMeta;
 use popamp_core::plformats::Item;
 use popamp_plugin_api::{
-    bytes_of, calls, config, host, samples_of, ExecOutput, ExecRequest, Format, HttpRequest, Play, ReadRequest, Tags, Track, Version,
-    VERSION,
+    bytes_of, calls, config, host, samples_of, ExecOutput, ExecRequest, FileInfo, Format, HttpRequest, Play, Range, ReadRequest, Stream,
+    Tags, Track, Version, VERSION,
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use std::cell::RefCell;
 use std::collections::HashMap;
-use std::io::Read;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -39,6 +45,10 @@ pub const CALL_TIME: Duration = Duration::from_secs(60);
 /// The longest a dsp call may run; it holds up the sound, so this is the
 /// limit for a plug-in that hangs, not the budget of a block.
 pub const DSP_CALL_TIME: Duration = Duration::from_millis(250);
+/// The longest a decoder call may run: the engine waits for it.
+pub const DECODER_CALL_TIME: Duration = Duration::from_secs(1);
+/// The most [`host::INPUT`] gives at once.
+const INPUT_PIECE: u32 = 1 << 20;
 /// Failed calls in a row (traps, timeouts) that switch a plug-in off.
 pub const FAILURES_TO_STOP: u32 = 3;
 /// Instances per plug-in: calls beyond this many wait for one to be free.
@@ -149,7 +159,11 @@ impl Plugin {
         call_time: Duration,
     ) -> Result<Plugin, String> {
         let manifest = Manifest::load(dir)?;
-        let call_time = if matches!(manifest.kind, Kind::Source(_)) { call_time } else { call_time.min(DSP_CALL_TIME) };
+        let call_time = match manifest.kind {
+            Kind::Source(_) => call_time,
+            Kind::Decoder(_) => call_time.min(DECODER_CALL_TIME),
+            Kind::Dsp | Kind::Visual => call_time.min(DSP_CALL_TIME),
+        };
         let wasm = std::fs::read(dir.join(MODULE)).map_err(|e| format!("{MODULE}: {e}"))?;
         let settings = settings_of(&manifest, values);
         let programs = Arc::new(Programs::new(&manifest, &settings, &cx.proxy, access.journal.clone()));
@@ -172,6 +186,7 @@ impl Plugin {
                     move |path: String, _| folders.list(&path)
                 }),
                 function(host::READ, move |req: ReadRequest, _| folders.read(&req)),
+                Function::new(host::INPUT, [PTR], [PTR], UserData::new(()), input),
             ])
             .compile()
             .map_err(|e| format!("cannot compile {MODULE}: {e}"))?;
@@ -236,7 +251,7 @@ impl Plugin {
     fn spec(&self) -> Option<&SourceSpec> {
         match &self.manifest.kind {
             Kind::Source(spec) => Some(spec),
-            Kind::Dsp | Kind::Visual => None,
+            Kind::Dsp | Kind::Visual | Kind::Decoder(_) => None,
         }
     }
 
@@ -499,7 +514,121 @@ impl Visual {
     }
 }
 
-/// What the player plays for a plug-in's answer; a pipe may only run a
+thread_local! {
+    /// The file the decoder called on this thread plays: the call runs on
+    /// the caller's thread, so `popamp_input` finds it here.
+    static INPUT: RefCell<Option<File>> = const { RefCell::new(None) };
+}
+
+/// Runs `call` with `file` readable through `popamp_input`.
+fn with_input<T>(file: &mut Option<File>, call: impl FnOnce() -> T) -> T {
+    INPUT.with(|i| *i.borrow_mut() = file.take());
+    let out = call();
+    *file = INPUT.with(|i| i.borrow_mut().take());
+    out
+}
+
+/// `popamp_input`: a piece of the file being decoded on this thread, as
+/// raw bytes; a decoder reads its whole file this way.
+fn input(plugin: &mut CurrentPlugin, inputs: &[Val], outputs: &mut [Val], _: UserData<()>) -> Result<(), extism::Error> {
+    let range: Range = serde_json::from_str(&plugin.memory_get_val::<String>(&inputs[0])?)?;
+    let data = INPUT.with(|i| {
+        let mut file = i.borrow_mut();
+        let file = file.as_mut().ok_or_else(|| extism::Error::msg("only a decoder reads its file"))?;
+        let mut data = Vec::new();
+        file.seek(SeekFrom::Start(range.offset))?;
+        file.take(range.length.min(INPUT_PIECE) as u64).read_to_end(&mut data)?;
+        Ok::<_, extism::Error>(data)
+    })?;
+    let handle = plugin.memory_new(data)?;
+    outputs[0] = plugin.memory_to_val(handle);
+    Ok(())
+}
+
+/// A decoder plug-in as the player's format dispatch sees it.
+pub struct DecoderPlugin(pub Arc<Plugin>);
+
+impl FileDecoder for DecoderPlugin {
+    fn extensions(&self) -> &[String] {
+        match &self.0.manifest.kind {
+            Kind::Decoder(spec) => &spec.extensions,
+            _ => &[],
+        }
+    }
+
+    fn open(&self, path: &Path) -> Result<(Box<dyn AudioSource>, TrackMeta), String> {
+        let plugin = &self.0;
+        let file = File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let size = file.metadata().map_err(|e| e.to_string())?.len();
+        let extension = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+        let instance = extism::Plugin::new_from_compiled(&plugin.compiled).map_err(|e| format!("{e:#}"))?;
+        let mut decoding = Decoding { plugin: plugin.clone(), instance, file: Some(file), info: StreamInfo::default() };
+        let stream: Stream = decoding.call_json(calls::OPEN_FILE, &FileInfo { extension: extension.clone(), size })?;
+        if !(1..=768_000).contains(&stream.rate) {
+            return Err(format!("plug-in {} gave the rate {}", plugin.manifest.id, stream.rate));
+        }
+        let mut meta = meta_of(stream.tags);
+        meta.length_ms = meta.length_ms.or(stream.length_ms);
+        meta.sample_rate = meta.sample_rate.or(Some(stream.rate));
+        meta.codec = meta.codec.or_else(|| Some(extension.to_uppercase()));
+        decoding.info = StreamInfo {
+            sample_rate: stream.rate,
+            channels: meta.channels.unwrap_or(2),
+            length_ms: stream.length_ms,
+            bitrate_kbps: meta.bitrate_kbps,
+            codec: meta.codec.clone().unwrap_or_default(),
+            seekable: stream.seekable,
+        };
+        Ok((Box::new(decoding), meta))
+    }
+}
+
+/// A file a decoder plug-in plays, with an instance of its own. A call
+/// that fails ends the track; three crashes in a row switch it off.
+pub struct Decoding {
+    plugin: Arc<Plugin>,
+    instance: extism::Plugin,
+    file: Option<File>,
+    info: StreamInfo,
+}
+
+impl Decoding {
+    fn call_json<I: Serialize, O: DeserializeOwned>(&mut self, name: &str, input: &I) -> Result<O, String> {
+        let out = self.call(name, serde_json::to_string(input).map_err(|e| e.to_string())?.as_bytes())?;
+        serde_json::from_slice(&out).map_err(|e| format!("plug-in {} answered {name} with bad JSON: {e}", self.plugin.manifest.id))
+    }
+
+    fn call(&mut self, name: &str, input: &[u8]) -> Result<Vec<u8>, String> {
+        if self.plugin.is_off() {
+            return Err(format!("plug-in {} is off after failing {FAILURES_TO_STOP} times", self.plugin.manifest.id));
+        }
+        let instance = &mut self.instance;
+        // Only a block decoded clears the failures: a plug-in that opens
+        // every file and crashes on each would never stop otherwise.
+        with_input(&mut self.file, || instance.call::<&[u8], Vec<u8>>(name, input)).map_err(|e| self.plugin.failed(&e))
+    }
+}
+
+impl AudioSource for Decoding {
+    fn info(&self) -> &StreamInfo {
+        &self.info
+    }
+
+    fn next(&mut self, out: &mut Vec<f32>) -> Result<Status, String> {
+        let block = self.call(calls::DECODE, &[])?;
+        if block.len() % 8 != 0 {
+            return Err(format!("plug-in {} gave a block of {} bytes, not whole stereo frames", self.plugin.manifest.id, block.len()));
+        }
+        self.plugin.failures.store(0, Ordering::Relaxed);
+        out.extend(samples_of(&block));
+        Ok(if block.is_empty() { Status::Eof } else { Status::Data })
+    }
+
+    fn seek(&mut self, ms: u64) -> Result<u64, String> {
+        self.call_json(calls::SEEK, &ms)
+    }
+}
+
 /// command the manifest writes.
 pub fn playback_of(play: Play, programs: &Programs) -> Result<Playback, String> {
     Ok(match play {
@@ -742,6 +871,78 @@ default = "ffmpeg"
         std::fs::copy(fixtures.join("test/plugin.wasm"), dir.join("plugin.wasm")).unwrap();
         let values = HashMap::from([("mode".to_string(), mode.to_string())]);
         Arc::new(Plugin::load(&dir, &values, &Context::default(), Access::default()).unwrap()).visual().unwrap()
+    }
+
+    /// The decoder side of the test plug-in, in a folder per call as `test_dsp`.
+    fn test_decoder(mode: &str) -> Arc<Plugin> {
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("popamp-decoder-{}-{mode}-{n}", std::process::id())).join("test-decoder");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::copy(fixtures.join("test-decoder/plugin.toml"), dir.join("plugin.toml")).unwrap();
+        std::fs::copy(fixtures.join("test/plugin.wasm"), dir.join("plugin.wasm")).unwrap();
+        let values = HashMap::from([("mode".to_string(), mode.to_string())]);
+        Arc::new(Plugin::load(&dir, &values, &Context::default(), Access::default()).unwrap())
+    }
+
+    /// A `.ptest` file: 2.5 s at 8 kHz, each sample its frame number / 1e5.
+    fn ptest_file(name: &str) -> PathBuf {
+        let mut bytes = 8_000u32.to_le_bytes().to_vec();
+        bytes.extend((0..20_000).flat_map(|i| (i as f32 / 1e5).to_le_bytes()));
+        let path = std::env::temp_dir().join(format!("popamp-{}-{name}.ptest", std::process::id()));
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    fn decode_all(source: &mut dyn AudioSource) -> Vec<f32> {
+        let mut out = Vec::new();
+        while let Status::Data = source.next(&mut out).unwrap() {}
+        out
+    }
+
+    #[test]
+    fn a_decoder_plays_the_file_it_was_given_from_the_start_or_a_seek() {
+        let path = ptest_file("plays");
+        let decoder = DecoderPlugin(test_decoder("play"));
+        assert_eq!(decoder.extensions(), ["ptest"]);
+        let (mut source, meta) = decoder.open(&path).unwrap();
+        assert_eq!((meta.title.as_deref(), meta.codec.as_deref(), meta.channels), (Some("A .ptest file"), Some("TEST"), Some(1)));
+        assert_eq!((meta.length_ms, meta.sample_rate, source.info().sample_rate), (Some(2_500), Some(8_000), 8_000));
+        let out = decode_all(source.as_mut());
+        assert_eq!(out.len(), 40_000, "every frame, in stereo");
+        assert_eq!((out[2 * 12_345], out[2 * 12_345 + 1]), (0.12345, 0.12345));
+        assert_eq!(source.seek(1_000).unwrap(), 1_000);
+        let rest = decode_all(source.as_mut());
+        assert_eq!((rest.len(), rest[0]), (24_000, 0.08));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn a_decoder_takes_its_formats_through_the_players_dispatch() {
+        let path = ptest_file("dispatch");
+        let decoders = popamp_audio::formats::Decoders::new(vec![Arc::new(DecoderPlugin(test_decoder("play")))]);
+        assert!(decoders.plays(&path.to_string_lossy()));
+        assert_eq!(popamp_audio::read_meta(&path, &decoders).unwrap().codec.as_deref(), Some("TEST"));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn a_decoder_that_crashes_ends_its_track_and_three_in_a_row_switch_it_off() {
+        let path = ptest_file("trap");
+        let decoder = DecoderPlugin(test_decoder("trap"));
+        for _ in 0..FAILURES_TO_STOP {
+            let (mut source, _) = decoder.open(&path).unwrap();
+            assert!(source.next(&mut Vec::new()).is_err());
+        }
+        assert!(decoder.0.is_off());
+        assert!(decoder.open(&path).err().unwrap().contains("is off"));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn only_a_decoder_reads_a_file_through_input() {
+        assert_eq!(open(&with_access(Access::default()), "/input").unwrap_err(), "only a decoder reads its file");
     }
 
     #[test]

@@ -38,7 +38,8 @@ Linux, Windows and, experimentally, macOS.
 - **Plug-ins you allow.** Sandboxed WebAssembly plug-ins, each switched
   on by you: [YouTube](https://github.com/popamp/plugin-youtube) as a
   source, [Crossfeed](https://github.com/popamp/plugin-crossfeed) for
-  headphones.
+  headphones, [Monkey's Audio](https://github.com/popamp/plugin-ape) for
+  `.ape` files.
 - **Your music stays yours.** No account, no cloud, no library to import:
   it plays files and the streams you open.
 
@@ -82,7 +83,7 @@ with [plug-ins](docs/plugins.md) such as YouTube and visualizers.
 | openSUSE, Fedora | add the [repository](docs/building.md#opensuse-and-fedora), then `sudo zypper install popamp` or `sudo dnf install popamp` |
 | Any other Linux | `Popamp-<version>-linux-x86_64.AppImage`: `chmod +x` it and run it |
 | Windows 10 or 11 | `Popamp-<version>-windows-x86_64-setup.exe`, or the portable `…-portable.zip`: unpack it anywhere and run `popamp.exe` |
-| macOS 12 or newer, Apple Silicon (experimental) | `Popamp-<version>-macos-arm64.dmg`: open it and drag Popamp to Applications ([first start](docs/building.md#macos)) |
+| macOS 12 or newer, Apple Silicon and Intel (experimental) | `Popamp-<version>-macos-universal.dmg`: open it and drag Popamp to Applications ([first start](docs/building.md#macos)) |
 
 Or build it yourself with Rust 1.96 or newer:
 

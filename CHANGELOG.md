@@ -6,14 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-12
+
 ### Added
 
-- **macOS:** Popamp runs on macOS 12 and newer on Apple Silicon, from a
-  disk image with Popamp.app. Sound through CoreAudio, the Mac's own
-  dialogs and fonts, files opened from Finder, the Mac's keys (⌘ first,
-  ⌘V pastes links and files into the playlist), Retina screens and
-  screens of different density side by side, and classic skins cut to
-  their shape. Settings live in `~/Library/Application Support/popamp`.
+- **macOS:** Popamp runs on macOS 12 and newer, on Apple Silicon and
+  Intel Macs, from one disk image with Popamp.app. Sound through
+  CoreAudio, the Mac's own dialogs and fonts, files opened from Finder,
+  the Mac's keys (⌘ first, ⌘V pastes links and files into the playlist),
+  Retina screens and screens of different density side by side, and
+  classic skins cut to their shape. The media keys and Now Playing
+  control it, its tray menu is in the menu bar, the global hotkeys are
+  ⌃⌥ with the same keys, its Dock icon brings it back, and Preferences can
+  make it the Mac's player for audio, playlists and skins. Settings live
+  in `~/Library/Application Support/popamp`.
 
 - **Opus:** `.opus` files (and Opus in Matroska and WebM) play, seek and
   have their tags read and changed. Decoding goes through the system's
@@ -35,6 +41,48 @@ All notable changes to this project are documented here. The format follows
 - The Windows downloads carry what these need: `opus.dll`, libopenmpt and
   the GeneralUser GS SoundFont for MIDI, with their licences (see
   THIRD_PARTY.md). The installer offers Popamp for the new file types.
+- **Decoder plug-ins** (plug-in API 1.1): a plug-in of `kind = "decoder"`
+  plays local files of the extensions it lists, in folders, playlists,
+  CUE sheets and the Open dialog. It reads only the file it plays and
+  may ask for no permissions. Popamp's own formats always come first.
+
+- **Crossfade** (Preferences > "Crossfade (ms)", off by default): the
+  end of a track overlaps the start of the next one. Tracks of different
+  sample rates still change gapless, without the overlap.
+- **History** (`Ctrl+H`): the last 5000 plays, searchable, kept in
+  `history.txt` in the settings folder.
+- **ReplayGain scanner:** select tracks, then *Scan ReplayGain* in the
+  playlist's menu. It measures track and album gain (EBU R128) and keeps
+  the values in `replaygain.txt`; the audio files are never written.
+  A window counts the tracks and can cancel the scan (nothing is saved
+  then). At the end it waits for OK, unless "Keep the scan window open"
+  (in it and in Preferences) is off. Playback uses the values once
+  *Options > ReplayGain* is on.
+- **Tray icon** on Linux (StatusNotifierItem) and Windows, on by default:
+  a click brings Popamp up, a middle click plays or pauses, and its menu
+  has the transport buttons. "Minimize to the tray" hides the windows
+  into the icon, as Winamp does, also with `/STARTMIN`.
+- **Track notifications** on Linux, with the cover, off by default.
+- **Global hotkeys** as in Winamp (Ctrl+Alt+Insert, Home, End, Page
+  Up/Down, arrows), off by default. On X11 and Windows; under Wayland
+  through the desktop's GlobalShortcuts portal.
+- The tray, notifications and hotkeys are set in Preferences > Desktop.
+
+### Fixed
+
+- Windows: Popamp could stop responding a few minutes after start, on
+  Play or when files were dropped on it from Explorer. The media
+  controls' hidden window lived on a thread that never answered window
+  messages, and whatever sent it one, the UI with it, waited for good.
+- Windows: after a pause, starting another track (or seeking or
+  stopping) could leave the sound stuck, and closing Popamp then hung.
+  Emptying the output kept it marked paused, so it never started again
+  and the next write waited for room forever. Since 0.5.0.
+- Windows: the media card by the volume flyout kept the cover of the
+  last track that had one; a track without a cover now shows the logo.
+- The cover picture from a track's tags, written to the temporary folder
+  for the desktop's media controls, stayed there after Popamp closed.
+  The next start removes the ones left behind.
 
 ## [0.8.0] - 2026-11-11
 
@@ -365,7 +413,8 @@ First release.
 - **Packaging:** desktop entry, `.wsz` MIME type, icons and a per-user
   install script.
 
-[Unreleased]: https://github.com/popamp/popamp/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/popamp/popamp/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/popamp/popamp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/popamp/popamp/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/popamp/popamp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/popamp/popamp/compare/v0.5.0...v0.6.0

@@ -11,20 +11,12 @@ pub fn spawn(wanted: impl Fn() -> bool + Send + 'static, stopped: impl Fn() -> b
     let keep = move || {
         let mut held = None;
         while !stopped() {
-            update(&mut held, wanted(), os::hold);
+            crate::hold::update(&mut held, wanted(), os::hold);
             std::thread::sleep(CHECK);
         }
     };
     if let Err(e) = std::thread::Builder::new().name("popamp-keep-awake".into()).spawn(keep) {
         log::warn!("cannot keep the screen on: {e}");
-    }
-}
-
-/// `held` is `None` while not wanted. `Some(None)` is a hold that failed:
-/// it is not tried again every second, nor logged every second.
-fn update<H>(held: &mut Option<Option<H>>, wanted: bool, hold: impl FnOnce() -> Option<H>) {
-    if wanted != held.is_some() {
-        *held = wanted.then(hold);
     }
 }
 
@@ -63,14 +55,45 @@ mod os {
     }
 }
 
-/// Not there yet on macOS: the screen sleeps as usual.
+/// An IOKit power assertion against the display sleeping; macOS ends it
+/// with the process should Popamp die.
 #[cfg(target_os = "macos")]
 mod os {
-    pub struct Hold;
+    use objc2_core_foundation::CFString;
+
+    #[link(name = "IOKit", kind = "framework")]
+    extern "C" {
+        fn IOPMAssertionCreateWithName(kind: &CFString, level: u32, name: &CFString, id: *mut u32) -> i32;
+        fn IOPMAssertionRelease(id: u32) -> i32;
+    }
+
+    /// kIOPMAssertionLevelOn.
+    const ON: u32 = 255;
+
+    pub struct Hold {
+        id: u32,
+    }
 
     pub fn hold() -> Option<Hold> {
-        log::warn!("cannot keep the screen on: not on macOS yet");
-        None
+        let (kind, name) = (CFString::from_str("PreventUserIdleDisplaySleep"), CFString::from_str("Popamp visualizer"));
+        let mut id = 0;
+        // SAFETY: two CFStrings and an out-pointer, as IOKit asks.
+        let status = unsafe { IOPMAssertionCreateWithName(&kind, ON, &name, &mut id) };
+        if status != 0 {
+            log::warn!("cannot keep the screen on (IOKit error {status})");
+            return None;
+        }
+        Some(Hold { id })
+    }
+
+    impl Drop for Hold {
+        fn drop(&mut self) {
+            // SAFETY: the assertion made in `hold`, released once.
+            let status = unsafe { IOPMAssertionRelease(self.id) };
+            if status != 0 {
+                log::warn!("cannot let the screen sleep again (IOKit error {status})");
+            }
+        }
     }
 }
 
@@ -99,55 +122,19 @@ mod os {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
-    use std::cell::Cell;
-    use std::rc::Rc;
-
-    /// Counts the holds still open.
-    struct Open(Rc<Cell<i32>>);
-
-    impl Drop for Open {
-        fn drop(&mut self) {
-            self.0.set(self.0.get() - 1);
-        }
-    }
 
     #[test]
-    fn the_screen_is_held_once_while_wanted_and_let_go_after() {
-        let (open, made) = (Rc::new(Cell::new(0)), Cell::new(0));
-        let hold = || {
-            made.set(made.get() + 1);
-            open.set(open.get() + 1);
-            Some(Open(open.clone()))
+    fn a_hold_keeps_the_screen_on_until_dropped() {
+        let listed = || {
+            let out = std::process::Command::new("pmset").args(["-g", "assertions"]).output().unwrap();
+            String::from_utf8_lossy(&out.stdout).contains("Popamp visualizer")
         };
-        let mut held = None;
-        update(&mut held, false, hold);
-        assert_eq!((open.get(), made.get()), (0, 0));
-        for _ in 0..3 {
-            update(&mut held, true, hold);
-        }
-        assert_eq!((open.get(), made.get()), (1, 1));
-        update(&mut held, false, hold);
-        assert_eq!((open.get(), made.get()), (0, 1));
-        update(&mut held, true, hold);
-        assert_eq!((open.get(), made.get()), (1, 2));
-    }
-
-    #[test]
-    fn a_hold_that_failed_is_tried_again_only_the_next_time_it_is_wanted() {
-        let tries = Cell::new(0);
-        let hold = || {
-            tries.set(tries.get() + 1);
-            None::<()>
-        };
-        let mut held = None;
-        update(&mut held, true, hold);
-        update(&mut held, true, hold);
-        assert_eq!(tries.get(), 1);
-        update(&mut held, false, hold);
-        update(&mut held, true, hold);
-        assert_eq!(tries.get(), 2);
+        let hold = os::hold().expect("a power assertion");
+        assert!(listed(), "macOS lists the hold");
+        drop(hold);
+        assert!(!listed(), "and forgets it once dropped");
     }
 }
