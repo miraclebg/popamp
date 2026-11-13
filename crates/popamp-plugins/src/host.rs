@@ -1038,7 +1038,9 @@ default = "ffmpeg"
         assert_eq!(open(&p, "/forbidden"), Err("rm is not a command of this plug-in".into()));
         assert_eq!(open(&p, "/option"), Err("rate: may not start with -".into()));
         assert_eq!(open(&p, "/extra"), Err("\"more\" is not a variable of command \"rate\"".into()));
-        let p = test_plugin(&[], Duration::from_millis(500));
+        // A tenth of the call, 200 ms, is left to stop the program and
+        // answer; slow CI machines (macOS) need more than 50 ms of it.
+        let p = test_plugin(&[], Duration::from_secs(2));
         assert_eq!(open(&p, "/slow"), Err("sleep took too long and was stopped".into()));
         assert!(!p.is_off());
     }
