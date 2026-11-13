@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-13
+
+### Fixed
+
+- An internet radio that sends Ogg (Vorbis, Opus or FLAC in Ogg) no
+  longer freezes Popamp when the next song starts: playback goes on, and
+  Stop and closing the window work again.
+- Such a radio's display now shows each next song's artist and title,
+  read from the song's own tags.
+
+### Changed
+
+- The code builds and runs on macOS, without sound yet; there is no
+  macOS download.
+
 ## [0.9.0] - 2026-11-12
 
 ### Added
@@ -402,7 +417,8 @@ First release.
 - **Packaging:** desktop entry, `.wsz` MIME type, icons and a per-user
   install script.
 
-[Unreleased]: https://github.com/popamp/popamp/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/popamp/popamp/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/popamp/popamp/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/popamp/popamp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/popamp/popamp/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/popamp/popamp/compare/v0.6.0...v0.7.0
