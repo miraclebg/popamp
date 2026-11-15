@@ -144,11 +144,56 @@ The order is the classic `viscolor.txt` one: background, background dots,
 16 spectrum colours from the top of a bar down, 5 oscilloscope colours,
 the peak dots.
 
+## `[colors]`: colour sets
+
+A skin can come in several colourings, which the user picks in the main
+menu's "Colours". Each is a set of named colours:
+
+```toml
+[colors.night]            # the first set is the one a new user sees
+back = "#0d1720"
+accent = "#8fd6ff"
+
+[colors.rose]
+accent = "#ff7ab8"        # `back` stays as in the first set
+```
+
+The first set names every colour; the others list only the ones they
+change. A set's name is shown in the menu as written, so
+`[colors."Dark blue"]` works. A colour's name is a plain word: letters,
+digits, `-` and `_`.
+
+In a picture, an element takes a colour by carrying its name as a class:
+
+```svg
+<rect class="back" width="275" height="116" fill="#0d1720"/>
+<path class="accent-stroke" d="M3 8h20" stroke="#8fd6ff"/>
+<stop class="accent-stop" offset="0" stop-color="#8fd6ff"/>
+```
+
+`class="accent"` sets the fill, `class="accent-stroke"` the line colour
+and `class="accent-stop"` a gradient stop's colour. Keep the usual `fill`
+or `stroke` as well: it is what drawing programs show, and what Popamp
+draws for an element without a class. A class on a group colours what is
+in it, unless an element there has a colour of its own.
+
+Wherever `skin.toml` takes a colour (`[text]`, `[clock]`, `[playlist]`,
+`[vis]`), a name works too:
+
+```toml
+[text]
+size = 7
+color = "accent"
+```
+
+Colour sets came in Popamp 1.0.0, so a skin with them sets
+`min_popamp = "1.0.0"`.
+
 ## `[[window]]`: your own windows
 
 ```toml
 [[window]]
-key = "main"                 # main, eq or playlist
+key = "main"                 # main, eq, playlist or library
 placement = "free"           # free (moves the docked group), docked,
                              # bar-top or bar-bottom (main window only)
 empty_press = "move"         # nothing, move or move-if-easy
@@ -184,13 +229,55 @@ as the screen at that edge, inside the desktop's own panels, which other
 windows keep out of like a taskbar. Its `size` gives the height and the narrowest width; place its
 elements with `edges` so they follow the width. The playlist and the
 equalizer sit against the bar at the screen's right end and do not move;
-the main menu's "Bar position" puts the bar at the other edge. A bar has
-its own size, set in the main menu's "Bar size" and ×2 at first, apart
+the main menu's "Toolbar mode" > "Position" puts the bar at the other edge. A bar has
+its own size, set in "Toolbar mode" > "Size" and ×2 at first, apart
 from the other windows' size: a bar 14 skin pixels high is 28 screen
 pixels high.
 
+The `library` window is the media library. Its frame is the skin's; one
+`library` element is the rectangle the player lays the library out in.
+Each of its lists has its own scroll bar along its right side, as wide as
+the element's `thumb` picture, which is the bar's thumb (`pressed` while
+it is dragged); without a `thumb` the player draws narrow bars of its
+own. The window needs no `list-scroll`. A skin without a `library` window gets one made of its playlist's
+pictures. It came in Popamp 1.0.0.
+
 `[window.shade]` describes the shade mode the same way. Elements are drawn
 in the order they are listed; the mouse goes to the last one under it.
+
+### A window that can also be a bar
+
+A main window that is a window can have a bar view as well. The user
+switches between the two in the main menu's "Toolbar mode" (On or Off), so one skin
+serves both:
+
+```toml
+[[window]]
+key = "main"
+
+[window.normal]
+size = [275, 116]
+# ...
+
+[window.bar]
+edge = "bottom"              # top or bottom; bottom when left out
+size = [640, 14]             # the narrowest width, and the height
+
+[[window.bar.element]]
+type = "image"
+edges = [0, 0, "end", 14]
+normal = "bar/body.svg"
+fill = "tile"
+```
+
+`[window.bar]` is described like `[window.normal]`, and what is said above
+about a bar holds for it. While the bar is shown, the window's shade mode
+is not used, and a press on an empty spot does not move it.
+
+A skin that draws the classic sheets can add a bar to the classic main
+window: a `[[window]]` with `key = "main"` and `[window.bar]` alone, without
+`[window.normal]`. The bar's pictures can be areas of the sheets. A skin without `[window.bar]` has no such menu. Bar views
+came in Popamp 1.0.0, so a skin with one sets `min_popamp = "1.0.0"`.
 
 ### Where an element is
 
@@ -237,11 +324,12 @@ hit = "play.svg"       # only the round part is the button
 | `slider` | A slider | `value`, `vertical`, `track`, `thumb`, `thumb_len`, `live`, `reset`, `wheel_step`, `detent` |
 | `text` | A text | `text` |
 | `marquee` | The scrolling song title | `area` (the text's place inside the element; all of it when left out), `double` |
-| `clock` | The play time | `align` (`left`, `center` or `right`: where a `[clock]` font's time sits across the element; `left` when left out) |
+| `clock` | The play time | `align` (`left`, `center` or `right`: where a `[clock]` font's time sits across the element; `left` when left out), `font_size` |
 | `vis` | Spectrum analyzer or oscilloscope | |
 | `eq-graph` | The equalizer curve | |
 | `list` | The playlist's track list | |
-| `list-scroll` | The track list's scroll bar | `thumb` |
+| `list-scroll` | The playlist's scroll bar | `thumb` |
+| `library` | The media library's content: views, search, artists, albums, track table and buttons, in the playlist's font and `[playlist]` colours, with a scroll bar for each list | `thumb` |
 | `popup` | A button opening a column of picture buttons | `item` (each with `normal`, `pressed` and what it does), `bar`, `above` |
 | `resize` | Resizes the window | |
 
@@ -263,6 +351,10 @@ it keeps against what is drawn there whatever the font (the system's
 font differs between Windows and Linux). The classic digit sheets have
 fixed places and ignore `align`. It came in Popamp 0.8.0, so a skin with
 it sets `min_popamp = "0.8.0"`.
+
+`font_size` gives this clock its own font height where `[clock]`'s `size`
+does not fit, as in a bar view lower than the window's display. It came in
+Popamp 1.0.0.
 
 A slider:
 
@@ -295,17 +387,18 @@ A wrong word is reported with the list of right ones.
 - **Commands:** the player's commands in lower case with dashes, for
   example `play`, `pause`, `stop`, `next`, `previous`, `open-file`,
   `toggle-shuffle`, `toggle-repeat`, `toggle-eq-window`,
-  `toggle-playlist-window`, `toggle-windowshade`, `minimize`, `exit`.
+  `toggle-playlist-window`, `toggle-library-window`, `toggle-windowshade`,
+  `minimize`, `exit`.
 - **Player states** (`flag`, `lit`, `show`, `hide`): `playing`, `paused`,
   `stopped`, `seekable`, `stereo`, `mono`, `shuffle`, `repeat`,
-  `eq-window`, `playlist-window`, `always-on-top`, `double-size`, `eq-on`,
+  `eq-window`, `playlist-window`, `library-window`, `always-on-top`, `double-size`, `eq-on`,
   `eq-autoload`.
 - **Values:** `volume`, `balance`, `position`, `preamp`, `eq-band-1` to
   `eq-band-10`.
 - **Texts:** `kbps`, `khz`, `short-time`, `title`, `playlist-time`,
-  `playlist-clock`.
+  `playlist-clock`, `library-title`, `library-status`.
 - **Menus:** `main`, `options`, `vis`, `eq-presets`, `playlist-row`,
-  `playlist-misc`, `playlist-sort`, `playlist-remove-misc`, and the
+  `playlist-misc`, `playlist-sort`, `playlist-remove-misc`, `library`, and the
   button menus `previous`, `play`, `pause`, `stop`, `next`, `eject`,
   `seek`, `repeat`, `shuffle`, `time`, `song-title`.
 - **Cursors:** the classic cursor file names without `.cur`: `normal`,

@@ -30,6 +30,8 @@ pub enum DialogKind {
         play: bool,
     },
     LoadPlaylist,
+    /// A folder to take into the media library.
+    LibraryFolder,
     SavePlaylist,
     SaveHtml,
     JumpToTime,
@@ -67,6 +69,8 @@ pub struct DialogResult {
 }
 
 /// The request for a dialog; built on the UI thread, executed elsewhere.
+// macOS reads none of it until its dialogs are there.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 #[derive(Debug, Clone)]
 pub enum Request {
     Files { title: String, multiple: bool, filter: Vec<String>, start: Option<PathBuf> },

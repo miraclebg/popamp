@@ -3,6 +3,7 @@
 
 pub mod bitmap;
 mod classic;
+mod colors;
 pub mod cursors;
 pub mod layout;
 mod names;
@@ -45,21 +46,34 @@ pub struct Skin {
     /// A vector skin's playlist font file; otherwise `pl.font` names a
     /// system font.
     pub pl_font: Option<Vec<u8>>,
+    /// The names of a vector skin's colour sets; empty when it has none.
+    pub color_sets: Vec<String>,
+    /// Which of `color_sets` the skin was loaded with.
+    pub color_set: usize,
 }
 
 impl Skin {
-    /// Popamp's own skin, sharp at any scale. The player's default skin,
-    /// and where every other skin takes what it leaves out.
-    pub fn builtin_vector() -> Skin {
+    /// Popamp's own skin, sharp at any scale, in the colour set `colors`
+    /// (by name; its first set when it has none of that name). The player's
+    /// default skin, and where every other skin takes what it leaves out.
+    pub fn builtin_vector(colors: Option<&str>) -> Skin {
         // The vector skin of the popamp-skin-default repository, built in.
         let files = popamp_skin_default::FILES.iter().map(|(name, data)| (name.to_string(), data.to_vec())).collect();
         // The files are part of the program; a test loads them.
-        vector::load_onto(Skin::bare(), &files).expect("the built-in skin loads")
+        vector::load_onto(Skin::bare(), &files, colors).expect("the built-in skin loads")
     }
 
     /// The built-in skin as x1 bitmaps, for classic skins to fall back on.
+    /// A classic skin has one look: the built-in skin's colour sets are not its.
     pub fn builtin() -> Skin {
-        Skin { vector: false, svgs: svg::Svgs::default(), sheet_svgs: HashMap::new(), ..Skin::builtin_vector() }
+        Skin {
+            vector: false,
+            svgs: svg::Svgs::default(),
+            sheet_svgs: HashMap::new(),
+            color_sets: Vec::new(),
+            color_set: 0,
+            ..Skin::builtin_vector(None)
+        }
     }
 
     /// A skin with nothing in it, to load the built-in one onto.
@@ -77,6 +91,8 @@ impl Skin {
             text: None,
             clock: None,
             pl_font: None,
+            color_sets: Vec::new(),
+            color_set: 0,
         }
     }
 
@@ -118,11 +134,13 @@ impl Skin {
     }
 
     /// Loads a skin archive or directory: a vector skin when it has a
-    /// `skin.toml`, a classic one otherwise.
-    pub fn load(path: &Path) -> Result<Skin, String> {
+    /// `skin.toml`, a classic one otherwise. `colors` names the colour set
+    /// wanted of a vector skin that has several; its first is used when it
+    /// has none of that name.
+    pub fn load(path: &Path, colors: Option<&str>) -> Result<Skin, String> {
         let read = |key: Key| if path.is_dir() { read_dir_files(path, key) } else { read_zip_files(path, key) };
         if is_vector(path) {
-            return read(vector_key).and_then(|files| vector::load(&files)).map_err(|e| format!("{}: {e}", path.display()));
+            return read(vector_key).and_then(|files| vector::load(&files, colors)).map_err(|e| format!("{}: {e}", path.display()));
         }
         let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         Ok(Self::from_files(name, &read(classic_key)?))
@@ -343,7 +361,7 @@ mod tests {
 
     #[test]
     fn the_built_in_skin_is_the_vector_skin_folder() {
-        let skin = Skin::builtin_vector();
+        let skin = Skin::builtin_vector(None);
         assert_eq!(skin.name, "Popamp Default");
         assert!(skin.vector);
         assert_eq!(skin.sheet_svgs.len(), Sheet::ALL.len() - 1, "all but nums_ex");
@@ -351,6 +369,17 @@ mod tests {
         assert!(!skin.has_nums_ex(), "its clock uses numbers");
         let classic = Skin::builtin();
         assert!(!classic.vector && classic.sheet_svgs.is_empty(), "x1 bitmaps for classic skins");
+        assert!(classic.color_sets.is_empty(), "classic skins have one look");
+    }
+
+    #[test]
+    fn the_built_in_skin_comes_in_the_colour_set_asked_for() {
+        let first = Skin::builtin_vector(None);
+        assert!(first.color_sets.len() > 1, "the built-in skin has colour sets");
+        let last = first.color_sets.last().unwrap().clone();
+        let other = Skin::builtin_vector(Some(&last));
+        assert_eq!(other.color_set, first.color_sets.len() - 1);
+        assert_ne!(other.sheet(Sheet::Main).px, first.sheet(Sheet::Main).px, "another set paints the pictures");
     }
 
     #[test]
@@ -374,7 +403,7 @@ mod tests {
         let skin = Skin::from_files("t".into(), &HashMap::from([("region.txt".to_string(), region.to_vec())]));
         let main = skin.layout.window(WindowKey::Main).unwrap();
         assert_eq!(main.normal.shape, Some(Shape::Polygons(vec![vec![(0, 0), (275, 0), (275, 116), (0, 116)]])));
-        assert_eq!(main.mode(true).shape, Some(Shape::Polygons(vec![vec![(0, 0), (9, 0), (0, 9)]])));
+        assert_eq!(main.mode(layout::View::Shade).shape, Some(Shape::Polygons(vec![vec![(0, 0), (9, 0), (0, 9)]])));
         assert_eq!(skin.layout.window(WindowKey::Eq).unwrap().normal.shape, None);
     }
 
@@ -391,7 +420,7 @@ mod tests {
 
     /// A small skin in `tests/fixtures`, made to show one feature.
     fn fixture(name: &str) -> Skin {
-        Skin::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)).unwrap()
+        Skin::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name), None).unwrap()
     }
 
     #[test]
@@ -406,7 +435,7 @@ mod tests {
         let skin = fixture("fonts-shade");
         let own_font = |style: &Option<TextStyle>| style.as_ref().and_then(|t| t.font.as_ref()).is_some();
         assert!(own_font(&skin.text) && own_font(&skin.clock), "its own fonts");
-        for key in WindowKey::ALL {
+        for key in [WindowKey::Main, WindowKey::Eq, WindowKey::Playlist] {
             assert!(skin.layout.window(key).unwrap().shade.is_some(), "{key:?} has a shade mode");
         }
     }

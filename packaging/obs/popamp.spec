@@ -18,7 +18,7 @@
 
 Name:           %{pkgname}
 # publish.sh sets it from Cargo.toml.
-Version:        0.9.0
+Version:        1.0.0
 Release:        0
 %if "%{flavor}" == "plus"
 Summary:        Winamp-style skinnable audio player, with plug-ins
@@ -55,6 +55,8 @@ Requires:       libopus.so.0()(64bit)
 Requires:       fontconfig
 Requires:       hicolor-icon-theme
 Recommends:     (zenity or kdialog)
+# Windows as a Wayland program, where there is no Xwayland.
+Recommends:     libwayland-client.so.0()(64bit)
 # Tracker modules; loaded at run time, and they say so if it is missing.
 Recommends:     libopenmpt.so.0()(64bit)
 # A General MIDI SoundFont, for MIDI files.

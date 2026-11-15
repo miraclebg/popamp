@@ -15,6 +15,7 @@ mod portal;
 pub type Send = Arc<dyn Fn(Command) + std::marker::Send + Sync>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 enum Key {
     Insert,
     Home,
@@ -28,6 +29,7 @@ enum Key {
 }
 
 /// Each key, pressed with Ctrl+Alt, and what it does.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 const BINDINGS: [(Key, Command); 9] = [
     (Key::Insert, Command::Play),
     (Key::Home, Command::Pause),
@@ -434,7 +436,8 @@ mod os {
     }
 }
 
-#[cfg(test)]
+// Each system's grab has its test; macOS has no grab yet.
+#[cfg(all(test, not(target_os = "macos")))]
 mod tests {
     use super::*;
 

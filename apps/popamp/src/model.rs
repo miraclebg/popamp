@@ -18,6 +18,7 @@ use popamp_core::plformats::{self, Item};
 use popamp_core::replaygain::Scanned;
 use popamp_core::text::format_duration_ms;
 use popamp_core::Command;
+use popamp_skin::layout::WindowKey;
 use popamp_skin::Skin;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -51,6 +52,10 @@ pub enum AppEvent {
     Gallery(crate::gallery::Fetched),
     /// How a ReplayGain scan goes.
     Scan(crate::scan::ScanEvent),
+    /// How a scan of the media library's folders goes.
+    Library(crate::library::LibEvent),
+    /// What popamp.app says the latest Popamp is.
+    Update(Result<crate::update::Release, String>),
     /// The plug-ins, loaded anew, and an instance of each dsp one for the
     /// engine; the number is that of the request.
     #[cfg(feature = "plugins")]
@@ -111,6 +116,8 @@ pub struct Model {
     pub stop_after_current: bool,
     /// Temporary marquee text (volume, seek, errors) and when it expires.
     pub transient: Option<(String, Instant)>,
+    /// A newer Popamp the site told of.
+    pub update: Option<crate::update::Release>,
     pub eq_presets: Vec<Preset>,
     pub eq_auto: Vec<Preset>,
     /// Favourite files and streams, kept in `bookmarks.m3u8`.
@@ -121,6 +128,8 @@ pub struct Model {
     pub scanned: Arc<Scanned>,
     /// Where the ReplayGain scan is; its window shows it.
     pub scan: crate::scan::ScanState,
+    /// The media library, kept in `library.txt`, and what its window shows.
+    pub library: crate::library::LibraryPane,
     pub vis: Vis,
     pub ui: Vec<UiReq>,
     /// The windows are hidden; the tray icon is there to bring them back.
@@ -142,6 +151,9 @@ pub struct Model {
     /// What a bar spans: the main window's monitor less the desktop's
     /// panels.
     pub screen: Option<crate::bar::Screen>,
+    /// The window system has no place for a bar (Wayland): the main
+    /// window is always a window.
+    pub no_bar: bool,
 }
 
 /// How a bookmark shows in menus and lists: its title, else its location.
@@ -195,7 +207,12 @@ impl Model {
         let engine = Engine::spawn(config.settings.output_device.clone(), sources.clone(), move |ev| {
             let _ = engine_proxy.send_event(AppEvent::Engine(ev));
         });
-        Self::with_engine(paths, config, engine, sources, Events(Some(proxy)))
+        let mut m = Self::with_engine(paths, config, engine, sources, Events(Some(proxy)));
+        if m.settings().ml_scan_at_start {
+            m.library_rescan();
+        }
+        m.check_for_update();
+        m
     }
 
     /// A model with no audio device and no event loop, for drawing the
@@ -239,19 +256,24 @@ impl Model {
         let history = History::load(&paths.history_file());
         let scanned = Arc::new(Scanned::load(&paths.replaygain_file()));
         let format = Format::cached(&config.settings.titlefmt);
+        let library = crate::library::LibraryPane::new(popamp_core::library::Library::load(&paths.library_file()));
+        let skin = Skin::builtin_vector(Some(&config.settings.skin_colors));
         let mut m = Model {
+            library,
             paths,
             config,
             playlist: Playlist::new(),
             engine,
             format,
-            skin: Skin::builtin_vector(),
+            skin,
             skin_path: None,
             skin_changed_at: None,
             status: Status::default(),
             stop_after_current: false,
             screen: None,
+            no_bar: false,
             transient: None,
+            update: None,
             eq_presets,
             eq_auto,
             bookmarks,
@@ -772,8 +794,8 @@ impl Model {
 
     pub fn set_skin(&mut self, path: Option<PathBuf>) {
         match &path {
-            None => self.skin = Skin::builtin_vector(),
-            Some(p) => match Skin::load(p) {
+            None => self.skin = self.builtin_skin(),
+            Some(p) => match self.load_skin(p) {
                 Ok(s) => self.skin = s,
                 Err(e) => {
                     self.flash(format!("SKIN ERROR: {e}"));
@@ -796,7 +818,21 @@ impl Model {
             return;
         }
         self.skin_changed_at = now;
-        match Skin::load(&path) {
+        self.reload_skin(&path);
+    }
+
+    /// The built-in skin with the colour set the user picked.
+    fn builtin_skin(&self) -> Skin {
+        Skin::builtin_vector(Some(&self.settings().skin_colors))
+    }
+
+    /// Loads the skin with the colour set the user picked.
+    pub fn load_skin(&self, path: &std::path::Path) -> Result<Skin, String> {
+        Skin::load(path, Some(&self.settings().skin_colors))
+    }
+
+    fn reload_skin(&mut self, path: &std::path::Path) {
+        match self.load_skin(path) {
             Ok(s) => {
                 self.skin = s;
                 self.ui.push(UiReq::SkinChanged);
@@ -830,6 +866,7 @@ impl Model {
         let req = match &kind {
             DialogKind::OpenFiles { .. } => Request::Files { title: "Open file(s)".into(), multiple: true, filter: media_filter, start },
             DialogKind::OpenFolder { .. } => Request::Folder { title: "Open folder".into(), start },
+            DialogKind::LibraryFolder => Request::Folder { title: "Add a folder to the media library".into(), start },
             DialogKind::OpenUrl { .. } => Request::Entry {
                 title: "Open URL".into(),
                 text: "Enter a URL to open (a stream or a playlist):".into(),
@@ -1059,6 +1096,11 @@ impl Model {
                     self.install_skin(Path::new(&f));
                 }
             }
+            DialogKind::LibraryFolder => {
+                if let Some(f) = first.map(|f| f.trim().to_string()).filter(|f| !f.is_empty()) {
+                    self.library_add_folder(&f);
+                }
+            }
             DialogKind::Info => {}
             // The File info window takes the picture (app.rs).
             DialogKind::PickCover { .. } => {}
@@ -1191,6 +1233,18 @@ impl Model {
             C::AlbumArt => self.ui.push(UiReq::Panel(PanelKind::AlbumArt)),
             C::History => self.ui.push(UiReq::Panel(PanelKind::History)),
             C::ScanReplayGain => self.scan_replaygain(),
+            C::ToggleLibraryWindow => {
+                let v = !self.settings().ml_open;
+                self.settings_mut().ml_open = v;
+                self.ui.push(UiReq::Layout);
+            }
+            C::LibraryPlay => self.library_play(AddMode::ReplaceAndPlay),
+            C::LibraryEnqueue => self.library_play(AddMode::Append),
+            C::LibraryOpen => self.exec(self.library_open(false)),
+            C::LibraryOpenOther => self.exec(self.library_open(true)),
+            C::LibraryAddFolder => self.request_dialog(DialogKind::LibraryFolder),
+            C::LibraryRescan => self.library_rescan(),
+            C::LibraryRemoveFolder => self.library_remove_folder(),
             #[cfg(feature = "plugins")]
             C::Plugins => self.ui.push(UiReq::Panel(PanelKind::Plugins)),
             #[cfg(not(feature = "plugins"))]
@@ -1399,6 +1453,24 @@ impl Model {
                 self.settings_mut().wsz_scaling = mode;
                 self.ui.push(UiReq::Layout);
             }
+            MenuAction::UpdateDownload => self.update_download(),
+            MenuAction::UpdateSkip => self.update_skip(),
+            MenuAction::SkinColors(set) => {
+                self.settings_mut().skin_colors = set;
+                // The pictures are read with their colours, so read them again.
+                match self.skin_path.clone() {
+                    Some(path) => self.reload_skin(&path),
+                    None => {
+                        self.skin = self.builtin_skin();
+                        self.ui.push(UiReq::SkinChanged);
+                    }
+                }
+            }
+            MenuAction::MainAsBar(bar) => {
+                self.settings_mut().main_bar = bar;
+                // A bar is another kind of window to the desktop.
+                self.ui.push(UiReq::SkinChanged);
+            }
             MenuAction::BarEdge(edge) => {
                 self.settings_mut().bar_edge = Some(edge);
                 self.ui.push(UiReq::Layout);
@@ -1441,7 +1513,8 @@ impl Model {
         use Command as C;
         let s = self.settings();
         let st = self.state();
-        let mut items = vec![
+        let mut items: Vec<MenuItem> = self.update_menu().into_iter().collect();
+        items.extend([
             MenuItem::cmd("About Popamp…", "Ctrl+F1", C::About),
             MenuItem::sep(),
             MenuItem::sub(
@@ -1460,14 +1533,25 @@ impl Model {
             MenuItem::cmd("Main Window", "Alt+W", C::ToggleMainWindow),
             MenuItem::cmd("Playlist Editor", "Alt+E", C::TogglePlaylistWindow).checked(s.pe_open),
             MenuItem::cmd("Equalizer", "Alt+G", C::ToggleEqWindow).checked(s.eq_open),
-        ];
-        if let Some(edge) = crate::bar::edge(self) {
+            MenuItem::cmd("Media Library", "Alt+L", C::ToggleLibraryWindow).checked(s.ml_open),
+        ]);
+        if self.skin.color_sets.len() > 1 {
+            let set = |(i, name): (usize, &String)| {
+                MenuItem::action(name, "", MenuAction::SkinColors(name.clone())).checked(i == self.skin.color_set)
+            };
+            items.push(MenuItem::sub("Colours", self.skin.color_sets.iter().enumerate().map(set).collect()));
+        }
+        if let Some(edge) = crate::bar::chosen_edge(self) {
+            let mut mode = Vec::new();
+            // A skin with a window too lets the bar be turned off.
+            if self.skin.layout.window(WindowKey::Main).is_some_and(|w| w.bar.is_some()) {
+                let on = |label: &str, bar: bool| MenuItem::action(label, "", MenuAction::MainAsBar(bar)).checked(s.main_bar == bar);
+                mode.extend([on("On", true), on("Off", false), MenuItem::sep()]);
+            }
             let at = |label: &str, e: BarEdge| MenuItem::action(label, "", MenuAction::BarEdge(e)).checked(edge == e);
-            items.push(MenuItem::sub(
-                "Bar position",
-                vec![at("Top of the screen", BarEdge::Top), at("Bottom of the screen", BarEdge::Bottom)],
-            ));
-            items.push(MenuItem::sub("Bar size", zooms(s.bar_zoom, MenuAction::BarZoom)));
+            mode.push(MenuItem::sub("Position", vec![at("Top of the screen", BarEdge::Top), at("Bottom of the screen", BarEdge::Bottom)]));
+            mode.push(MenuItem::sub("Size", zooms(s.bar_zoom, MenuAction::BarZoom)));
+            items.push(MenuItem::sub("Toolbar mode", mode));
         }
         items.extend([
             MenuItem::sep(),
@@ -1583,6 +1667,7 @@ impl Model {
             MenuItem::action("Scope: dots", "", MenuAction::OscStyle(0)).checked(s.osc_style == 0),
             MenuItem::action("Scope: lines", "", MenuAction::OscStyle(1)).checked(s.osc_style == 1),
             MenuItem::action("Scope: solid", "", MenuAction::OscStyle(2)).checked(s.osc_style == 2),
+            MenuItem::action("Scope: afterglow", "", MenuAction::OscStyle(3)).checked(s.osc_style == 3),
         ];
         #[cfg(feature = "visualizers")]
         items.extend(self.visualizer_items());
@@ -1912,6 +1997,40 @@ mod tests {
     }
 
     #[test]
+    fn the_built_in_skin_offers_its_colour_sets() {
+        let mut m = Model::for_tests();
+        let colours = |m: &Model| m.main_menu().into_iter().find(|i| i.label == "Colours").unwrap().sub;
+        let sets = colours(&m);
+        assert!(sets[0].checked);
+        let before = m.skin.sheet(popamp_skin::Sheet::Main).px.clone();
+        m.on_menu(sets[1].action.clone().unwrap());
+        assert!(colours(&m)[1].checked);
+        assert_ne!(m.skin.sheet(popamp_skin::Sheet::Main).px, before, "the pictures in the other set");
+        assert!(matches!(m.ui.last(), Some(UiReq::SkinChanged)));
+    }
+
+    #[test]
+    fn a_skin_with_colour_sets_offers_them_and_remembers_the_pick() {
+        let mut m = Model::for_tests();
+        let colours = |m: &Model| m.main_menu().into_iter().find(|i| i.label == "Colours");
+        let dir = m.paths.skins_dir().join("tinted");
+        std::fs::create_dir_all(&dir).unwrap();
+        let toml = "[meta]\nname = \"Tinted\"\nformat_version = 1\n[colors.day]\nback = \"#ffffff\"\n\
+            [colors.night]\nback = \"#000020\"\n[playlist]\nnormal_bg = \"back\"\n";
+        std::fs::write(dir.join("skin.toml"), toml).unwrap();
+        m.set_skin(Some(dir.clone()));
+        let sets = colours(&m).unwrap().sub;
+        assert_eq!(sets.iter().map(|i| (i.label.as_str(), i.checked)).collect::<Vec<_>>(), [("day", true), ("night", false)]);
+        m.on_menu(sets[1].action.clone().unwrap());
+        assert_eq!(m.skin.pl.normal_bg, 0x000020);
+        assert!(matches!(m.ui.last(), Some(UiReq::SkinChanged)));
+        assert!(colours(&m).unwrap().sub[1].checked);
+        m.set_skin(None);
+        m.set_skin(Some(dir));
+        assert_eq!(m.skin.pl.normal_bg, 0x000020, "night again after another skin");
+    }
+
+    #[test]
     fn an_edited_skin_is_loaded_again() {
         let mut m = Model::for_tests();
         let dir = m.paths.skins_dir().join("vector");
@@ -1956,14 +2075,20 @@ mod tests {
         assert!(m.media_snapshot().tray, "an icon asked for stays");
     }
 
+    /// The entry `label` of the main menu's Toolbar mode.
+    fn toolbar(m: &Model, label: &str) -> Option<MenuItem> {
+        let mode = m.main_menu().into_iter().find(|i| i.label == "Toolbar mode")?;
+        mode.sub.into_iter().find(|i| i.label == label)
+    }
+
     #[test]
     fn a_bar_skin_offers_the_edge_in_the_main_menu() {
         let mut m = Model::for_tests();
-        let edge_menu = |m: &Model| m.main_menu().into_iter().find(|i| i.label == "Bar position");
-        assert!(m.main_menu().iter().all(|i| i.label != "Bar size"));
-        assert!(edge_menu(&m).is_none(), "no bar, no choice");
+        m.skin.layout.windows[0].bar = None; // the built-in skin has a bar view
+        assert!(m.main_menu().iter().all(|i| i.label != "Toolbar mode"), "no bar, no choice");
         m.skin.layout.windows[0].placement = popamp_skin::layout::Placement::Bar(BarEdge::Bottom);
-        let items = edge_menu(&m).unwrap().sub;
+        assert!(toolbar(&m, "On").is_none() && toolbar(&m, "Size").is_some(), "a bar it is, with a size");
+        let items = toolbar(&m, "Position").unwrap().sub;
         assert!(items[1].checked && !items[0].checked, "the skin's edge");
         m.on_menu(items[0].action.clone().unwrap());
         assert_eq!(crate::bar::edge(&m), Some(BarEdge::Top));
@@ -1971,10 +2096,35 @@ mod tests {
     }
 
     #[test]
+    fn a_skin_with_both_lets_the_user_pick_window_or_bar() {
+        use popamp_skin::layout::{Bar, Placement, View};
+        let mut m = Model::for_tests();
+        m.skin.layout.windows[0].bar = None; // the built-in skin has one
+        m.settings_mut().main_bar = true;
+        assert!(toolbar(&m, "On").is_none(), "the skin has no bar view");
+        assert_eq!(crate::bar::edge(&m), None, "and stays a window whatever the setting");
+        m.settings_mut().main_bar = false;
+        let main = &mut m.skin.layout.windows[0];
+        main.bar = Some(Bar { edge: BarEdge::Top, mode: main.normal.clone() });
+        let (on, off) = (toolbar(&m, "On").unwrap(), toolbar(&m, "Off").unwrap());
+        assert!(off.checked && !on.checked, "a window at first");
+        let top = toolbar(&m, "Position").unwrap().sub[0].clone();
+        assert!(top.checked && toolbar(&m, "Size").is_some(), "where and how big it will be, chosen before it is on");
+        m.on_menu(on.action.unwrap());
+        assert!(matches!(m.ui.last(), Some(UiReq::SkinChanged)), "the window is made again as a bar");
+        assert_eq!(crate::bind::view(&m, WindowKey::Main), View::Bar);
+        assert_eq!(crate::bind::placement(&m, WindowKey::Main), Placement::Bar(BarEdge::Top));
+        assert_eq!(crate::bind::view(&m, WindowKey::Eq), View::Normal);
+        assert!(toolbar(&m, "On").unwrap().checked);
+        m.settings_mut().windowshade = true;
+        assert_eq!(crate::bind::view(&m, WindowKey::Main), View::Bar, "a bar has no shade mode");
+    }
+
+    #[test]
     fn a_bar_has_its_own_size_in_the_main_menu() {
         let mut m = Model::for_tests();
         m.skin.layout.windows[0].placement = popamp_skin::layout::Placement::Bar(BarEdge::Bottom);
-        let sizes = m.main_menu().into_iter().find(|i| i.label == "Bar size").unwrap().sub;
+        let sizes = toolbar(&m, "Size").unwrap().sub;
         let checked: Vec<_> = sizes.iter().filter(|i| i.checked).map(|i| i.label.as_str()).collect();
         assert_eq!(checked, ["×2"]);
         let x15 = sizes.iter().find(|i| i.label == "×1.5").unwrap();

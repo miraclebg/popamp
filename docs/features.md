@@ -6,6 +6,17 @@
   size). Classic skins stay crisp at fractional sizes. Windows dock and snap together, and
   support windowshade mode, EasyMove, always-on-top and `region.txt` shapes.
   Tooltips explain the main window's buttons.
+- **Media library** (`Alt+L`): a window of its own, docking with the
+  others, for the folders you give it. It lists all the music, the newest
+  tracks and each folder; artists and albums side by side, each with its
+  number of albums or year and tracks, narrow the track table under them,
+  and typing searches every tag and the file path. Play replaces the
+  playlist, Enqueue adds to it; Enter and a double click enqueue, or play
+  when "Enter and double-click enqueue" is off in Preferences > Media
+  Library, and Shift+Enter does the other. Tracks dragged onto the
+  playlist go in where they are let go. The folders are read again in the
+  background at start (and on Rescan); only changed files are read anew,
+  and the audio files themselves are never written.
 - **Own dialogs:** Jump to file (search as you type), File info, the Skin
   browser (`Alt+S`) and a Preferences window (`Ctrl+P`). They and the menus
   follow the display scaling (Windows' scaling setting, `Xft.dpi` on X11),
@@ -30,6 +41,12 @@
   gallery did not install itself is left alone. In the build without
   plug-ins only the Skins tab lists anything. Popamp contacts the site only while
   that window is open.
+- **Update check:** at start, at most once a day, Popamp asks
+  [popamp.app](https://popamp.app) for the latest version (the request
+  carries only Popamp's version) and, when a newer one is out, offers
+  its page at the top of the main menu, or says to update through the
+  package manager when Popamp came from a .deb or .rpm. It never
+  downloads or installs anything itself. Off in Preferences > Internet.
 - **Tags and covers:** File info (`Alt+3`) changes the title, artist,
   album, album artist, year, genre, track and disc numbers, composer and
   comment of MP3, FLAC, Ogg Vorbis, Opus and MP4/M4A files, and sets or removes
@@ -80,7 +97,8 @@
   - Export as an HTML page (MISC > Misc options).
   - Advanced Title Formatting (`[%artist% - ]$if2(%title%,…)`).
 - **Visualization:** classic spectrum analyzer (normal, fire and line styles,
-  peaks) and oscilloscope (dots, lines, solid).
+  peaks) and oscilloscope (dots, lines, solid, and lines that fade out over five
+  frames, like a cathode-ray tube's afterglow).
 - **Control:**
   - Winamp keyboard shortcuts and Winamp-style menus.
   - Command line with `/PLAY /NEXT /VOL=50 /COMMAND=40045 …` sent to the
@@ -103,14 +121,52 @@
     portal (KDE Plasma 6, GNOME 48, Hyprland), which asks the user once
     and lets them pick other keys. GNOME keeps Ctrl+Alt+Left/Right for its
     workspaces.
-  - Bar skins reserve their strip of the screen, like a taskbar.
+  - Toolbar mode: the main window as a bar along the screen's edge (see
+    below).
+
+## Toolbar mode
+
+The main window can be a bar along the top or bottom edge of the screen,
+the way jetAudio's bar does, on Linux as well as on Windows:
+
+- **One strip with the whole player:** the transport buttons, the
+  visualizer, the clock, the scrolling title, volume and the EQ, PL,
+  shuffle and repeat switches, across the full width of the screen.
+- **Room kept for it, like a taskbar.** On Linux (X11) Popamp reserves
+  the strip with `_NET_WM_STRUT_PARTIAL`, so maximized windows stop at the
+  bar instead of going under it, and it stays inside the panels the
+  desktop already has at that edge (GNOME's top bar, a KDE or Xfce
+  panel). On Windows it is an application bar, as the taskbar is.
+- **The other windows go along.** The playlist and the equalizer sit
+  against the bar at its right end. Drag one away and it stays where it
+  was put until the bar is turned off; the media library moves freely.
+- **Main menu > Toolbar mode:** *On* / *Off*, *Position* (top or bottom of
+  the screen) and *Size* (×1 to ×3, apart from the size of the other
+  windows). Position and size can be chosen before the bar is on.
+- **Skins:** a vector skin describes its bar beside its window
+  (`[window.bar]` in `skin.toml`, see [skin-format.md](skin-format.md)),
+  so one skin gives both, in all its colour sets. The built-in Default
+  and the Modern, Steel, Classified and D11 skins have one. Classic
+  `.wsz` skins have no bar.
+
+Not as a Wayland program: Wayland does not let a program place its
+windows or reserve part of the screen. Under Xwayland, the default where
+it runs, the bar works as on X11.
 
 ## Known limitations
 
-- No native Wayland windows: Popamp needs Xwayland on Wayland desktops.
-- The Preferences window (`Ctrl+P`) covers the common options; the rest are
-  in the menus and `popamp.ini`.
+- As a Wayland program (by itself where there is no Xwayland, or with
+  `wayland=1` in `popamp.ini`) Popamp has no always on top, no bar view
+  and no file drops, does not remember where on the screen its windows
+  were, and a menu opened at the screen's edge can go past it: Wayland
+  tells a program neither where its windows are nor lets it place them.
+  The equalizer and the playlist always move with the main window there.
+  Through Xwayland, which stays the default where it runs, all of that
+  works.
+- The Preferences window (`Ctrl+P`) covers the common options, in sections
+  listed down its left side; the rest are in the menus and `popamp.ini`.
 - Tags can be changed in MP3, FLAC, Ogg Vorbis, Opus and MP4 files only, one
   file at a time.
-- No media library or Modern (`.wal`) skins yet. See [ROADMAP.md](ROADMAP.md).
+- The media library has no playlists of its own yet; no Modern (`.wal`) skins yet. See
+  [ROADMAP.md](ROADMAP.md).
 

@@ -5,6 +5,7 @@
 use crate::bind;
 use crate::canvas::Canvas;
 use crate::font::Fonts;
+use crate::library::Place;
 use crate::model::Model;
 use crate::platform::Mask;
 use crate::render::{self, picture, sprite};
@@ -14,7 +15,7 @@ use popamp_audio::PlayState;
 use popamp_core::text::format_duration_ms;
 use popamp_core::Command;
 use popamp_skin::layout::{
-    Action, Align, Element, EmptyPress, Fill, Kind, Look, MenuRef, Mode, Paint, PopupItem, Slider, Value, Wheel, WindowDef, WindowKey,
+    Action, Align, Element, EmptyPress, Fill, Kind, Look, MenuRef, Mode, Paint, PopupItem, Slider, Value, View, Wheel, WindowDef, WindowKey,
 };
 use popamp_skin::sprites::{eq as e, Rect};
 use popamp_skin::{Bitmap, CursorKind, Sheet, Skin};
@@ -25,7 +26,7 @@ const MARQUEE_STEP: Duration = Duration::from_millis(180);
 pub struct SkinWin {
     key: WindowKey,
     /// The element under the held mouse button: (shade mode, index).
-    pressed: Option<(bool, usize)>,
+    pressed: Option<(View, usize)>,
     /// Where on the thumb a slider was taken, along the slider.
     grab: i32,
     /// The value of a slider that applies on release, while it is dragged.
@@ -34,8 +35,8 @@ pub struct SkinWin {
     marquee_drag: Option<(i32, i32)>,
     last_scroll: Instant,
     list: ListState,
-    /// The open popup: (shade mode, element index), and the item under the mouse.
-    popup: Option<((bool, usize), Option<usize>)>,
+    /// The open popup: (view, element index), and the item under the mouse.
+    popup: Option<((View, usize), Option<usize>)>,
 }
 
 #[derive(Default)]
@@ -85,8 +86,7 @@ impl SkinWin {
     }
 
     fn current<'a>(&self, model: &'a Model) -> Option<Current<'a>> {
-        let shade = bind::shaded(model, self.key);
-        let mode = self.def(model)?.mode(shade);
+        let mode = self.def(model)?.mode(bind::view(model, self.key));
         let (w, h) = bind::window_size(model, self.key);
         Some(Current { mode, w, h })
     }
@@ -94,7 +94,7 @@ impl SkinWin {
     /// The pressed element, if it belongs to the mode on screen.
     fn pressed_index(&self, model: &Model) -> Option<usize> {
         let (shade, i) = self.pressed?;
-        (shade == bind::shaded(model, self.key)).then_some(i)
+        (shade == bind::view(model, self.key)).then_some(i)
     }
 
     /// The last element under the point that takes the mouse.
@@ -295,12 +295,38 @@ impl SkinWin {
     }
 
     /// Scrolls so the thumb's middle follows `y` on the scroll bar `r`.
-    fn scroll_to(&mut self, model: &Model, r: Rect, thumb: &Look, y: i32) {
+    fn scroll_to(&mut self, model: &mut Model, r: Rect, thumb: &Look, y: i32) {
         let th = thumb_h(thumb);
         let track = (r.h - th).max(1);
-        let max = model.playlist.len().saturating_sub(self.visible_rows(model));
+        let max = self.scroll_range(model).1;
         let frac = ((y - r.y - th / 2) as f32 / track as f32).clamp(0.0, 1.0);
         self.list.scroll = (frac * max as f32).round() as usize;
+    }
+
+    /// The playlist's first visible row and the last one it can have.
+    fn scroll_range(&self, model: &Model) -> (usize, usize) {
+        (self.scroll(model), model.playlist.len().saturating_sub(self.visible_rows(model)))
+    }
+
+    // --- media library ---------------------------------------------------------
+
+    /// Where the library is, in a window that shows it.
+    fn library_place(&self, model: &Model) -> Option<Place> {
+        let c = self.current(model)?;
+        c.mode.elements.iter().find_map(|el| match &el.kind {
+            Kind::Library { thumb } => Some(place(model, el.at.resolve(c.w, c.h), thumb)),
+            _ => None,
+        })
+    }
+
+    /// A key for the library; false when it has no use for it.
+    pub fn library_key(&mut self, model: &mut Model, key: crate::widgets::Key, shift: bool) -> bool {
+        let Some(at) = self.library_place(model) else { return false };
+        let (used, run) = model.library.key(at, key, shift);
+        if let Some(c) = run {
+            model.exec(c);
+        }
+        used
     }
 
     // --- popups --------------------------------------------------------------
@@ -316,7 +342,7 @@ impl SkinWin {
     /// The open popup's items with their places.
     fn popup_items(&self, model: &Model) -> Vec<(PopupItem, Rect)> {
         let Some(((shade, i), _)) = self.popup else { return Vec::new() };
-        if shade != bind::shaded(model, self.key) {
+        if shade != bind::view(model, self.key) {
             return Vec::new();
         }
         let Some((Element { kind: Kind::Popup { items, above, .. }, .. }, r)) = self.element(model, i) else { return Vec::new() };
@@ -399,14 +425,24 @@ impl SkinWin {
                     }
                 }
                 Kind::Marquee { area, .. } => self.draw_marquee(model, fonts, b, marquee_rect(*area, r)),
-                Kind::Clock { align } => self.draw_clock(model, fonts, b, r, *align),
+                Kind::Clock { align, font_size } => self.draw_clock(model, fonts, b, r, (*align, *font_size)),
                 Kind::Vis => model.vis.draw(b, r.x, r.y, r.w, r.h, model.settings(), &skin.viscolor),
                 Kind::EqGraph => draw_eq_graph(model, b, r),
                 Kind::List => self.draw_list(model, &mut fonts.list, b, r, active),
+                Kind::Library { thumb } => {
+                    let playing = model.playlist.current_entry().map(|e| e.location.as_str());
+                    let at = place(model, r, thumb);
+                    model.library.draw(b, &mut fonts.list, at, &skin.pl, active, playing);
+                    for (t, held) in model.library.thumbs(at) {
+                        if let Some(p) = thumb.pick(false, held, true) {
+                            draw_paint(b, skin, p, t, Fill::Once);
+                        }
+                    }
+                }
                 Kind::ListScroll { thumb } => {
                     let track = r.h - thumb_h(thumb);
-                    let max = model.playlist.len().saturating_sub(self.visible_rows(model));
-                    let ty = if max == 0 { 0 } else { (self.scroll(model) as i32 * track) / max as i32 };
+                    let (at, max) = self.scroll_range(model);
+                    let ty = if max == 0 { 0 } else { (at as i32 * track) / max as i32 };
                     if let Some(p) = thumb.pick(false, held, true) {
                         draw_paint(b, skin, p, Rect { y: r.y + ty, ..r }, Fill::Once);
                     }
@@ -482,7 +518,7 @@ impl SkinWin {
     }
 
     /// The big time display; paused time blinks once a second.
-    fn draw_clock(&self, model: &Model, fonts: &mut Fonts, b: &mut Canvas, r: Rect, align: Align) {
+    fn draw_clock(&self, model: &Model, fonts: &mut Fonts, b: &mut Canvas, r: Rect, how: (Align, Option<i32>)) {
         let sh = model.engine.shared();
         let blink_off = sh.state() == PlayState::Paused
             && (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() / 500) % 2 == 1;
@@ -494,7 +530,7 @@ impl SkinWin {
             (true, Some(l)) => (l.saturating_sub(shown) / 1000, true),
             _ => (shown / 1000, false),
         };
-        render::clock(b, &model.skin, fonts, r, secs, neg, align);
+        render::clock(b, &model.skin, fonts, r, secs, neg, how);
     }
 
     // --- input ---------------------------------------------------------------
@@ -517,11 +553,14 @@ impl SkinWin {
                     model.playlist.select_only(i);
                 }
             }
+            if let Some((Element { kind: Kind::Library { thumb }, .. }, r)) = found {
+                model.library.press_right(place(model, r, &thumb), ev.x, ev.y);
+            }
             let menu = found.and_then(|(el, _)| el.menu).unwrap_or(MenuRef::Main);
             return Out::Menu(bind::menu(model, menu));
         }
         let (Some(i), Some((el, r))) = (hit, found) else { return self.empty_press(model) };
-        let shade = bind::shaded(model, self.key);
+        let shade = bind::view(model, self.key);
         match el.kind {
             Kind::Drag { double } => {
                 if let (true, Some(c)) = (ev.double, double) {
@@ -570,6 +609,17 @@ impl SkinWin {
                 self.pressed = Some((shade, i));
                 Out::Capture
             }
+            Kind::Library { thumb } => {
+                let re = model.library.press(place(model, r, &thumb), ev.x, ev.y, ev.shift, ev.ctrl, ev.double);
+                if let Some(c) = re.run {
+                    model.exec(c);
+                }
+                if !re.capture {
+                    return Out::Redraw;
+                }
+                self.pressed = Some((shade, i));
+                Out::Capture
+            }
             Kind::ListScroll { thumb } => {
                 self.pressed = Some((shade, i));
                 self.scroll_to(model, r, &thumb, ev.y);
@@ -586,6 +636,10 @@ impl SkinWin {
     }
 
     fn empty_press(&self, model: &Model) -> Out {
+        // The window's choice is for the window; its bar view has its place.
+        if bind::view(model, self.key) == View::Bar {
+            return Out::None;
+        }
         match self.def(model).map(|d| d.empty_press) {
             Some(EmptyPress::Move) => Out::BeginMove,
             Some(EmptyPress::MoveIfEasy) if model.settings().easymove => Out::BeginMove,
@@ -628,6 +682,7 @@ impl SkinWin {
                 self.marquee_offset = so - (x - sx);
             }
             Kind::List => return self.drag_rows(model, y),
+            Kind::Library { thumb } => return model.library.drag(place(model, r, &thumb), x, y),
             Kind::ListScroll { thumb } => self.scroll_to(model, r, &thumb, y),
             _ => return false,
         }
@@ -652,8 +707,14 @@ impl SkinWin {
         }
         let Some(i) = pressed else { return Out::None };
         let over = self.hit(model, ev.x, ev.y) == Some(i);
-        let Some((el, _)) = self.element(model, i) else { return Out::Redraw };
+        let Some((el, r)) = self.element(model, i) else { return Out::Redraw };
         match el.kind {
+            Kind::Library { thumb } => {
+                if let Some(c) = model.library.release(place(model, r, &thumb), ev.x, ev.y) {
+                    model.exec(c);
+                }
+                Out::Redraw
+            }
             Kind::Slider(s) => {
                 if let Some(v) = self.preview.take() {
                     bind::set_value(model, s.value, v);
@@ -685,6 +746,9 @@ impl SkinWin {
                 }
                 return;
             }
+        }
+        if let Some(at) = self.library_place(model) {
+            return model.library.wheel(at, x, y, steps);
         }
         match self.def(model).map(|d| d.wheel) {
             Some(Wheel::Volume(step)) => model.set_volume(model.settings().volume + steps * step),
@@ -727,7 +791,7 @@ pub fn image_mask(model: &Model, mode: &Mode, size: (i32, i32), drawn: Scale, sh
             let r = el.at.resolve(w, h);
             match &el.kind {
                 Kind::Image { look: Look { normal: Some(p), .. }, fill, .. } => draw_paint(&mut b, &model.skin, *p, r, *fill),
-                Kind::List | Kind::Vis | Kind::EqGraph => b.fill(r.x, r.y, r.w, r.h, 0x808080),
+                Kind::List | Kind::Library { .. } | Kind::Vis | Kind::EqGraph => b.fill(r.x, r.y, r.w, r.h, 0x808080),
                 _ => {}
             }
         }
@@ -737,6 +801,11 @@ pub fn image_mask(model: &Model, mode: &Mode, size: (i32, i32), drawn: Scale, sh
     let green = |c: u32| (c >> 8) & 0xff;
     let on = black.px.iter().zip(&white.px).map(|(&k, &w)| green(w).saturating_sub(green(k)) < 128).collect();
     Mask { w: black.w, h: black.h, on, scale: if drawn.is_one() { shown } else { Scale::ONE } }
+}
+
+/// Where a library element with `thumb`, at `r`, puts the library.
+fn place(model: &Model, r: Rect, thumb: &Look) -> Place {
+    Place { r, px: model.settings().pe_fontsize, thumb: thumb.normal.map(|p| (p.src.w, p.src.h)) }
 }
 
 fn draw_paint(b: &mut Canvas, skin: &Skin, p: Paint, r: Rect, fill: Fill) {
@@ -843,10 +912,22 @@ mod tests {
         let toml = "[meta]\nname = \"Round\"\nformat_version = 1\n[[window]]\nkey = \"main\"\nnormal.size = [275, 116]\n\
             [[window.normal.element]]\ntype = \"button\"\nrect = [10, 10, 20, 20]\nnormal = \"dot.svg\"\nhit = \"dot.svg\"\nclick = \"play\"\ntip = \"Play\"\n";
         let files = [("skin.toml".to_string(), toml.as_bytes().to_vec()), ("dot.svg".to_string(), dot.to_vec())].into();
-        m.skin = popamp_skin::vector::load(&files).unwrap();
+        m.skin = popamp_skin::vector::load(&files, None).unwrap();
         let w = SkinWin::new(WindowKey::Main);
         assert_eq!(w.tooltip(&m, 20, 20).as_deref(), Some("Play"));
         assert_eq!(w.tooltip(&m, 11, 11), None, "the corner is not the button");
+    }
+
+    #[test]
+    fn a_press_on_an_empty_spot_moves_the_window_but_not_its_bar_view() {
+        let mut m = Model::for_tests();
+        let toml =
+            "[meta]\nname = \"Both\"\nformat_version = 1\n[[window]]\nkey = \"main\"\nnormal.size = [275, 116]\nbar.size = [400, 20]\n";
+        m.skin = popamp_skin::vector::load(&[("skin.toml".to_string(), toml.as_bytes().to_vec())].into(), None).unwrap();
+        let mut w = SkinWin::new(WindowKey::Main);
+        assert!(matches!(w.mouse_down(&mut m, &input(5, 5)), Out::BeginMove));
+        m.settings_mut().main_bar = true;
+        assert!(matches!(w.mouse_down(&mut m, &input(5, 5)), Out::None), "a bar stays at its screen edge");
     }
 
     #[test]
@@ -857,7 +938,7 @@ mod tests {
             [[window.normal.element]]\ntype = \"popup\"\nrect = [10, 80, 20, 20]\nabove = true\n\
             [[window.normal.element.item]]\nnormal = \"dot.svg\"\nclick = \"play\"\n";
         let files = [("skin.toml".to_string(), toml.as_bytes().to_vec()), ("dot.svg".to_string(), dot.to_vec())].into();
-        m.skin = popamp_skin::vector::load(&files).unwrap();
+        m.skin = popamp_skin::vector::load(&files, None).unwrap();
         let mut w = SkinWin::new(WindowKey::Main);
         w.mouse_down(&mut m, &input(20, 90));
         w.mouse_up(&mut m, &input(20, 90));
@@ -874,7 +955,7 @@ mod tests {
             see_through = true\n[[window.normal.element]]\ntype = \"image\"\nrect = [0, 0, 40, 20]\nnormal = \"dot.svg\"\nfill = \"tile\"\n\
             [[window.normal.element]]\ntype = \"list\"\nrect = [20, 0, 4, 4]\n";
         let files = [("skin.toml".to_string(), toml.as_bytes().to_vec()), ("dot.svg".to_string(), dot.to_vec())].into();
-        m.skin = popamp_skin::vector::load(&files).unwrap();
+        m.skin = popamp_skin::vector::load(&files, None).unwrap();
         let mode = &m.skin.layout.window(WindowKey::Main).unwrap().normal;
         let x2 = Scale::new(200, popamp_core::config::Scaling::Sharp);
         let mask = image_mask(&m, mode, (40, 20), x2, x2);
