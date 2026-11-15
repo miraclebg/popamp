@@ -172,6 +172,14 @@ settings! {
     pe_width: i32 = 275,
     pe_height: i32 = 232,
     pe_ws: bool = false,
+    // The media library window.
+    ml_open: bool = false,
+    ml_wx: i32 = 375,
+    ml_wy: i32 = 100,
+    ml_width: i32 = 550,
+    ml_height: i32 = 348,
+    /// Look for new and changed files in the library's folders at start.
+    ml_scan_at_start: bool = true,
     // Playback.
     /// 0..=255, Winamp scale.
     volume: i32 = 200,
@@ -190,7 +198,9 @@ settings! {
     fade_ms: u32 = 1000,
     /// How long one track fades into the next, 0 = gapless.
     crossfade_ms: u32 = 0,
-    enqueuedef: bool = false,
+    /// Enter and a double click in the library add to the playlist
+    /// instead of replacing it.
+    enqueuedef: bool = true,
     // Window behaviour.
     snap: bool = true,
     snaplen: i32 = 10,
@@ -202,6 +212,12 @@ settings! {
     zoom: i32 = 200,
     wsz_scaling: Scaling = Scaling::Sharp,
     keeponscreen: bool = true,
+    /// On a Wayland desktop, be a Wayland program even where X11 programs
+    /// run too (Xwayland). Where they do not, Popamp always is one.
+    wayland: bool = false,
+    /// The main window is shown as a bar, in a skin that describes it both
+    /// as a window and as a bar.
+    main_bar: bool = false,
     /// Where a bar skin's bar is; the skin's own edge when unset.
     bar_edge: Option<BarEdge> = None,
     /// How big a bar skin's bar is, in percent, whatever size the other
@@ -221,7 +237,7 @@ settings! {
     /// 0 = normal, 1 = fire, 2 = line.
     sa_style: i32 = 0,
     sa_thick: bool = true,
-    /// 0 = dots, 1 = lines, 2 = solid.
+    /// 0 = dots, 1 = lines, 2 = solid, 3 = lines with an afterglow.
     osc_style: i32 = 1,
     vis_fps: u32 = 30,
     // Equalizer.
@@ -244,6 +260,9 @@ settings! {
     titlefmt: String = DEFAULT_TITLE_FORMAT.to_string(),
     // Skins.
     skin: String = String::new(),
+    /// The colour set wanted of a skin that has several, by name; a skin
+    /// without a set of this name shows its first.
+    skin_colors: String = String::new(),
     usecursors: bool = true,
     // ReplayGain.
     replaygain: bool = false,
@@ -264,6 +283,13 @@ settings! {
     global_hotkeys: bool = false,
     // Network.
     proxy: String = String::new(),
+    /// Ask popamp.app at start, at most once a day, whether a newer
+    /// Popamp is out.
+    update_check: bool = true,
+    /// The day (since 1970, UTC) of the last answer from popamp.app.
+    update_day: u32 = 0,
+    /// The newer version the user chose not to hear of.
+    update_skip: String = String::new(),
     // MIDI.
     /// The SoundFont that plays MIDI files, empty for the system's.
     soundfont: String = String::new(),
@@ -277,6 +303,8 @@ impl Settings {
         self.preamp = self.preamp.clamp(0, 63);
         self.pe_width = self.pe_width.max(275);
         self.pe_height = self.pe_height.max(116);
+        self.ml_width = self.ml_width.max(275);
+        self.ml_height = self.ml_height.max(116);
         self.pe_fontsize = self.pe_fontsize.clamp(6, 40);
         self.snaplen = self.snaplen.clamp(0, 100);
         self.zoom = self.zoom.clamp(125, 300);
@@ -394,6 +422,9 @@ impl Paths {
     }
     pub fn replaygain_file(&self) -> PathBuf {
         self.config_dir.join("replaygain.txt")
+    }
+    pub fn library_file(&self) -> PathBuf {
+        self.config_dir.join("library.txt")
     }
     pub fn eq_library(&self) -> PathBuf {
         self.config_dir.join("popamp.q1")

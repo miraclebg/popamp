@@ -59,6 +59,7 @@ macro_rules! named {
 
 named!(Command, "command", Command::ALL);
 named!(WindowKey, "window", WindowKey::ALL);
+named!(BarEdge, "edge", [BarEdge::Top, BarEdge::Bottom]);
 named!(Fill, "fill", [Fill::Once, Fill::Tile]);
 named!(Align, "alignment", [Align::Left, Align::Center, Align::Right]);
 named!(FrameMap, "frame order", [FrameMap::Rising, FrameMap::Falling, FrameMap::FromMiddle]);
@@ -79,7 +80,11 @@ impl Named for Placement {
     }
 }
 
-named!(Text, "text", [Text::Kbps, Text::Khz, Text::ShortTime, Text::Title, Text::PlaylistTime, Text::PlaylistClock]);
+named!(
+    Text,
+    "text",
+    [Text::Kbps, Text::Khz, Text::ShortTime, Text::Title, Text::PlaylistTime, Text::PlaylistClock, Text::LibraryTitle, Text::LibraryStatus]
+);
 named!(
     Flag,
     "player state",
@@ -94,6 +99,7 @@ named!(
         Flag::Repeat,
         Flag::EqWindow,
         Flag::PlaylistWindow,
+        Flag::LibraryWindow,
         Flag::AlwaysOnTop,
         Flag::DoubleSize,
         Flag::EqOn,
@@ -112,6 +118,7 @@ named!(
         MenuRef::PlaylistMisc,
         MenuRef::PlaylistSort,
         MenuRef::PlaylistRemoveMisc,
+        MenuRef::Library,
         MenuRef::Previous,
         MenuRef::Play,
         MenuRef::Pause,

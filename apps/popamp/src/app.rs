@@ -9,7 +9,7 @@ use crate::menu::{self, Layout, MenuItem};
 use crate::model::{AddMode, AppEvent, Model, UiReq};
 use crate::panels::{Panel, PanelKind};
 use crate::pen::Pen;
-use crate::platform::{self, Mask, Platform, WindowRole};
+use crate::platform::{self, Mask, Platform, Surface, Win, WinId, WindowRole};
 use crate::scale::Scale;
 use crate::skinwin::{Nav, SkinWin};
 use crate::ui::{Input, Out};
@@ -22,20 +22,17 @@ use popamp_skin::textcfg::region_mask;
 use popamp_skin::CursorKind;
 use popamp_skin::{Bitmap, Picture};
 use std::collections::HashMap;
-use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
-use winit::dpi::PhysicalPosition;
+use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::{CursorIcon, CustomCursor, Window, WindowId, WindowLevel};
 
-type Surface = softbuffer::Surface<Arc<Window>, Arc<Window>>;
-
 struct SkinWindow {
-    window: Arc<Window>,
+    window: Win,
     surface: Surface,
     /// What the window manager was told the window is.
     role: WindowRole,
@@ -53,12 +50,21 @@ struct SkinWindow {
     cursor: (i32, i32),
     frame: Bitmap,
     shape_sig: Option<(usize, i32, i32)>,
-    /// The skin cursor last set on this window.
-    cursor_kind: Option<CursorKind>,
+    /// The cursor last set on this window.
+    pointer: Option<Pointer>,
+}
+
+/// What a window's cursor shows.
+#[derive(Clone, Copy, PartialEq)]
+enum Pointer {
+    /// The skin's, for the control under it.
+    Skin(CursorKind),
+    /// Tracks carried out of the library: whether they can be let go here.
+    Carry(CursorIcon),
 }
 
 struct Popup {
-    window: Arc<Window>,
+    window: Win,
     surface: Surface,
     items: Vec<MenuItem>,
     layout: Layout,
@@ -77,7 +83,7 @@ struct Tooltip {
     text: String,
     since: Instant,
     /// The window, once shown.
-    shown: Option<(Arc<Window>, Surface)>,
+    shown: Option<(Win, Surface)>,
 }
 
 /// One of Popamp's own dialogs (see `panels.rs`) in its window.
@@ -102,8 +108,8 @@ pub struct App {
     pub model: Model,
     fonts: Fonts,
     /// The skinned windows, by `idx`.
-    skins: [SkinWin; 3],
-    wins: [Option<SkinWindow>; 3],
+    skins: [SkinWin; 4],
+    wins: [Option<SkinWindow>; 4],
     popups: Vec<Popup>,
     panels: Vec<PanelWindow>,
     #[cfg(feature = "visualizers")]
@@ -112,6 +118,9 @@ pub struct App {
     /// The skin's cursors, made into window-system cursors.
     cursors: HashMap<CursorKind, CustomCursor>,
     drag: Option<Drag>,
+    /// Windows the user moved away from the bar while it is on, by `idx`:
+    /// they stay where they were put until the bar goes.
+    off_bar: [bool; 4],
     capture: Option<WindowKey>,
     mods: ModifiersState,
     last_click: Option<(WindowKey, Instant, (i32, i32))>,
@@ -134,6 +143,14 @@ pub struct App {
     hotkeys: crate::hotkeys::Hotkeys,
     /// The monitor the main window is on.
     monitor: Option<Screen>,
+    /// Under Wayland, where only the main window is one for the system:
+    /// the window the keys go to, the one last clicked.
+    key_focus: WindowKey,
+    /// Under Wayland: the main window has the keyboard.
+    active: bool,
+    /// Under Wayland: the skin cursor shown over the equalizer and the
+    /// playlist, which share one; `None` is the desktop's arrow.
+    sub_cursor: Option<CursorKind>,
 }
 
 impl App {
@@ -142,8 +159,8 @@ impl App {
         App {
             model,
             fonts,
-            skins: [SkinWin::new(WindowKey::Main), SkinWin::new(WindowKey::Eq), SkinWin::new(WindowKey::Playlist)],
-            wins: [None, None, None],
+            skins: WindowKey::ALL.map(SkinWin::new),
+            wins: [None, None, None, None],
             popups: Vec::new(),
             #[cfg(feature = "visualizers")]
             visualizer: None,
@@ -151,6 +168,7 @@ impl App {
             tip: None,
             cursors: HashMap::new(),
             drag: None,
+            off_bar: [false; 4],
             capture: None,
             mods: ModifiersState::empty(),
             last_click: None,
@@ -168,6 +186,9 @@ impl App {
             media,
             hotkeys,
             monitor: None,
+            key_focus: WindowKey::Main,
+            active: false,
+            sub_cursor: None,
         }
     }
 
@@ -180,7 +201,7 @@ impl App {
     }
 
     fn placement(&self, k: WindowKey) -> Placement {
-        self.model.skin.layout.window(k).map_or(Placement::Docked, |d| d.placement)
+        crate::bind::placement(&self.model, k)
     }
 
     fn wanted_visible(&self, k: WindowKey) -> bool {
@@ -207,7 +228,7 @@ impl App {
         self.wins[k.index()].as_mut()
     }
 
-    fn kind_of(&self, id: WindowId) -> Option<WindowKey> {
+    fn kind_of(&self, id: WinId) -> Option<WindowKey> {
         WindowKey::ALL.into_iter().find(|&k| self.win(k).is_some_and(|w| w.window.id() == id))
     }
 
@@ -221,8 +242,8 @@ impl App {
 
     /// The screens, in the desktop's units, with their pixels per unit.
     fn screens(&self) -> Vec<(Screen, f64)> {
-        let Some(w) = self.win(WindowKey::Main) else { return Vec::new() };
-        w.window.available_monitors().map(|m| (platform::monitor(&m), m.scale_factor())).collect()
+        let Some(top) = self.win(WindowKey::Main).and_then(|w| w.window.top()) else { return Vec::new() };
+        top.available_monitors().map(|m| (platform::monitor(&m), m.scale_factor())).collect()
     }
 
     fn monitors(el: &ActiveEventLoop) -> Vec<Screen> {
@@ -248,6 +269,8 @@ impl App {
     }
 
     fn create_windows(&mut self, el: &ActiveEventLoop) {
+        self.platform.start(el);
+        self.model.no_bar = self.platform.on_wayland();
         let monitors = Self::monitors(el);
         self.monitor = self.screen_of_main(&monitors);
         self.update_bar_area();
@@ -270,8 +293,10 @@ impl App {
         let scale = self.scale(k);
         let (w, h) = self.logical_size(k);
         let mut pos = self.saved_pos(k);
-        // Keep windows on a connected monitor.
-        if self.model.settings().keeponscreen && !monitors.is_empty() {
+        let wayland = self.platform.on_wayland();
+        // Keep windows on a connected monitor. Not under Wayland, where
+        // nobody tells where on the monitors a window is.
+        if self.model.settings().keeponscreen && !monitors.is_empty() && !wayland {
             let on_screen =
                 monitors.iter().any(|m| pos.0 + 20 > m.x && pos.0 < m.x + m.w - 20 && pos.1 >= m.y - 5 && pos.1 < m.y + m.h - 14);
             if !on_screen {
@@ -288,21 +313,24 @@ impl App {
         if self.model.settings().aot {
             attrs = attrs.with_window_level(WindowLevel::AlwaysOnTop);
         }
-        let window = match el.create_window(attrs) {
-            Ok(w) => Arc::new(w),
+        // Under Wayland only the main window is a window; its picture
+        // carries its shape, so it has see-through pixels.
+        let made = if wayland && k != WindowKey::Main {
+            self.platform.child(pos, true).ok_or_else(|| "no main window to place it against".to_string())
+        } else {
+            el.create_window(attrs.with_transparent(wayland)).map_err(|e| e.to_string()).and_then(|w| {
+                let w = Arc::new(w);
+                w.set_cursor(CursorIcon::Default);
+                Ok((Win::Top(w.clone()), self.platform.surface(&w, pos)?))
+            })
+        };
+        let (window, surface) = match made {
+            Ok(made) => made,
             Err(e) => {
                 log::error!("cannot create window: {e}");
                 return false;
             }
         };
-        let surface = match softbuffer::Context::new(window.clone()).and_then(|c| Surface::new(&c, window.clone())) {
-            Ok(s) => s,
-            Err(e) => {
-                log::error!("softbuffer: {e}");
-                return false;
-            }
-        };
-        window.set_cursor(CursorIcon::Default);
         self.wins[k.index()] = Some(SkinWindow {
             window,
             surface,
@@ -316,7 +344,7 @@ impl App {
             cursor: (0, 0),
             frame: Bitmap::new(w, h, 0),
             shape_sig: None,
-            cursor_kind: None,
+            pointer: None,
         });
         self.store_pos(k, pos);
         true
@@ -326,14 +354,16 @@ impl App {
     /// the main window for the windows tied to it, only the main window:
     /// a minimized owned window would stay behind as a stub on the desktop.
     fn set_minimized(&mut self, on: bool) {
-        let main = self.win(WindowKey::Main).filter(|w| w.role == WindowRole::Main).map(|w| w.window.clone());
+        let main = self.win(WindowKey::Main).filter(|w| w.role == WindowRole::Main).and_then(|w| w.window.top().cloned());
         if let (true, Some(main)) = (platform::MINIMIZE_HIDES_COMPANIONS, main) {
             // One Dock tile: the main window goes there, its companions hide.
             main.set_minimized(on);
             if on {
-                for k in [WindowKey::Eq, WindowKey::Playlist] {
+                for k in WindowKey::ALL.into_iter().filter(|&k| k != WindowKey::Main) {
                     if let Some(w) = self.win_mut(k).filter(|w| w.visible) {
-                        w.window.set_visible(false);
+                        if let Some(top) = w.window.top() {
+                            top.set_visible(false);
+                        }
                         w.visible = false;
                         self.hidden_with_main.push(k);
                     }
@@ -348,8 +378,8 @@ impl App {
             if owned && k != WindowKey::Main {
                 continue;
             }
-            if let Some(w) = self.win(k).filter(|w| w.visible) {
-                w.window.set_minimized(on);
+            if let Some(w) = self.win(k).filter(|w| w.visible).and_then(|w| w.window.top()) {
+                w.set_minimized(on);
             }
         }
     }
@@ -359,7 +389,9 @@ impl App {
         for k in std::mem::take(&mut self.hidden_with_main) {
             let wanted = self.wanted_visible(k);
             if let Some(w) = self.win_mut(k).filter(|_| wanted) {
-                w.window.set_visible(true);
+                if let Some(top) = w.window.top() {
+                    top.set_visible(true);
+                }
                 w.visible = true;
             }
         }
@@ -369,10 +401,10 @@ impl App {
     /// that the window manager brings all three up together. A bar is a
     /// panel of the desktop, and nothing is tied to it.
     fn attach_docked(&self) {
-        let owner = self.win(WindowKey::Main).filter(|w| w.role == WindowRole::Main).map(|w| &*w.window);
-        for k in [WindowKey::Eq, WindowKey::Playlist] {
-            if let Some(w) = self.win(k) {
-                if let Err(e) = self.platform.attach(&w.window, owner) {
+        let owner = self.win(WindowKey::Main).filter(|w| w.role == WindowRole::Main).and_then(|w| w.window.top()).map(|w| &**w);
+        for k in [WindowKey::Eq, WindowKey::Playlist, WindowKey::Library] {
+            if let Some(w) = self.win(k).and_then(|w| w.window.top()) {
+                if let Err(e) = self.platform.attach(w, owner) {
                     log::warn!("cannot tie {k:?} to the main window: {e}");
                 }
             }
@@ -389,8 +421,8 @@ impl App {
         let left_bar = self.win(WindowKey::Main).is_some_and(|w| w.role == WindowRole::Bar) && bar::edge(&self.model).is_none();
         for k in WindowKey::ALL {
             if let Some(w) = self.win(k).filter(|w| w.role != self.role(k)) {
-                if w.role == WindowRole::Bar {
-                    self.platform.release(&w.window);
+                if let Some(bar) = w.window.top().filter(|_| w.role == WindowRole::Bar) {
+                    self.platform.release(bar);
                 }
                 self.wins[k.index()] = None;
                 if !self.create_window(el, k, &monitors) {
@@ -401,11 +433,12 @@ impl App {
         }
         self.attach_docked();
         if left_bar {
-            for k in [WindowKey::Eq, WindowKey::Playlist] {
+            self.off_bar = [false; 4];
+            for k in [WindowKey::Eq, WindowKey::Playlist, WindowKey::Library] {
                 let pos = self.saved_pos(k);
                 if let Some(w) = self.win_mut(k) {
                     w.pos = pos;
-                    w.window.set_outer_position(platform::position(pos.0, pos.1));
+                    w.window.move_to(pos);
                 }
             }
         }
@@ -424,7 +457,7 @@ impl App {
         let bar = bar::edge(&self.model).zip(self.model.screen);
         let mut plan = self.plan(&old, anchor, bar);
         let pl = WindowKey::Playlist.index();
-        if bar.is_none() && self.keep_playlist_grip_on_screen(old[pl], plan.pos[pl]) {
+        if bar.is_none() && !self.platform.on_wayland() && self.keep_playlist_grip_on_screen(old[pl], plan.pos[pl]) {
             plan = self.plan(&old, anchor, bar);
         }
         let Plan { sizes, pos: new_pos } = plan;
@@ -434,15 +467,23 @@ impl App {
             let pos = new_pos[i];
             let scale = self.scale(k);
             if let Some(w) = self.win_mut(k) {
-                let _ = w.window.request_inner_size(platform::size(scale.px(lw), scale.px(lh)));
+                let size = (scale.px(lw), scale.px(lh));
+                if let Some(top) = w.window.top() {
+                    let _ = top.request_inner_size(platform::size(size.0, size.1));
+                }
                 if w.pos != pos {
-                    w.window.set_outer_position(platform::position(pos.0, pos.1));
+                    w.window.move_to(pos);
                     w.pos = pos;
                 }
                 w.size = (lw, lh);
                 w.shown = scale;
                 if w.visible != visible {
-                    w.window.set_visible(visible);
+                    if let Some(top) = w.window.top() {
+                        top.set_visible(visible);
+                    }
+                    if !visible {
+                        w.surface.hide(size);
+                    }
                     w.visible = visible;
                 }
                 w.window.request_redraw();
@@ -467,13 +508,24 @@ impl App {
             .collect();
         let new_pos: Vec<(i32, i32)> = match bar {
             Some((edge, screen)) => {
-                bar::places(edge, screen, [sizes[0], sizes[1], sizes[2]], self.wanted_visible(WindowKey::Playlist)).to_vec()
+                // The library, and a window the user moved off the bar,
+                // stays where the user has it.
+                let off_bar = |k: WindowKey| k == WindowKey::Library || self.off_bar[k.index()];
+                let pl_by_bar = self.wanted_visible(WindowKey::Playlist) && !off_bar(WindowKey::Playlist);
+                let by_bar = bar::places(edge, screen, [sizes[0], sizes[1], sizes[2]], pl_by_bar);
+                let user = |k: WindowKey| self.win(k).map_or_else(|| self.saved_pos(k), |w| w.pos);
+                WindowKey::ALL.iter().map(|&k| if off_bar(k) { user(k) } else { by_bar[k.index()] }).collect()
             }
             None => {
                 // Without a bar all windows have one scale: the equalizer's.
                 let (scale, shown) = (self.scale(WindowKey::Eq), self.win(WindowKey::Eq).map_or(Scale::ONE, |w| w.shown));
                 let moved = follow_docked(old, &sizes, anchor.index(), |d| scale.px(shown.skin(d)));
-                WindowKey::ALL.iter().zip(moved).map(|(&k, p)| self.win(k).map_or((0, 0), |w| if w.visible { p } else { w.pos })).collect()
+                // Under Wayland the main window is where the compositor has
+                // it, so the others move instead of it.
+                let main = self.win(WindowKey::Main).filter(|w| w.visible && self.platform.on_wayland());
+                let back = main.map_or((0, 0), |w| (w.pos.0 - moved[0].0, w.pos.1 - moved[0].1));
+                let place = |w: &SkinWindow, p: (i32, i32)| if w.visible { (p.0 + back.0, p.1 + back.1) } else { w.pos };
+                WindowKey::ALL.iter().zip(&moved).map(|(&k, &p)| self.win(k).map_or((0, 0), |w| place(w, p))).collect()
             }
         };
         Plan { sizes, pos: new_pos }
@@ -486,7 +538,8 @@ impl App {
     fn keep_playlist_grip_on_screen(&mut self, old: Option<Rect>, pos: (i32, i32)) -> bool {
         let (Some(old), Some(w)) = (old, self.win(WindowKey::Playlist)) else { return false };
         let Some(def) = self.model.skin.layout.window(WindowKey::Playlist) else { return false };
-        let monitors: Vec<Screen> = w.window.available_monitors().map(|m| platform::monitor(&m)).collect();
+        let Some(top) = w.window.top() else { return false };
+        let monitors: Vec<Screen> = top.available_monitors().map(|m| platform::monitor(&m)).collect();
         let Some(monitor) = monitors.into_iter().find(|m| pos.0 >= m.x && pos.0 < m.x + m.w && pos.1 >= m.y && pos.1 < m.y + m.h) else {
             return false;
         };
@@ -512,7 +565,8 @@ impl App {
         if w.strip == Some(strip) {
             return;
         }
-        match self.platform.reserve(&w.window, strip) {
+        let Some(top) = w.window.top() else { return };
+        match self.platform.reserve(top, strip) {
             Ok(()) => w.strip = Some(strip),
             Err(e) => log::warn!("cannot reserve the bar's strip: {e}"),
         }
@@ -523,7 +577,7 @@ impl App {
         for k in WindowKey::ALL {
             let scale = self.scale(k);
             let def = self.model.skin.layout.window(k);
-            let shape = def.and_then(|d| d.mode(crate::bind::shaded(&self.model, k)).shape.as_ref());
+            let shape = def.and_then(|d| d.mode(crate::bind::view(&self.model, k)).shape.as_ref());
             let Some(w) = self.wins[k.index()].as_mut() else { continue };
             let size = (scale.px(w.size.0), scale.px(w.size.1));
             let sig = (shape.map_or(0, |s| s as *const Shape as usize), size.0, size.1);
@@ -531,11 +585,12 @@ impl App {
                 continue;
             }
             w.shape_sig = Some(sig);
-            let mode = def.map(|d| d.mode(crate::bind::shaded(&self.model, k)));
+            let mode = def.map(|d| d.mode(crate::bind::view(&self.model, k)));
             let mask = shape.zip(mode).and_then(|(s, mode)| shape_mask(&self.model, mode, s, w.size, scale));
-            if let Err(e) = self.platform.set_shape(&w.window, mask.as_ref(), size) {
+            if let Some(Err(e)) = w.window.top().map(|top| self.platform.set_shape(top, mask.as_ref(), size)) {
                 log::debug!("shape: {e}");
             }
+            w.surface.set_shape(mask.as_ref(), size);
         }
     }
 
@@ -560,16 +615,8 @@ impl App {
         self.skins[k.index()].draw(&self.model, &mut self.fonts, &mut Canvas::new(&mut w.frame, drawn), active);
         let factor = if platform::DESKTOP_IN_POINTS { w.window.scale_factor() } else { 1.0 };
         let (pw, ph) = surface_size(layout, (lw, lh), factor);
-        let (Some(nw), Some(nh)) = (NonZeroU32::new(pw), NonZeroU32::new(ph)) else { return };
-        if w.surface.resize(nw, nh).is_err() {
-            return;
-        }
-        if let Ok(mut buf) = w.surface.buffer_mut() {
-            scale.present(&w.frame, &mut buf, pw as usize, ph as usize);
-            if let Err(e) = buf.present() {
-                log::debug!("present failed: {e}");
-            }
-        }
+        let frame = &w.frame;
+        w.surface.present((pw as i32, ph as i32), |buf| scale.present(frame, buf, pw as usize, ph as usize));
     }
 
     fn redraw_all(&mut self) {
@@ -597,22 +644,45 @@ impl App {
         let pct = if platform::DESKTOP_IN_POINTS { pct_on(&screens, at, self.dialog_pct()) } else { self.dialog_pct() };
         let layout = menu::layout(&items, &mut self.fonts.list, pct);
         let (w, h) = layout.screen();
-        let main_monitor = self.win(WindowKey::Main).and_then(|w| w.window.current_monitor()).map(|m| platform::monitor(&m));
-        let monitor = screens.iter().map(|&(s, _)| s).find(|s| contains(*s, at)).or(main_monitor);
+        let main_monitor = self.main_monitor().map(|m| platform::monitor(&m));
+        let monitor = menu_screen(platform::DESKTOP_IN_POINTS, &screens, at, main_monitor);
         // Placed in the desktop's units, as the cursor and the monitor are.
         let units = (platform::from_drawn(w, pct), platform::from_drawn(h, pct));
         let (x, y) = monitor.map_or(at, |m| menu_origin(at, units, m, !sub));
         let attrs = platform::attributes(WindowRole::Popup)
             .with_inner_size(platform::drawn_size(w, h, pct))
             .with_position(platform::position(x, y));
-        let Ok(window) = el.create_window(attrs).map(Arc::new) else { return };
-        self.platform.no_activate(&window);
-        let Ok(ctx) = softbuffer::Context::new(window.clone()) else { return };
-        let Ok(surface) = Surface::new(&ctx, window.clone()) else { return };
+        let Some((window, surface)) = self.overlay(el, attrs, (x, y), true) else { return };
         let frame = Bitmap::new(w, h, 0);
         self.popups.push(Popup { window, surface, items, layout, hover: None, pos: (x, y), frame });
         let i = self.popups.len() - 1;
         self.render_popup(i);
+    }
+
+    /// A window above ours that the system does not manage, for a menu or
+    /// a tooltip, at `pos`; under Wayland a part of the main window.
+    /// Without `input` the mouse goes through it where the system can do that.
+    fn overlay(
+        &mut self,
+        el: &ActiveEventLoop,
+        attrs: winit::window::WindowAttributes,
+        pos: (i32, i32),
+        input: bool,
+    ) -> Option<(Win, Surface)> {
+        if self.platform.on_wayland() {
+            return self.platform.child(pos, input);
+        }
+        let window = el.create_window(attrs).map(Arc::new).ok()?;
+        self.platform.no_activate(&window);
+        let surface = Surface::soft(&window).ok()?;
+        Some((Win::Top(window), surface))
+    }
+
+    /// The monitor the main window is on, where the system tells.
+    fn main_monitor(&self) -> Option<winit::monitor::MonitorHandle> {
+        // Under Wayland a monitor is known, but not where the window is on it.
+        let main = self.win(WindowKey::Main).filter(|_| !self.platform.on_wayland())?;
+        main.window.top()?.current_monitor()
     }
 
     fn render_popup(&mut self, i: usize) {
@@ -653,7 +723,7 @@ impl App {
         let pct = self.dialog_pct();
         let (w, h) = (crate::pen::screen(pct, panel.form().w), crate::pen::screen(pct, panel.form().h));
         // Centred on the main window's monitor, so the title bar is on screen.
-        let monitor = self.win(WindowKey::Main).and_then(|m| m.window.current_monitor()).map(|m| platform::monitor(&m));
+        let monitor = self.main_monitor().map(|m| platform::monitor(&m));
         let (cx, cy) = monitor.map_or((640, 400), |m| (m.x + m.w / 2, m.y + m.h / 2));
         let (uw, uh) = (platform::from_drawn(w, pct), platform::from_drawn(h, pct));
         let attrs = platform::attributes(WindowRole::Dialog)
@@ -661,8 +731,7 @@ impl App {
             .with_inner_size(platform::drawn_size(w, h, pct))
             .with_position(platform::position((cx - uw / 2).max(0), (cy - uh / 2).max(0)));
         let Ok(window) = el.create_window(attrs).map(Arc::new) else { return };
-        let Ok(ctx) = softbuffer::Context::new(window.clone()) else { return };
-        let Ok(surface) = Surface::new(&ctx, window.clone()) else { return };
+        let Ok(surface) = Surface::soft(&window) else { return };
         let frame = Bitmap::new(w, h, 0);
         self.panels.push(PanelWindow { window, surface, panel, frame, pct, cursor: (0, 0), last_click: None });
         self.panel_changed(self.panels.len() - 1);
@@ -685,7 +754,7 @@ impl App {
     /// X11). Not the skin's window size: a player made bigger keeps
     /// dialogs of the usual size.
     fn dialog_pct(&self) -> i32 {
-        let factor = self.win(WindowKey::Main).map_or(1.0, |w| w.window.scale_factor());
+        let factor = self.win(WindowKey::Main).and_then(|w| w.window.top()).map_or(1.0, |w| w.scale_factor());
         ((factor * 100.0).round() as i32).max(100)
     }
 
@@ -770,23 +839,51 @@ impl App {
             }
         }
         for w in self.wins.iter_mut().flatten() {
-            w.cursor_kind = None;
+            w.pointer = None;
         }
+        self.sub_cursor = None;
+        self.platform.set_cursor(None);
     }
 
     /// Shows the skin cursor for the control under the mouse in window `k`.
     fn update_cursor(&mut self, k: WindowKey) {
+        if k == WindowKey::Library && self.model.library.carrying() {
+            self.show_carry_cursor();
+            return;
+        }
         let input = self.input(k, false, false);
         let kind = self.skins[k.index()].cursor(&self.model, input.x, input.y);
         let custom = self.cursors.get(&kind).or_else(|| self.cursors.get(&CursorKind::Normal)).cloned();
         let Some(w) = self.wins[k.index()].as_mut() else { return };
-        if w.cursor_kind == Some(kind) {
+        let Some(top) = w.window.top() else {
+            if self.sub_cursor != Some(kind) {
+                self.sub_cursor = Some(kind);
+                let image = |kind| self.model.skin.cursors.iter().find(|(k, _)| **k == kind).map(|(_, image)| image);
+                let image = image(kind).or_else(|| image(CursorKind::Normal)).filter(|_| self.model.settings().usecursors);
+                self.platform.set_cursor(image);
+            }
+            return;
+        };
+        if w.pointer == Some(Pointer::Skin(kind)) {
             return;
         }
-        w.cursor_kind = Some(kind);
+        w.pointer = Some(Pointer::Skin(kind));
         match custom {
-            Some(c) => w.window.set_cursor(c),
-            None => w.window.set_cursor(CursorIcon::Default),
+            Some(c) => top.set_cursor(c),
+            None => top.set_cursor(CursorIcon::Default),
+        }
+    }
+
+    /// While tracks are carried out of the library, the cursor tells
+    /// whether letting go puts them in the playlist. The library window
+    /// holds the mouse, so its cursor shows over the others too.
+    fn show_carry_cursor(&mut self) {
+        let icon = if self.playlist_row_under_mouse().is_some() { CursorIcon::Copy } else { CursorIcon::NoDrop };
+        let Some(w) = self.wins[WindowKey::Library.index()].as_mut() else { return };
+        let Some(top) = w.window.top() else { return };
+        if w.pointer != Some(Pointer::Carry(icon)) {
+            w.pointer = Some(Pointer::Carry(icon));
+            top.set_cursor(icon);
         }
     }
 
@@ -826,10 +923,7 @@ impl App {
             .with_inner_size(platform::drawn_size(frame.w, frame.h, pct))
             .with_position(platform::position(x, y + 20))
             .with_window_level(WindowLevel::AlwaysOnTop);
-        let Ok(window) = el.create_window(attrs).map(Arc::new) else { return };
-        self.platform.no_activate(&window);
-        let Ok(ctx) = softbuffer::Context::new(window.clone()) else { return };
-        let Ok(surface) = Surface::new(&ctx, window.clone()) else { return };
+        let Some((window, surface)) = self.overlay(el, attrs, (x, y + 20), false) else { return };
         window.request_redraw();
         if let Some(tip) = &mut self.tip {
             tip.shown = Some((window, surface));
@@ -877,6 +971,7 @@ impl App {
             self.popups.clear();
             self.model.on_menu(action);
             self.after_model(el);
+            self.redraw_all();
         }
     }
 
@@ -947,12 +1042,22 @@ impl App {
     }
 
     fn begin_move(&mut self, k: WindowKey) {
-        // The bar and the windows against it stay where they are.
-        if bar::edge(&self.model).is_some() {
+        // The bar stays where it is; another window moves alone and
+        // leaves the bar.
+        let by_bar = bar::edge(&self.model).is_some();
+        if by_bar && k == WindowKey::Main {
+            return;
+        }
+        // Under Wayland only the compositor moves a window, and the others
+        // go with the main one as parts of it.
+        if let Some(main) = self.win(k).and_then(|w| w.window.top()).filter(|_| self.platform.on_wayland()) {
+            if let Err(e) = main.drag_window() {
+                log::debug!("move: {e}");
+            }
             return;
         }
         // A free window takes the windows docked to it along.
-        let group = if self.placement(k) == Placement::Free { self.docked_group(k) } else { vec![k] };
+        let group = if self.placement(k) == Placement::Free && !by_bar { self.docked_group(k) } else { vec![k] };
         let start = self.cursor_screen(k);
         let group: Vec<_> = group.into_iter().filter_map(|g| self.win(g).map(|w| (g, w.pos))).collect();
         log::debug!(target: "moves", "begin {k:?}: group {group:?}, cursor {start:?}, x1 is 100 px wide: {}", self.scale(k).px(100));
@@ -968,7 +1073,7 @@ impl App {
         let in_group = |k: WindowKey| group.iter().any(|(g, _)| *g == k);
         let mut targets: Vec<(i32, i32, i32, i32)> =
             WindowKey::ALL.iter().filter(|&&k| !in_group(k)).filter_map(|&k| self.rect(k)).collect();
-        if let Some(m) = self.win(WindowKey::Main).and_then(|w| w.window.current_monitor()) {
+        if let Some(m) = self.main_monitor() {
             let Screen { x: mx, y: my, w: mw, h: mh } = platform::monitor(&m);
             // Screen edges as zero-thickness rectangles around the monitor.
             targets.push((mx - 10_000, my - 10_000, 10_000 + mx + mw + 10_000 - mx, 10_000));
@@ -1020,17 +1125,17 @@ impl App {
                     if let Some(w) = self.win_mut(g) {
                         if w.pos != p {
                             w.pos = p;
-                            w.window.set_outer_position(platform::position(p.0, p.1));
+                            w.window.move_to(p);
                         }
                     }
                     self.store_pos(g, p);
                 }
             }
             Some(Drag::Resize { start_size, start }) => {
-                let s = self.scale(WindowKey::Playlist);
+                let s = self.scale(k);
                 let (dx, dy) = (s.skin(cursor.0 - start.0), s.skin(cursor.1 - start.1));
-                if crate::bind::resize(&mut self.model, WindowKey::Playlist, *start_size, dx, dy) {
-                    self.apply_layout(WindowKey::Playlist);
+                if crate::bind::resize(&mut self.model, k, *start_size, dx, dy) {
+                    self.apply_layout(k);
                 }
             }
             None => {}
@@ -1079,8 +1184,7 @@ impl App {
             Out::BeginMove => self.begin_move(k),
             Out::BeginResize => {
                 let start = self.cursor_screen(k);
-                let s = self.model.settings();
-                self.drag = Some(Drag::Resize { start_size: (s.pe_width, s.pe_height), start });
+                self.drag = Some(Drag::Resize { start_size: crate::bind::stored_size(&self.model, k), start });
             }
             Out::Menu(items) => {
                 let at = self.cursor_screen(k);
@@ -1103,8 +1207,11 @@ impl App {
         }
         // Window managers do not focus a panel on a click; a bar asks, so
         // that the keys work.
-        if let Some(w) = self.win(k).filter(|w| w.role == WindowRole::Bar && !w.focused) {
-            w.window.focus_window();
+        if let Some(w) = self.win(k).filter(|w| w.role == WindowRole::Bar && !w.focused).and_then(|w| w.window.top()) {
+            w.focus_window();
+        }
+        if self.platform.on_wayland() {
+            self.set_key_focus(k);
         }
         let right = button == MouseButton::Right;
         let pos = self.win(k).map(|w| w.cursor).unwrap_or_default();
@@ -1121,19 +1228,49 @@ impl App {
     fn mouse_up(&mut self, el: &ActiveEventLoop, k: WindowKey) {
         if let Some(drag) = self.drag.take() {
             if let Drag::Move { group, .. } = drag {
-                for (g, _) in group {
+                let by_bar = bar::edge(&self.model).is_some();
+                let was_off = self.off_bar;
+                for (g, from) in group {
                     log::debug!(target: "moves", "end {g:?} at {:?}", self.win(g).map(|w| w.pos));
                     if let Some(p) = self.win(g).map(|w| w.pos) {
+                        self.off_bar[g.index()] |= by_bar && p != from;
                         self.store_pos(g, p);
                     }
+                }
+                // The equalizer takes the playlist's place by the bar.
+                if self.off_bar != was_off {
+                    self.apply_layout(WindowKey::Main);
                 }
             }
             return;
         }
         let target = self.capture.take().unwrap_or(k);
+        if target == WindowKey::Library && self.model.library.take_carried() {
+            self.drop_on_playlist();
+            self.update_cursor(target);
+        }
         let input = self.input(target, false, false);
         let out = self.skins[target.index()].mouse_up(&mut self.model, &input);
         self.handle_out(el, target, out);
+    }
+
+    /// Tracks carried out of the library go into the playlist at the row
+    /// they are let go over; anywhere else, nowhere.
+    fn drop_on_playlist(&mut self) {
+        let Some(row) = self.playlist_row_under_mouse() else { return };
+        self.model.library_play(AddMode::Insert(row));
+        self.render(WindowKey::Playlist);
+    }
+
+    /// The playlist row the mouse held by the library is over, if it is
+    /// over the playlist.
+    fn playlist_row_under_mouse(&self) -> Option<usize> {
+        let at = self.cursor_screen(WindowKey::Library);
+        let s = self.scale(WindowKey::Playlist);
+        let pl = self.win(WindowKey::Playlist).filter(|w| w.visible)?;
+        let (x, y) = (at.0 - pl.pos.0, at.1 - pl.pos.1);
+        let inside = x >= 0 && y >= 0 && x < s.px(pl.size.0) && y < s.px(pl.size.1);
+        inside.then(|| self.skins[WindowKey::Playlist.index()].row_at(&self.model, s.skin(y)).min(self.model.playlist.len()))
     }
 
     fn mouse_moved(&mut self, k: WindowKey) {
@@ -1153,6 +1290,77 @@ impl App {
             }
         }
     }
+
+    fn wheel(&mut self, k: WindowKey, steps: i32) {
+        if steps != 0 {
+            let input = self.input(k, false, false);
+            self.skins[k.index()].wheel(&mut self.model, input.x, input.y, steps);
+            self.render(k);
+            self.render(WindowKey::Main);
+        }
+    }
+
+    /// The mouse is at `at` in the menu `level`.
+    fn popup_pointed(&mut self, el: &ActiveEventLoop, level: usize, at: (i32, i32)) {
+        let p = &self.popups[level];
+        let h = menu::hit(&p.layout, &p.items, at.0, at.1);
+        if h.is_some() {
+            self.popup_hover(el, level, h);
+        }
+    }
+
+    /// A mouse button went up over the menu `level`.
+    fn popup_released(&mut self, el: &ActiveEventLoop, level: usize) {
+        if let Some(h) = self.popups[level].hover {
+            self.popup_activate(el, level, h);
+        }
+    }
+
+    /// Under Wayland: what happened to the windows that are parts of the
+    /// main one, which winit does not know.
+    #[cfg(linux_like)]
+    fn pump_children(&mut self, el: &ActiveEventLoop) {
+        use platform::wayland::Event as E;
+        for ev in self.platform.events() {
+            let (E::Moved(id, _) | E::Left(id) | E::Button(id, ..) | E::Wheel(id, _) | E::Redraw(id)) = ev;
+            let id = WinId::Sub(id);
+            if let Some(level) = self.popups.iter().position(|p| p.window.id() == id) {
+                match ev {
+                    E::Moved(_, at) => {
+                        // A menu has the desktop's arrow, not the skin's cursor.
+                        if self.sub_cursor.take().is_some() {
+                            self.platform.set_cursor(None);
+                        }
+                        let pos = self.popups[level].pos;
+                        self.popup_pointed(el, level, (at.0 - pos.0, at.1 - pos.1));
+                    }
+                    E::Button(_, MouseButton::Left | MouseButton::Right, false) => self.popup_released(el, level),
+                    E::Redraw(_) => self.render_popup(level),
+                    _ => {}
+                }
+            } else if self.tip.as_ref().and_then(|t| t.shown.as_ref()).is_some_and(|(w, _)| w.id() == id) {
+                self.render_tooltip();
+            } else if let Some(k) = self.kind_of(id) {
+                match ev {
+                    E::Moved(_, at) => {
+                        if let Some(w) = self.win_mut(k) {
+                            w.cursor = (at.0 - w.pos.0, at.1 - w.pos.1);
+                        }
+                        self.mouse_moved(k);
+                    }
+                    E::Left(_) => self.tip = None,
+                    E::Button(_, button, true) => self.mouse_down(el, k, button),
+                    E::Button(_, MouseButton::Left, false) => self.mouse_up(el, k),
+                    E::Button(..) => {}
+                    E::Wheel(_, steps) => self.wheel(k, steps),
+                    E::Redraw(_) => self.render(k),
+                }
+            }
+        }
+    }
+
+    #[cfg(not(linux_like))]
+    fn pump_children(&mut self, _el: &ActiveEventLoop) {}
 
     fn key(&mut self, el: &ActiveEventLoop, k: WindowKey, ev: &KeyEvent) {
         if ev.state != ElementState::Pressed {
@@ -1184,6 +1392,7 @@ impl App {
                         WindowKey::Main => C::Exit,
                         WindowKey::Eq => C::ToggleEqWindow,
                         WindowKey::Playlist => C::TogglePlaylistWindow,
+                        WindowKey::Library => C::ToggleLibraryWindow,
                     };
                     return self.run(el, c);
                 }
@@ -1276,6 +1485,26 @@ impl App {
                 return self.run(el, c);
             }
         }
+        // On a Mac ⌥ types accents and symbols (⌥E é): into the search,
+        // never to a shortcut.
+        #[cfg(target_os = "macos")]
+        let typing = crate::mac_keys::types_text(alt, ctrl, ev.text.as_deref());
+        #[cfg(not(target_os = "macos"))]
+        let typing = false;
+        if k == WindowKey::Library && (!alt || typing) {
+            let used = match (ctrl, code) {
+                (true, K::KeyA) => {
+                    self.model.library.select_all();
+                    true
+                }
+                (true, _) => false,
+                (false, _) => form_key(ev, false).is_some_and(|key| self.skins[k.index()].library_key(&mut self.model, key, shift)),
+            };
+            if used || typing {
+                self.after_model(el);
+                return self.redraw_all();
+            }
+        }
         if k == WindowKey::Eq && ctrl && code == K::KeyW {
             return self.run(el, C::ToggleEqShade);
         }
@@ -1299,6 +1528,7 @@ impl App {
             K::KeyW if alt => Some(C::ToggleMainWindow),
             K::KeyE if alt => Some(C::TogglePlaylistWindow),
             K::KeyG if alt => Some(C::ToggleEqWindow),
+            K::KeyL if alt => Some(C::ToggleLibraryWindow),
             K::KeyS if alt => Some(C::SkinBrowser),
             K::KeyM if alt => Some(C::Minimize),
             K::Digit3 if alt => Some(C::FileInfo),
@@ -1357,11 +1587,30 @@ impl App {
 
     fn cycle_focus(&mut self, from: WindowKey) {
         let start = from.index();
-        for i in 1..=3 {
-            let k = WindowKey::ALL[(start + i) % 3];
-            if let Some(w) = self.win(k).filter(|w| w.visible) {
-                w.window.focus_window();
-                return;
+        let n = WindowKey::ALL.len();
+        for i in 1..=n {
+            let k = WindowKey::ALL[(start + i) % n];
+            let Some(w) = self.win(k).filter(|w| w.visible) else { continue };
+            match w.window.top().filter(|_| !self.platform.on_wayland()) {
+                Some(top) => top.focus_window(),
+                None => self.set_key_focus(k),
+            }
+            return;
+        }
+    }
+
+    /// Under Wayland: gives the keys to window `k`, which shows as the
+    /// active one while the main window has the keyboard.
+    fn set_key_focus(&mut self, k: WindowKey) {
+        self.key_focus = k;
+        for other in WindowKey::ALL {
+            let focused = self.active && other == k;
+            if self.win(other).is_some_and(|w| w.focused != focused) {
+                self.wins[other.index()].as_mut().unwrap().focused = focused;
+                if !focused && self.skins[other.index()].popup_open() {
+                    self.skins[other.index()].close_popup();
+                }
+                self.render(other);
             }
         }
     }
@@ -1395,8 +1644,8 @@ impl App {
                     // Each window is brought above other programs' windows,
                     // the main one last so that it has the keyboard.
                     for k in [WindowKey::Playlist, WindowKey::Eq, WindowKey::Main] {
-                        if let Some(w) = self.win(k).filter(|w| w.visible) {
-                            w.window.focus_window();
+                        if let Some(w) = self.win(k).filter(|w| w.visible).and_then(|w| w.window.top()) {
+                            w.focus_window();
                         }
                     }
                 }
@@ -1420,8 +1669,8 @@ impl App {
                 UiReq::AlwaysOnTop => {
                     let level = if self.model.settings().aot { WindowLevel::AlwaysOnTop } else { WindowLevel::Normal };
                     for k in WindowKey::ALL {
-                        if let Some(w) = self.win(k) {
-                            w.window.set_window_level(level);
+                        if let Some(w) = self.win(k).and_then(|w| w.window.top()) {
+                            w.set_window_level(level);
                         }
                     }
                     self.render(WindowKey::Main);
@@ -1506,14 +1755,7 @@ impl App {
 /// Shows `frame` pixel for pixel: menus, tooltips and dialogs are drawn at
 /// the screen's resolution.
 fn present_unscaled(surface: &mut Surface, frame: &Bitmap) {
-    let (w, h) = (frame.w as u32, frame.h as u32);
-    let (Some(nw), Some(nh)) = (NonZeroU32::new(w), NonZeroU32::new(h)) else { return };
-    if surface.resize(nw, nh).is_ok() {
-        if let Ok(mut buf) = surface.buffer_mut() {
-            Scale::ONE.present(frame, &mut buf, w as usize, h as usize);
-            let _ = buf.present();
-        }
-    }
+    surface.present((frame.w, frame.h), |buf| Scale::ONE.present(frame, buf, frame.w as usize, frame.h as usize));
 }
 
 /// The key for a dialog form; `None` for keys it ignores and for
@@ -1553,12 +1795,14 @@ fn window_icon() -> Option<winit::window::Icon> {
 
 impl ApplicationHandler<AppEvent> for App {
     fn new_events(&mut self, el: &ActiveEventLoop, cause: StartCause) {
+        self.pump_children(el);
         // A shaped window looks where the cursor is 30 times a second, on a
         // clock of its own, so the windows are not drawn more often for it.
         let tracking = self.platform.tracks_cursor();
         if tracking && Instant::now() >= self.next_poll {
             self.next_poll = Instant::now() + Duration::from_millis(33);
-            let windows: Vec<&Window> = WindowKey::ALL.iter().filter_map(|&k| self.win(k)).map(|w| &*w.window).collect();
+            let windows: Vec<&Window> =
+                WindowKey::ALL.iter().filter_map(|&k| self.win(k)).filter_map(|w| w.window.top()).map(|t| &**t).collect();
             self.platform.track_cursor(&windows, self.drag.is_some() || self.capture.is_some());
         }
         let frame_due = Instant::now() >= self.next_frame || (!tracking && matches!(cause, StartCause::ResumeTimeReached { .. }));
@@ -1600,6 +1844,10 @@ impl ApplicationHandler<AppEvent> for App {
         el.set_control_flow(ControlFlow::WaitUntil(wake));
     }
 
+    fn about_to_wait(&mut self, el: &ActiveEventLoop) {
+        self.pump_children(el);
+    }
+
     fn resumed(&mut self, el: &ActiveEventLoop) {
         if self.wins[0].is_none() {
             self.create_windows(el);
@@ -1620,6 +1868,14 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::Meta(id, m) => self.model.on_meta(id, m),
             AppEvent::Expanded { items, mode } => self.model.on_expanded(items, mode),
             AppEvent::Scan(ev) => self.model.on_scan(ev),
+            AppEvent::Update(found) => {
+                self.model.on_update(found);
+                self.render(WindowKey::Main);
+            }
+            AppEvent::Library(ev) => {
+                self.model.on_library(ev);
+                self.render(WindowKey::Library);
+            }
             AppEvent::Dialog(r) if matches!(r.kind, crate::dialogs::DialogKind::PickCover { .. }) => {
                 if let (Some(i), Some(f)) = (self.panels.iter().position(|p| p.panel.kind() == PanelKind::FileInfo), r.values.first()) {
                     self.panels[i].panel.cover_picked(std::path::Path::new(f));
@@ -1667,19 +1923,12 @@ impl ApplicationHandler<AppEvent> for App {
         if let Some(i) = self.panels.iter().position(|p| p.window.id() == id) {
             return self.panel_event(el, i, ev);
         }
+        let id = WinId::Top(id);
         if let Some(level) = self.popups.iter().position(|p| p.window.id() == id) {
             match ev {
-                WindowEvent::CursorMoved { position, .. } => {
-                    let p = &self.popups[level];
-                    let h = menu::hit(&p.layout, &p.items, position.x as i32, position.y as i32);
-                    if h.is_some() {
-                        self.popup_hover(el, level, h);
-                    }
-                }
+                WindowEvent::CursorMoved { position, .. } => self.popup_pointed(el, level, (position.x as i32, position.y as i32)),
                 WindowEvent::MouseInput { state: ElementState::Released, button: MouseButton::Left | MouseButton::Right, .. } => {
-                    if let Some(h) = self.popups[level].hover {
-                        self.popup_activate(el, level, h);
-                    }
+                    self.popup_released(el, level)
                 }
                 WindowEvent::RedrawRequested => self.render_popup(level),
                 _ => {}
@@ -1696,10 +1945,33 @@ impl ApplicationHandler<AppEvent> for App {
         match ev {
             WindowEvent::CursorLeft { .. } => self.tip = None,
             WindowEvent::CloseRequested => self.run(el, Command::Exit),
-            WindowEvent::RedrawRequested => self.render(k),
+            WindowEvent::RedrawRequested => {
+                if let Some(w) = self.win_mut(k) {
+                    w.surface.ready();
+                }
+                self.render(k)
+            }
+            WindowEvent::ScaleFactorChanged { scale_factor, mut inner_size_writer } if self.platform.on_wayland() => {
+                // The window keeps its size in screen pixels, and the
+                // windows that are parts of it go where that puts them.
+                let (scale, (w, h)) = (self.scale(k), self.logical_size(k));
+                let _ = inner_size_writer.request_inner_size(PhysicalSize::new(scale.px(w) as u32, scale.px(h) as u32));
+                self.platform.set_scale(scale_factor);
+                for w in self.wins.iter().flatten() {
+                    w.window.move_to(w.pos);
+                    w.window.request_redraw();
+                }
+            }
+            WindowEvent::Focused(f) if self.platform.on_wayland() => {
+                self.active = f;
+                if !f && !self.popups.is_empty() {
+                    self.popup_focus_check = Some(Instant::now());
+                }
+                self.set_key_focus(self.key_focus);
+            }
             // Moved to a screen with other pixels per point: the window keeps
             // its size in points and is drawn again at the new density.
-            WindowEvent::ScaleFactorChanged { .. } => self.render(k),
+            WindowEvent::ScaleFactorChanged { .. } if platform::DESKTOP_IN_POINTS => self.render(k),
             WindowEvent::Focused(f) => {
                 if let Some(w) = self.win_mut(k) {
                     w.focused = f;
@@ -1708,12 +1980,15 @@ impl ApplicationHandler<AppEvent> for App {
                     // Back from the Dock: so are the companions.
                     self.show_hidden_companions();
                 }
-                if f {
+                if f && cfg!(target_os = "macos") {
                     // Clicked, the window comes up alone on macOS; its
                     // companions come up with it, under it. A minimized one
                     // stays in the Dock: bringing it up would restore it.
-                    let order = raise_order(k, |o| self.win(o).is_some_and(|w| w.visible && w.window.is_minimized() != Some(true)));
-                    let windows: Vec<&Window> = order.iter().filter_map(|&o| self.win(o)).map(|w| &*w.window).collect();
+                    let order = raise_order(k, |o| {
+                        self.win(o).is_some_and(|w| w.visible && w.window.top().and_then(|t| t.is_minimized()) != Some(true))
+                    });
+                    let windows: Vec<&Window> =
+                        order.iter().filter_map(|&o| self.win(o)).filter_map(|w| w.window.top()).map(|t| &**t).collect();
                     self.platform.raise_together(&windows);
                 }
                 if !f && !self.popups.is_empty() {
@@ -1734,7 +2009,7 @@ impl ApplicationHandler<AppEvent> for App {
                 // the bar out of the strip just reserved for it: it goes back.
                 if let Some(w) = self.win(k).filter(|w| w.role == WindowRole::Bar && w.strip.is_some() && w.pos != (p.x, p.y)) {
                     log::debug!(target: "moves", "{k:?} moved to ({},{}) by the system; back to {:?}", p.x, p.y, w.pos);
-                    w.window.set_outer_position(platform::position(w.pos.0, w.pos.1));
+                    w.window.move_to(w.pos);
                     return;
                 }
                 log::debug!(target: "moves", "{k:?} moved to ({},{}); we had {:?}, dragging {}", p.x, p.y, self.win(k).map(|w| w.pos), self.drag.is_some());
@@ -1763,19 +2038,17 @@ impl ApplicationHandler<AppEvent> for App {
                     _ => {}
                 }
             }
-            WindowEvent::MouseWheel { delta, .. } => {
-                let steps = match delta {
+            WindowEvent::MouseWheel { delta, .. } => self.wheel(
+                k,
+                match delta {
                     MouseScrollDelta::LineDelta(_, y) => y.round() as i32,
                     MouseScrollDelta::PixelDelta(p) => (p.y / 20.0).round() as i32,
-                };
-                if steps != 0 {
-                    let input = self.input(k, false, false);
-                    self.skins[k.index()].wheel(&mut self.model, input.x, input.y, steps);
-                    self.render(k);
-                    self.render(WindowKey::Main);
-                }
+                },
+            ),
+            WindowEvent::KeyboardInput { event, .. } => {
+                let k = if self.platform.on_wayland() { self.key_focus } else { k };
+                self.key(el, k, &event)
             }
-            WindowEvent::KeyboardInput { event, .. } => self.key(el, k, &event),
             WindowEvent::DroppedFile(path) => {
                 self.drops.push((k, path.to_string_lossy().into_owned()));
                 self.drop_time = Instant::now();
@@ -1825,6 +2098,17 @@ fn shape_mask(model: &Model, mode: &Mode, shape: &Shape, size: (i32, i32), scale
 
 /// Screen rectangle of a shown window: x, y, width, height.
 type Rect = (i32, i32, i32, i32);
+
+/// The screen a menu opened at `at` is kept on: the one under it where the
+/// desktop counts in points (screens of other densities side by side on a
+/// Mac), else the main window's, as Popamp does elsewhere (under Wayland
+/// none: a window there does not know where it is).
+fn menu_screen(points: bool, screens: &[(Screen, f64)], at: (i32, i32), main: Option<Screen>) -> Option<Screen> {
+    if !points {
+        return main;
+    }
+    screens.iter().map(|&(s, _)| s).find(|s| contains(*s, at)).or(main)
+}
 
 /// Whether `at` is on `screen`.
 fn contains(screen: Screen, at: (i32, i32)) -> bool {
@@ -1936,10 +2220,21 @@ mod tests {
     }
 
     #[test]
+    fn a_menu_stays_on_the_screen_under_it_only_in_points() {
+        let left = Screen { x: 0, y: 0, w: 1512, h: 982 };
+        let right = Screen { x: 1512, y: 0, w: 2560, h: 1440 };
+        let screens = [(left, 2.0), (right, 1.0)];
+        assert_eq!(menu_screen(true, &screens, (2000, 50), Some(left)), Some(right));
+        assert_eq!(menu_screen(true, &screens, (-50, 50), Some(left)), Some(left), "off every screen: the main one");
+        assert_eq!(menu_screen(false, &screens, (2000, 50), Some(left)), Some(left), "elsewhere: the main window's");
+        assert_eq!(menu_screen(false, &screens, (2000, 50), None), None, "Wayland: none");
+    }
+
+    #[test]
     fn the_window_clicked_comes_up_last_with_its_visible_companions_under_it() {
         let shown = |k: WindowKey| k != WindowKey::Eq;
-        assert_eq!(raise_order(WindowKey::Main, shown), [WindowKey::Playlist, WindowKey::Main]);
-        assert_eq!(raise_order(WindowKey::Playlist, |_| true), [WindowKey::Main, WindowKey::Eq, WindowKey::Playlist]);
+        assert_eq!(raise_order(WindowKey::Main, shown), [WindowKey::Playlist, WindowKey::Library, WindowKey::Main]);
+        assert_eq!(raise_order(WindowKey::Playlist, |_| true), [WindowKey::Main, WindowKey::Eq, WindowKey::Library, WindowKey::Playlist]);
     }
 
     fn x15(d: i32) -> i32 {

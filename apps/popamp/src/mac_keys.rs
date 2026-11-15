@@ -42,6 +42,8 @@ pub fn translate(code: KeyCode, m: Mods, window: WindowKey) -> Mac {
         return Mac::Nothing;
     }
     let playlist = window == WindowKey::Playlist;
+    // The windows ⌘A selects every row of.
+    let list = matches!(window, WindowKey::Playlist | WindowKey::Library);
     match (code, m.cmd, m.alt, m.shift) {
         (K::Comma, true, false, false) => key(K::KeyP, true, false, false),
         (K::KeyW, true, false, false) => Mac::Close,
@@ -49,7 +51,7 @@ pub fn translate(code: KeyCode, m: Mods, window: WindowKey) -> Mac {
         (K::KeyM, true, false, false) => Mac::Minimize,
         (K::Backquote, true, false, false) => key(K::Tab, true, false, false),
         (K::KeyA, true, true, false) => key(K::KeyA, true, playlist, false),
-        (K::KeyA, true, false, false) if playlist => key(K::KeyA, true, false, false),
+        (K::KeyA, true, false, false) if list => key(K::KeyA, true, false, false),
         (K::KeyA, true, false, false) => Mac::Nothing,
         (K::KeyI, true, false, false) => key(K::Digit3, false, true, false),
         (K::KeyI, true, false, true) => key(K::KeyI, true, false, false),
@@ -62,6 +64,13 @@ pub fn translate(code: KeyCode, m: Mods, window: WindowKey) -> Mac {
         (K::ArrowDown, true, false, false) => key(K::End, false, false, false),
         (code, cmd, alt, shift) => key(code, cmd, alt, shift),
     }
+}
+
+/// Whether a key pressed with ⌥ (and no ⌘) types `text`: on a Mac ⌥ is
+/// how accents and symbols are typed (⌥E é, ⌥2 €), so in a text field
+/// it types rather than runs a shortcut.
+pub fn types_text(alt: bool, cmd: bool, text: Option<&str>) -> bool {
+    alt && !cmd && text.is_some_and(|t| !t.is_empty() && !t.chars().any(char::is_control))
 }
 
 /// The button a click with `m` means: Ctrl+click is a right click.
@@ -158,6 +167,7 @@ mod tests {
         assert_eq!(translate(KeyCode::KeyA, with(true, true, false), pl), key(KeyCode::KeyA, true, true, false));
         assert_eq!(translate(KeyCode::KeyA, CMD, pl), key(KeyCode::KeyA, true, false, false), "select all");
         assert_eq!(translate(KeyCode::KeyA, CMD, m), Mac::Nothing);
+        assert_eq!(translate(KeyCode::KeyA, CMD, WindowKey::Library), key(KeyCode::KeyA, true, false, false), "select all");
         assert_eq!(translate(KeyCode::KeyI, CMD, m), key(KeyCode::Digit3, false, true, false));
         assert_eq!(translate(KeyCode::KeyI, with(true, false, true), pl), key(KeyCode::KeyI, true, false, false));
         assert_eq!(translate(KeyCode::Digit2, with(true, true, false), pl), key(KeyCode::Digit2, true, false, true));
@@ -224,5 +234,14 @@ mod tests {
     #[test]
     fn a_copied_word_is_not_a_path() {
         assert!(paste_items(vec![], Some("src".into())).is_empty(), "src exists beside the crate's tests");
+    }
+
+    #[test]
+    fn option_types_accents_and_symbols() {
+        assert!(types_text(true, false, Some("é")) && types_text(true, false, Some("@")));
+        assert!(!types_text(true, false, None), "a dead key types nothing yet");
+        assert!(!types_text(true, false, Some("\u{7f}")), "no control characters");
+        assert!(!types_text(true, true, Some("a")), "with ⌘ it is a shortcut");
+        assert!(!types_text(false, false, Some("a")), "without ⌥ the usual path types");
     }
 }

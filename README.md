@@ -33,8 +33,10 @@ Linux, Windows and, experimentally, macOS.
   with `.eqf` presets, internet radio, and the common formats: MP3, AAC, FLAC,
   Ogg Vorbis, Opus, WAV, ALAC, MIDI, tracker modules and more.
 - **At home on your desktop.** Media keys and the system's player
-  controls show the track and its cover. A bar skin docks to the edge of
-  the screen like a taskbar.
+  controls show the track and its cover.
+- **A player that is a bar.** In [toolbar mode](#toolbar-mode) the main
+  window becomes a strip along the top or bottom of the screen, on Linux
+  and Windows, with the room for it kept like a taskbar's.
 - **Plug-ins you allow.** Sandboxed WebAssembly plug-ins, each switched
   on by you: [YouTube](https://github.com/popamp/plugin-youtube) as a
   source, [Crossfeed](https://github.com/popamp/plugin-crossfeed) for
@@ -49,11 +51,20 @@ Linux, Windows and, experimentally, macOS.
 |:---:|:---:|:---:|
 | <img src="assets/screenshots/default.png" width="250" alt="Popamp's default skin"> | <img src="assets/screenshots/steel.png" width="250" alt="The Steel skin"> | <img src="assets/screenshots/modern.png" width="250" alt="The Modern skin"> |
 
-[**Bar**](https://github.com/popamp/skin-bar): the whole player in one
-strip along the bottom or top of the screen, with the equalizer and the
-playlist above it.
+### Toolbar mode
 
-<img src="assets/screenshots/bar.png" alt="The Bar skin: a strip at the bottom of the screen with the equalizer and playlist above its right end">
+The whole player in one strip along the bottom or top of the screen:
+transport, visualizer, clock, title, volume and the EQ and playlist
+switches, with the equalizer and the playlist above its right end. On
+Linux (X11) the strip is reserved with `_NET_WM_STRUT_PARTIAL`, so
+maximized windows stop at it as they do at a taskbar, and it keeps clear
+of the desktop's own panels; on Windows it is an application bar. Turn it
+on, move it and size it under Main menu > *Toolbar mode*. The built-in
+skin and the Modern, Steel, Classified and D11 skins each carry a bar
+beside their window, in all their colour sets. More in
+[features](docs/features.md#toolbar-mode).
+
+<img src="assets/screenshots/bar.png" alt="Toolbar mode with the Modern skin: a strip along the bottom of the screen with the equalizer and playlist above its right end">
 
 ## Why?
 

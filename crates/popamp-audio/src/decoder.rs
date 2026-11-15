@@ -1,12 +1,13 @@
 //! Symphonia-based decoding to interleaved stereo `f32`, plus tag reading.
 
+use crate::stream::TitleSlot;
 use popamp_core::meta::{parse_gain, TrackMeta};
 use std::path::Path;
 use std::sync::LazyLock;
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::{CodecRegistry, DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error as SymError;
-use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo};
+use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo, Track};
 use symphonia::core::io::{MediaSource, MediaSourceStream};
 use symphonia::core::meta::{MetadataOptions, MetadataRevision, StandardTagKey};
 use symphonia::core::probe::Hint;
@@ -62,6 +63,8 @@ pub struct Decoder {
     frames_acc: u64,
     packets_seen: u64,
     length_known: bool,
+    /// Where to name each next song of a chain, for a radio.
+    songs: Option<TitleSlot>,
 }
 
 /// Symphonia's codecs plus Opus.
@@ -138,9 +141,8 @@ impl Decoder {
         if let Some(rev) = reader.metadata().current() {
             apply_tags(&mut meta, rev);
         }
-        let track = reader.tracks().iter().find(|t| t.codec_params.codec != CODEC_TYPE_NULL).ok_or("no audio track")?.clone();
+        let (track, codec) = audio_track(reader.as_ref())?;
         let params = &track.codec_params;
-        let codec = codecs().make(params, &DecoderOptions::default()).map_err(|e| format!("unsupported codec: {e}"))?;
         let sample_rate = params.sample_rate.unwrap_or(44_100);
         let channels = params.channels.map(|c| c.count() as u16).unwrap_or(2);
         // `n_frames` is in time-base units (milliseconds for Matroska), not samples.
@@ -176,9 +178,27 @@ impl Decoder {
                 frames_acc: 0,
                 packets_seen: 0,
                 length_known: length_ms.is_some(),
+                songs: None,
             },
             meta,
         ))
+    }
+
+    /// Names each next song of a chain in `songs`, as a radio's titles are.
+    pub(crate) fn name_songs_in(&mut self, songs: TitleSlot) {
+        self.songs = Some(songs);
+    }
+
+    /// Names the song of the stream just started, from its tags.
+    fn name_song(&mut self) {
+        let Some(songs) = &self.songs else { return };
+        let mut meta = TrackMeta::default();
+        if let Some(rev) = self.reader.metadata().skip_to_latest() {
+            apply_tags(&mut meta, rev);
+        }
+        if let Some(name) = song_name(&meta) {
+            *songs.lock() = Some(name);
+        }
     }
 
     /// Appends the next chunk of interleaved stereo samples to `out`.
@@ -187,8 +207,12 @@ impl Decoder {
             let packet = match self.reader.next_packet() {
                 Ok(p) => p,
                 Err(SymError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(Status::Eof),
+                // A new stream of a chain (the next song of an Ogg radio):
+                // a new track, maybe with another codec setup.
                 Err(SymError::ResetRequired) => {
-                    self.codec.reset();
+                    let (track, codec) = audio_track(self.reader.as_ref())?;
+                    (self.track_id, self.codec) = (track.id, codec);
+                    self.name_song();
                     continue;
                 }
                 Err(e) => return Err(format!("read error: {e}")),
@@ -272,6 +296,19 @@ impl Decoder {
     }
 }
 
+/// "Artist - Title", as radios name a song, or the title alone.
+fn song_name(meta: &TrackMeta) -> Option<String> {
+    let title = meta.title.as_deref()?;
+    Some(meta.artist.as_ref().map_or_else(|| title.to_string(), |artist| format!("{artist} - {title}")))
+}
+
+/// The first audio track of `reader`, and a decoder for it.
+fn audio_track(reader: &dyn FormatReader) -> Result<(Track, Box<dyn symphonia::core::codecs::Decoder>), String> {
+    let track = reader.tracks().iter().find(|t| t.codec_params.codec != CODEC_TYPE_NULL).ok_or("no audio track")?.clone();
+    let codec = codecs().make(&track.codec_params, &DecoderOptions::default()).map_err(|e| format!("unsupported codec: {e}"))?;
+    Ok((track, codec))
+}
+
 /// Converts interleaved `ch`-channel audio to stereo and appends it.
 fn to_stereo(samples: &[f32], ch: usize, out: &mut Vec<f32>) {
     match ch {
@@ -349,6 +386,83 @@ mod tests {
             let level = rms(&out[4_800..out.len() - 4_800]);
             assert!((0.32..0.39).contains(&level), "{name}: RMS {level}");
         }
+    }
+
+    /// `first`, then `second`, as an Ogg radio sends one song after another:
+    /// a chain of two streams, the second with a serial number of its own.
+    /// Read as a stream is, without seeking.
+    fn chained(first: &str, second: &str) -> Decoder {
+        let one = std::fs::read(fixture(first)).unwrap();
+        let two = with_serial(&std::fs::read(fixture(second)).unwrap(), 0x5EC0_0D02);
+        let radio = symphonia::core::io::ReadOnlySource::new(std::io::Cursor::new([one, two].concat()));
+        Decoder::open_source(Box::new(radio), None, false).unwrap().0
+    }
+
+    /// The Ogg pages of `ogg` given the serial number `serial`.
+    fn with_serial(ogg: &[u8], serial: u32) -> Vec<u8> {
+        let mut out = ogg.to_vec();
+        let mut at = 0;
+        while at + 27 <= out.len() {
+            assert_eq!(&out[at..at + 4], b"OggS", "a page at {at}");
+            let segments = out[at + 26] as usize;
+            let body: usize = out[at + 27..at + 27 + segments].iter().map(|&n| n as usize).sum();
+            let end = at + 27 + segments + body;
+            out[at + 14..at + 18].copy_from_slice(&serial.to_le_bytes());
+            out[at + 22..at + 26].fill(0);
+            let crc = ogg_crc(&out[at..end]);
+            out[at + 22..at + 26].copy_from_slice(&crc.to_le_bytes());
+            at = end;
+        }
+        out
+    }
+
+    /// The CRC of an Ogg page: polynomial 0x04C11DB7, not reflected, from 0.
+    fn ogg_crc(page: &[u8]) -> u32 {
+        page.iter().fold(0u32, |crc, &byte| {
+            (0..8).fold(crc ^ (u32::from(byte) << 24), |c, _| if c & 0x8000_0000 != 0 { (c << 1) ^ 0x04C1_1DB7 } else { c << 1 })
+        })
+    }
+
+    #[test]
+    fn a_page_given_its_own_serial_still_reads() {
+        let one = std::fs::read(fixture("tone.opus")).unwrap();
+        assert_eq!(with_serial(&with_serial(&one, 7), u32::from_le_bytes(one[14..18].try_into().unwrap())), one);
+    }
+
+    // Each new song of an Ogg radio is a new stream, with a new track id;
+    // waiting for the old one's packets skipped the rest, and on a radio,
+    // which never ends, never came back to the player.
+    #[test]
+    fn a_chained_ogg_plays_every_stream_in_it() {
+        for name in ["tone.opus", "silence.ogg"] {
+            let (_, once) = decode_all(&fixture(name));
+            let (mut dec, mut twice) = (chained(name, name), Vec::new());
+            while let Status::Data = dec.next(&mut twice).unwrap() {}
+            let (once, twice) = (once.len() / 2, twice.len() / 2);
+            assert!(twice.abs_diff(2 * once) < once / 20, "{name}: {once} frames once, {twice} chained");
+        }
+    }
+
+    // An Ogg radio names the next song in the tags of its stream, not in
+    // ICY metadata.
+    #[test]
+    fn the_next_stream_of_a_chain_names_its_song() {
+        let (mut dec, titles) = (chained("tone.opus", "tone-tagged.opus"), TitleSlot::default());
+        dec.name_songs_in(titles.clone());
+        while let Status::Data = dec.next(&mut Vec::new()).unwrap() {}
+        assert_eq!(titles.lock().as_deref(), Some("Band - Second"));
+    }
+
+    #[test]
+    fn a_song_is_named_by_artist_and_title_or_its_title_alone() {
+        let meta = |artist: Option<&str>, title: Option<&str>| TrackMeta {
+            artist: artist.map(Into::into),
+            title: title.map(Into::into),
+            ..Default::default()
+        };
+        assert_eq!(song_name(&meta(Some("Band"), Some("Song"))).as_deref(), Some("Band - Song"));
+        assert_eq!(song_name(&meta(None, Some("Song"))).as_deref(), Some("Song"));
+        assert_eq!(song_name(&meta(Some("Band"), None)), None);
     }
 
     #[test]

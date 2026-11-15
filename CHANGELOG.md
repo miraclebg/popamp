@@ -6,20 +6,114 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.9.0] - 2026-11-12
-
 ### Added
 
 - **macOS:** Popamp runs on macOS 12 and newer, on Apple Silicon and
-  Intel Macs, from one disk image with Popamp.app. Sound through
-  CoreAudio, the Mac's own dialogs and fonts, files opened from Finder,
-  the Mac's keys (⌘ first, ⌘V pastes links and files into the playlist),
-  Retina screens and screens of different density side by side, and
-  classic skins cut to their shape. The media keys and Now Playing
-  control it, its tray menu is in the menu bar, the global hotkeys are
-  ⌃⌥ with the same keys, its Dock icon brings it back, and Preferences can
-  make it the Mac's player for audio, playlists and skins. Settings live
-  in `~/Library/Application Support/popamp`.
+  Intel Macs, from one disk image with Popamp.app. The Mac's own dialogs
+  and fonts, files opened from Finder, the Mac's keys (⌘ first, ⌘V
+  pastes links and files into the playlist), Retina screens and screens
+  of different density side by side, and classic skins cut to their
+  shape. The media keys and Now Playing control it, its tray menu is in
+  the menu bar, the global hotkeys are ⌃⌥ with the same keys, its Dock
+  icon brings it back, and Preferences can make it the Mac's player for
+  audio, playlists and skins. Settings live in
+  `~/Library/Application Support/popamp`.
+
+## [1.0.0] - 2026-11-14
+
+### Added
+
+- **A window and a bar in one skin:** a skin can describe its main
+  window both as a window and as a bar along a screen edge
+  (`[window.bar]` beside `[window.normal]`; a skin on classic sheets can
+  add just the bar). The main menu then offers *Main window as: A window
+  / A bar*. The clock takes `font_size`, so the bar can show a smaller
+  one.
+- **Colour sets:** a skin can name its colours in `[colors.<set>]` and
+  give several sets, so one skin has many looks. SVG shapes take a
+  colour by class, and the same names work in `[text]`, `[clock]`,
+  `[playlist]` and `[vis]`. The main menu offers *Colours* when a skin
+  has more than one set, and the pick is remembered.
+- **macOS:** sound plays through CoreAudio, on the default device or the
+  one picked, and the Mac's sound devices are listed by name (by
+  miraclebg).
+- **Wayland:** Popamp can run as a Wayland program, without Xwayland. It
+  does so by itself on a Wayland desktop where X11 programs cannot run;
+  elsewhere it stays an X11 program unless `wayland=1` is set in
+  `popamp.ini`. Wayland does not let a program place its windows, so the
+  equalizer, the playlist, menus and tooltips are parts of the main
+  window there: they dock, snap and move as before, and all go along
+  when the main window is moved. Not there, because Wayland has no way
+  for it: always on top, the bar view, remembering where on the screen
+  the windows were, and keeping menus on the screen at its edges.
+  Dropping files onto the windows does not work there yet.
+- **Media library** (`Alt+L`), a window of its own: give it folders and
+  it lists their tracks, with all the music, the newest tracks and each
+  folder on the left, artists and albums side by side above the track
+  table, and a search over every tag and the path. Play puts the picked
+  tracks in place of the playlist, Enqueue adds them; Enter and a double
+  click enqueue, or play when Preferences > Media Library says so, and
+  Shift+Enter does the other. Tracks dragged onto the playlist go in
+  where they are let go, the cursor telling whether they can. The folders are
+  read again in the background at start; files that did not change are
+  not read again. Classic skins and vector skins drawn on the classic
+  sheets give it the playlist's frame; a vector skin with its own windows
+  draws it as a `[[window]]` with `key = "library"`.
+- **Oscilloscope afterglow:** a fourth oscilloscope style (Visualization
+  menu, *Scope: afterglow*) leaves each trace to fade over five frames
+  through the skin's oscilloscope colours, like the glow of a
+  cathode-ray tube.
+- **Update check:** at start, at most once a day, Popamp reads
+  `https://popamp.app/latest.json` and, when it names a newer version,
+  says so in the display and puts *Popamp X is out* at the top of the
+  main menu, with *Download…* (opens the release's page) and *Skip this
+  version*. Installed from a .deb or .rpm, it says to update through the
+  package manager instead. Popamp never downloads or installs an update
+  itself; the request carries only its version, in the User-Agent, and
+  without network nothing is said. Preferences > Internet > *Check for a
+  new version* turns it off.
+
+### Changed
+
+- The default skin is redrawn from one set of parts, with crisp
+  transport signs. It has a bar view as well as the window, and five
+  colour sets: Slate, Graphite, Plum, Pine and Wine.
+- Preferences is split into sections, listed down its left side:
+  Windows, Playlist, Playback, Media Library, Desktop and Internet.
+- The main menu's *Bar position* and *Bar size* are now *Position* and
+  *Size* in its *Toolbar mode*, which also turns the bar on and off when
+  the skin has a window as well, and they can be set before it is on.
+
+### Fixed
+
+- A song title with letters a classic skin's font lacks (Cyrillic, say)
+  is written in the playlist's font, in the colour of the skin's, instead
+  of leaving those letters out.
+- What a menu item changes shows at once in every window: an equalizer
+  preset picked from the Presets menu moved the sliders only after the
+  next click in that window.
+- The media library, equalizer and playlist windows can be moved while
+  the main window is a bar; a window moved off the bar stays where it
+  was put until the bar is turned off.
+
+## [0.9.1] - 2026-11-13
+
+### Fixed
+
+- An internet radio that sends Ogg (Vorbis, Opus or FLAC in Ogg) no
+  longer freezes Popamp when the next song starts: playback goes on, and
+  Stop and closing the window work again.
+- Such a radio's display now shows each next song's artist and title,
+  read from the song's own tags.
+
+### Changed
+
+- The code builds and runs on macOS, without sound yet; there is no
+  macOS download.
+
+## [0.9.0] - 2026-11-12
+
+### Added
 
 - **Opus:** `.opus` files (and Opus in Matroska and WebM) play, seek and
   have their tags read and changed. Decoding goes through the system's
@@ -413,7 +507,9 @@ First release.
 - **Packaging:** desktop entry, `.wsz` MIME type, icons and a per-user
   install script.
 
-[Unreleased]: https://github.com/popamp/popamp/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/popamp/popamp/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/popamp/popamp/compare/v0.9.1...v1.0.0
+[0.9.1]: https://github.com/popamp/popamp/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/popamp/popamp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/popamp/popamp/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/popamp/popamp/compare/v0.6.0...v0.7.0

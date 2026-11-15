@@ -26,6 +26,10 @@ pub enum MenuAction {
     /// Window size in percent; 100 turns "Double Size" off.
     Zoom(i32),
     Scaling(popamp_core::config::Scaling),
+    /// The skin's colour set of this name.
+    SkinColors(String),
+    /// The main window as a bar (true) or a window, in a skin with both.
+    MainAsBar(bool),
     BarEdge(popamp_core::config::BarEdge),
     /// A bar's size in percent.
     BarZoom(i32),
@@ -34,6 +38,10 @@ pub enum MenuAction {
     EqDialog(DialogKind),
     PlaySelected,
     PlayBookmark(usize),
+    /// Opens the newer version's page.
+    UpdateDownload,
+    /// Tells no more of the newer version.
+    UpdateSkip,
 }
 
 #[derive(Debug, Clone)]
