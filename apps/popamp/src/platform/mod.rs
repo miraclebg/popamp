@@ -76,8 +76,15 @@ pub fn from_drawn(px: i32, pct: i32) -> i32 {
 /// A point winit gives in screen pixels (a window's position, the cursor in
 /// it), in the desktop's units; `factor` is the window's pixels per point.
 pub fn from_screen(x: f64, y: f64, factor: f64) -> (i32, i32) {
-    let f = if DESKTOP_IN_POINTS && factor > 0.0 { factor } else { 1.0 };
-    ((x / f).floor() as i32, (y / f).floor() as i32)
+    from_screen_in(DESKTOP_IN_POINTS, x, y, factor)
+}
+
+fn from_screen_in(points: bool, x: f64, y: f64, factor: f64) -> (i32, i32) {
+    if points && factor > 0.0 {
+        ((x / factor).floor() as i32, (y / factor).floor() as i32)
+    } else {
+        (x as i32, y as i32)
+    }
 }
 
 /// A monitor's rectangle in the desktop's units.
@@ -304,6 +311,13 @@ fn shape_rects(mask: Option<&Mask>, size: (i32, i32)) -> Vec<(i16, i16, u16, u16
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cursor_position_is_kept_as_winit_gives_it_in_pixels() {
+        // As `position.x as i32` was: towards zero, so -0.5 is 0.
+        assert_eq!(from_screen_in(false, -0.5, 10.7, 2.0), (0, 10));
+        assert_eq!(from_screen_in(true, 301.0, -1.0, 2.0), (150, -1), "points: whole points below");
+    }
 
     #[cfg(target_os = "macos")]
     #[test]

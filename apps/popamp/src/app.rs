@@ -645,7 +645,7 @@ impl App {
         let layout = menu::layout(&items, &mut self.fonts.list, pct);
         let (w, h) = layout.screen();
         let main_monitor = self.main_monitor().map(|m| platform::monitor(&m));
-        let monitor = screens.iter().map(|&(s, _)| s).find(|s| contains(*s, at)).or(main_monitor);
+        let monitor = menu_screen(platform::DESKTOP_IN_POINTS, &screens, at, main_monitor);
         // Placed in the desktop's units, as the cursor and the monitor are.
         let units = (platform::from_drawn(w, pct), platform::from_drawn(h, pct));
         let (x, y) = monitor.map_or(at, |m| menu_origin(at, units, m, !sub));
@@ -1485,7 +1485,13 @@ impl App {
                 return self.run(el, c);
             }
         }
-        if k == WindowKey::Library && !alt {
+        // On a Mac ⌥ types accents and symbols (⌥E é): into the search,
+        // never to a shortcut.
+        #[cfg(target_os = "macos")]
+        let typing = crate::mac_keys::types_text(alt, ctrl, ev.text.as_deref());
+        #[cfg(not(target_os = "macos"))]
+        let typing = false;
+        if k == WindowKey::Library && (!alt || typing) {
             let used = match (ctrl, code) {
                 (true, K::KeyA) => {
                     self.model.library.select_all();
@@ -1494,7 +1500,7 @@ impl App {
                 (true, _) => false,
                 (false, _) => form_key(ev, false).is_some_and(|key| self.skins[k.index()].library_key(&mut self.model, key, shift)),
             };
-            if used {
+            if used || typing {
                 self.after_model(el);
                 return self.redraw_all();
             }
@@ -1965,7 +1971,7 @@ impl ApplicationHandler<AppEvent> for App {
             }
             // Moved to a screen with other pixels per point: the window keeps
             // its size in points and is drawn again at the new density.
-            WindowEvent::ScaleFactorChanged { .. } => self.render(k),
+            WindowEvent::ScaleFactorChanged { .. } if platform::DESKTOP_IN_POINTS => self.render(k),
             WindowEvent::Focused(f) => {
                 if let Some(w) = self.win_mut(k) {
                     w.focused = f;
@@ -1974,7 +1980,7 @@ impl ApplicationHandler<AppEvent> for App {
                     // Back from the Dock: so are the companions.
                     self.show_hidden_companions();
                 }
-                if f {
+                if f && cfg!(target_os = "macos") {
                     // Clicked, the window comes up alone on macOS; its
                     // companions come up with it, under it. A minimized one
                     // stays in the Dock: bringing it up would restore it.
@@ -2093,6 +2099,17 @@ fn shape_mask(model: &Model, mode: &Mode, shape: &Shape, size: (i32, i32), scale
 /// Screen rectangle of a shown window: x, y, width, height.
 type Rect = (i32, i32, i32, i32);
 
+/// The screen a menu opened at `at` is kept on: the one under it where the
+/// desktop counts in points (screens of other densities side by side on a
+/// Mac), else the main window's, as Popamp does elsewhere (under Wayland
+/// none: a window there does not know where it is).
+fn menu_screen(points: bool, screens: &[(Screen, f64)], at: (i32, i32), main: Option<Screen>) -> Option<Screen> {
+    if !points {
+        return main;
+    }
+    screens.iter().map(|&(s, _)| s).find(|s| contains(*s, at)).or(main)
+}
+
 /// Whether `at` is on `screen`.
 fn contains(screen: Screen, at: (i32, i32)) -> bool {
     at.0 >= screen.x && at.0 < screen.x + screen.w && at.1 >= screen.y && at.1 < screen.y + screen.h
@@ -2200,6 +2217,17 @@ mod tests {
         // x1.5 on Retina: 275 skin pixels are 413 points, 826 pixels.
         assert_eq!(surface_size(Scale::new(150, popamp_core::config::Scaling::Sharp), (275, 116), 2.0), (826, 348));
         assert_eq!(surface_size(Scale::new(200, popamp_core::config::Scaling::Sharp), (275, 116), 1.0), (550, 232));
+    }
+
+    #[test]
+    fn a_menu_stays_on_the_screen_under_it_only_in_points() {
+        let left = Screen { x: 0, y: 0, w: 1512, h: 982 };
+        let right = Screen { x: 1512, y: 0, w: 2560, h: 1440 };
+        let screens = [(left, 2.0), (right, 1.0)];
+        assert_eq!(menu_screen(true, &screens, (2000, 50), Some(left)), Some(right));
+        assert_eq!(menu_screen(true, &screens, (-50, 50), Some(left)), Some(left), "off every screen: the main one");
+        assert_eq!(menu_screen(false, &screens, (2000, 50), Some(left)), Some(left), "elsewhere: the main window's");
+        assert_eq!(menu_screen(false, &screens, (2000, 50), None), None, "Wayland: none");
     }
 
     #[test]
