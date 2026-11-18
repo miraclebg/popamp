@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-18
+
 ### Added
 
 - **Toolbar mode as a Wayland program:** the bar is a layer of the
@@ -584,7 +586,8 @@ First release.
 - **Packaging:** desktop entry, `.wsz` MIME type, icons and a per-user
   install script.
 
-[Unreleased]: https://github.com/popamp/popamp/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/popamp/popamp/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/popamp/popamp/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/popamp/popamp/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/popamp/popamp/compare/v0.9.1...v1.0.0
 [0.9.1]: https://github.com/popamp/popamp/compare/v0.9.0...v0.9.1
