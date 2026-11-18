@@ -277,7 +277,8 @@ impl App {
         // The strip as reserved, not where the window is: the system may
         // move the bar out of its own strip when the work area shrinks.
         let strip = self.win(WindowKey::Main).filter(|w| w.role == WindowRole::Bar && w.visible).and_then(|w| w.strip).map(|s| s.area());
-        let mut area = self.monitor.map(|m| bar::usable(m, &self.platform.work_areas(), strip));
+        let under = self.model.settings().bar_under_side_panels;
+        let mut area = self.monitor.map(|m| bar::span(m, &self.platform.work_areas(), strip, under));
         // A Wayland compositor gives the bar its width itself.
         if let (Some(area), Some(w)) = (&mut area, self.platform.bar_width().filter(|_| self.platform.on_wayland())) {
             area.w = w;
@@ -290,6 +291,7 @@ impl App {
     fn create_windows(&mut self, el: &ActiveEventLoop) {
         self.platform.start(el);
         self.model.no_bar = !self.platform.can_bar();
+        self.model.bar_width_given = self.platform.on_wayland();
         let monitors = Self::monitors(el);
         self.monitor = self.screen_of_main(&monitors);
         self.update_bar_area();
@@ -738,7 +740,8 @@ impl App {
         // Under Wayland a bar is where Popamp put it, on the monitor it
         // spans: its menus open above it at the bottom, as elsewhere.
         let bar = self.win(WindowKey::Main).is_some_and(|w| w.role == WindowRole::Bar);
-        let main_monitor = if self.platform.on_wayland() && bar { self.monitor } else { self.main_monitor().map(|m| platform::monitor(&m)) };
+        let main_monitor =
+            if self.platform.on_wayland() && bar { self.monitor } else { self.main_monitor().map(|m| platform::monitor(&m)) };
         let monitor = menu_screen(platform::DESKTOP_IN_POINTS, &screens, at, main_monitor);
         // Placed in the desktop's units, as the cursor and the monitor are.
         let units = (platform::from_drawn(w, pct), platform::from_drawn(h, pct));
@@ -1152,10 +1155,7 @@ impl App {
         }
         // With "Move docked windows together", a window docked to the main
         // one takes the main one along, and so the whole group.
-        let whole = !by_bar
-            && k != WindowKey::Main
-            && self.model.settings().groupmove
-            && self.docked_group(WindowKey::Main).contains(&k);
+        let whole = !by_bar && k != WindowKey::Main && self.model.settings().groupmove && self.docked_group(WindowKey::Main).contains(&k);
         if whole && self.platform.on_wayland() {
             if self.platform.drag_main() {
                 self.set_aside();
@@ -1788,6 +1788,7 @@ impl App {
                     self.open_popup(el, items, at, false);
                 }
                 UiReq::Layout => {
+                    self.update_bar_area();
                     self.apply_layout(WindowKey::Main);
                     self.redraw_all();
                 }
