@@ -28,6 +28,10 @@ All notable changes to this project are documented here. The format follows
 - **COSMIC:** while the main window is dragged, the equalizer and the
   playlist not docked to it are hidden, and come back where they were,
   instead of going along with it.
+- **Toolbar mode > Full width, under side panels** (off by default, X11
+  and Xwayland): the bar spans the whole screen, under a side dock that
+  makes room for it. Ubuntu's dock does, but tells the system only of
+  its full height, so the bar used to leave an empty corner beside it.
 
 ### Fixed
 
@@ -47,12 +51,23 @@ All notable changes to this project are documented here. The format follows
 - **COSMIC:** the main window dropped in a screen corner keeps its size
   instead of being stretched to the quarter of the screen COSMIC tiles
   it into.
+- **Toolbar mode on KDE Plasma (Wayland):** maximized windows no longer
+  go under the bar. KWin ignores the struts of programs that run
+  through Xwayland, so Popamp keeps the bar's strip with an invisible
+  layer of the desktop (wlr-layer-shell) under the bar.
 
 ### Changed
 
 - **Software centres:** the AppStream data has screenshots and a
   current description, so the AppImage catalog and the software centres
   show the player with its skins instead of an empty playlist.
+- **Toolbar size:** a bar too wide for the screen takes the biggest
+  smaller size that fits, and *Toolbar mode > Size* offers only those;
+  the size chosen is kept for a wider screen.
+- **Documentation:** pages on Ubuntu and KDE Plasma
+  ([ubuntu.md](docs/ubuntu.md), [kde.md](docs/kde.md)), linked from the
+  README's new *Limits and desktop-specific behaviour*; checked from the
+  live images of Ubuntu 26.04.1, Kubuntu 26.04.1 and Linux Mint 22.3.
 
 ## [1.0.1] - 2026-11-16
 

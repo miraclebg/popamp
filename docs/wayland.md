@@ -152,8 +152,10 @@ from the compositor or from Wayland:
 - A way for a program to place its windows and learn where they are.
   Wayland has none for ordinary programs; a protocol for it would let
   Popamp work as on X11.
-- On COSMIC: an Xwayland that lets X11 programs move their windows, or a
-  request in `cosmic-toplevel-management` to place a window. Either
+- On COSMIC: an Xwayland that lets X11 programs move their windows
+  (reported as
+  [cosmic-comp#3096](https://github.com/pop-os/cosmic-comp/issues/3096)),
+  or a request in `cosmic-toplevel-management` to place a window. Either
   would also restore always on top and position memory.
 - On COSMIC: not tiling a window whose smallest and largest sizes are
   the same, which would end the corner drop problem.

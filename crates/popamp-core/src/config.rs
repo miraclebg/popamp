@@ -227,6 +227,10 @@ settings! {
     /// How big a bar skin's bar is, in percent, whatever size the other
     /// windows are: 200 makes it as thick as jetAudio's bar.
     bar_zoom: i32 = 200,
+    /// A bar spans its monitor's whole width, under the desktop's side
+    /// panels: Ubuntu's dock gives the corner up to a bar, but tells only of
+    /// the area beside its full height.
+    bar_under_side_panels: bool = false,
     dim_inactive: bool = true,
     // Main window.
     timeleftmode: bool = false,

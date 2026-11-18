@@ -17,6 +17,7 @@
 //! main window's.
 
 use super::{shape_rects, Mask};
+use crate::bar::Screen;
 use popamp_skin::cursors::CursorImage;
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -26,7 +27,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use wayland_backend::client::{Backend, ObjectId};
 use wayland_client::globals::{registry_queue_init, GlobalListContents};
-use crate::bar::Screen;
 use wayland_client::protocol::wl_buffer::{self, WlBuffer};
 use wayland_client::protocol::wl_callback::{self, WlCallback};
 use wayland_client::protocol::wl_compositor::WlCompositor;
@@ -260,7 +260,14 @@ impl Dispatch<ZxdgOutputV1, ObjectId> for State {
 
 /// A window came on the screen.
 impl Dispatch<ExtForeignToplevelListV1, ()> for State {
-    fn event(state: &mut State, _: &ExtForeignToplevelListV1, event: ext_foreign_toplevel_list_v1::Event, _: &(), _: &Connection, _: &QueueHandle<State>) {
+    fn event(
+        state: &mut State,
+        _: &ExtForeignToplevelListV1,
+        event: ext_foreign_toplevel_list_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<State>,
+    ) {
         if let ext_foreign_toplevel_list_v1::Event::Toplevel { toplevel } = event {
             state.toplevels.insert(toplevel.id(), Toplevel { handle: toplevel, title: String::new(), app_id: String::new() });
         }
@@ -273,7 +280,14 @@ impl Dispatch<ExtForeignToplevelListV1, ()> for State {
 
 /// What a window is called; the main one is followed once known.
 impl Dispatch<ExtForeignToplevelHandleV1, ()> for State {
-    fn event(state: &mut State, handle: &ExtForeignToplevelHandleV1, event: ext_foreign_toplevel_handle_v1::Event, _: &(), _: &Connection, qh: &QueueHandle<State>) {
+    fn event(
+        state: &mut State,
+        handle: &ExtForeignToplevelHandleV1,
+        event: ext_foreign_toplevel_handle_v1::Event,
+        _: &(),
+        _: &Connection,
+        qh: &QueueHandle<State>,
+    ) {
         use ext_foreign_toplevel_handle_v1::Event as E;
         let id = handle.id();
         match event {
@@ -307,7 +321,8 @@ impl Dispatch<ExtForeignToplevelHandleV1, ()> for State {
 }
 
 impl Dispatch<ZcosmicToplevelInfoV1, ()> for State {
-    fn event(_: &mut State, _: &ZcosmicToplevelInfoV1, _: zcosmic_toplevel_info_v1::Event, _: &(), _: &Connection, _: &QueueHandle<State>) {}
+    fn event(_: &mut State, _: &ZcosmicToplevelInfoV1, _: zcosmic_toplevel_info_v1::Event, _: &(), _: &Connection, _: &QueueHandle<State>) {
+    }
 
     event_created_child!(State, ZcosmicToplevelInfoV1, [
         zcosmic_toplevel_info_v1::EVT_TOPLEVEL_OPCODE => (ZcosmicToplevelHandleV1, ()),
@@ -316,7 +331,14 @@ impl Dispatch<ZcosmicToplevelInfoV1, ()> for State {
 
 /// Where the main window is on each monitor it is on.
 impl Dispatch<ZcosmicToplevelHandleV1, ()> for State {
-    fn event(state: &mut State, _: &ZcosmicToplevelHandleV1, event: zcosmic_toplevel_handle_v1::Event, _: &(), _: &Connection, _: &QueueHandle<State>) {
+    fn event(
+        state: &mut State,
+        _: &ZcosmicToplevelHandleV1,
+        event: zcosmic_toplevel_handle_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<State>,
+    ) {
         let shared = state.shared.clone();
         let mut main_at = shared.main_at.borrow_mut();
         match event {
@@ -344,7 +366,14 @@ impl Dispatch<ZcosmicToplevelHandleV1, ()> for State {
 
 /// The bar may be shown, after it acknowledges this; it is drawn again for that.
 impl Dispatch<ZwlrLayerSurfaceV1, u32> for State {
-    fn event(state: &mut State, _: &ZwlrLayerSurfaceV1, event: zwlr_layer_surface_v1::Event, id: &u32, _: &Connection, _: &QueueHandle<State>) {
+    fn event(
+        state: &mut State,
+        _: &ZwlrLayerSurfaceV1,
+        event: zwlr_layer_surface_v1::Event,
+        id: &u32,
+        _: &Connection,
+        _: &QueueHandle<State>,
+    ) {
         match event {
             zwlr_layer_surface_v1::Event::Configure { serial, width, height } => {
                 log::debug!("Wayland: bar configured {width}x{height}");
@@ -362,7 +391,14 @@ impl Dispatch<ZwlrLayerSurfaceV1, u32> for State {
 
 /// The mouse moved by this much, wherever its pointer is drawn.
 impl Dispatch<ZwpRelativePointerV1, ()> for State {
-    fn event(state: &mut State, _: &ZwpRelativePointerV1, event: zwp_relative_pointer_v1::Event, _: &(), _: &Connection, _: &QueueHandle<State>) {
+    fn event(
+        state: &mut State,
+        _: &ZwpRelativePointerV1,
+        event: zwp_relative_pointer_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<State>,
+    ) {
         if let zwp_relative_pointer_v1::Event::RelativeMotion { dx, dy, .. } = event {
             let scale = state.shared.scale.get();
             if let Some((id, at)) = &mut state.held {
@@ -429,7 +465,14 @@ impl Dispatch<XdgPopup, u32> for State {
 struct Probe(ObjectId, [bool; 4]);
 
 impl Dispatch<ZwlrLayerSurfaceV1, Probe> for State {
-    fn event(state: &mut State, _: &ZwlrLayerSurfaceV1, event: zwlr_layer_surface_v1::Event, probe: &Probe, _: &Connection, _: &QueueHandle<State>) {
+    fn event(
+        state: &mut State,
+        _: &ZwlrLayerSurfaceV1,
+        event: zwlr_layer_surface_v1::Event,
+        probe: &Probe,
+        _: &Connection,
+        _: &QueueHandle<State>,
+    ) {
         if let zwlr_layer_surface_v1::Event::Configure { width, height, .. } = event {
             log::debug!(target: "moves", "room on {}: {width}x{height}", probe.0);
             *state.shared.room.borrow_mut() = Some((probe.0.clone(), (width as i32, height as i32), probe.1));
@@ -439,7 +482,14 @@ impl Dispatch<ZwlrLayerSurfaceV1, Probe> for State {
 
 /// Monitors come and go.
 impl Dispatch<WlRegistry, GlobalListContents> for State {
-    fn event(state: &mut State, registry: &WlRegistry, event: wl_registry::Event, _: &GlobalListContents, _: &Connection, qh: &QueueHandle<State>) {
+    fn event(
+        state: &mut State,
+        registry: &WlRegistry,
+        event: wl_registry::Event,
+        _: &GlobalListContents,
+        _: &Connection,
+        qh: &QueueHandle<State>,
+    ) {
         match event {
             wl_registry::Event::Global { name, interface, version } if interface == WlOutput::interface().name => {
                 state.add_output(registry, name, version, qh);
@@ -802,9 +852,9 @@ impl Wayland {
         if state.info.is_none() || state.xdg_outputs.is_none() {
             return;
         }
-        let outputs: Vec<(u32, u32)> = globals.contents().with_list(|list| {
-            list.iter().filter(|g| g.interface == WlOutput::interface().name).map(|g| (g.name, g.version)).collect()
-        });
+        let outputs: Vec<(u32, u32)> = globals
+            .contents()
+            .with_list(|list| list.iter().filter(|g| g.interface == WlOutput::interface().name).map(|g| (g.name, g.version)).collect());
         for (name, version) in outputs {
             state.add_output(globals.registry(), name, version, qh);
         }
@@ -833,7 +883,15 @@ impl Wayland {
                 // Past the panels, on the side each is.
                 if let Some((_, (rw, rh), sides)) = room.as_ref().filter(|(o, ..)| o == id) {
                     let (dw, dh) = ((w - rw).max(0), (h - rh).max(0));
-                    let share = |a: bool, b: bool, d: i32| if a && b { d / 2 } else if a { d } else { 0 };
+                    let share = |a: bool, b: bool, d: i32| {
+                        if a && b {
+                            d / 2
+                        } else if a {
+                            d
+                        } else {
+                            0
+                        }
+                    };
                     x += share(sides[0], sides[1], dw);
                     y += share(sides[2], sides[3], dh);
                     (w, h) = (w.min(*rw.max(&1)), h.min(*rh.max(&1)));
@@ -864,7 +922,14 @@ impl Wayland {
         };
         let Some(output) = output else { return };
         let surface = link.compositor.create_surface(qh, ());
-        let layer = shell.get_layer_surface(&surface, Some(&output), zwlr_layer_shell_v1::Layer::Background, "popamp-probe".into(), qh, Probe(output.id(), panel_sides()));
+        let layer = shell.get_layer_surface(
+            &surface,
+            Some(&output),
+            zwlr_layer_shell_v1::Layer::Background,
+            "popamp-probe".into(),
+            qh,
+            Probe(output.id(), panel_sides()),
+        );
         use zwlr_layer_surface_v1::Anchor;
         layer.set_anchor(Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right);
         layer.set_size(0, 0);
@@ -1220,7 +1285,20 @@ pub struct Shm {
 
 impl Shm {
     fn new(link: Link, surface: WlSurface, viewport: Option<WpViewport>, sub: bool) -> Shm {
-        Shm { link, surface, viewport, sub, popup: None, layer: None, layer_h: 0, bufs: Vec::new(), shape: None, input: None, input_changed: false, ready: sub }
+        Shm {
+            link,
+            surface,
+            viewport,
+            sub,
+            popup: None,
+            layer: None,
+            layer_h: 0,
+            bufs: Vec::new(),
+            shape: None,
+            input: None,
+            input_changed: false,
+            ready: sub,
+        }
     }
 
     /// The main window may be drawn from now on.

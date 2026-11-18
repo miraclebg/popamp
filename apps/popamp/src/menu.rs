@@ -33,6 +33,8 @@ pub enum MenuAction {
     BarEdge(popamp_core::config::BarEdge),
     /// A bar's size in percent.
     BarZoom(i32),
+    /// Turns the bar's going under the desktop's side panels on or off.
+    BarUnderSidePanels,
     TitleFormat(String),
     EqPreset(usize, bool),
     EqDialog(DialogKind),
