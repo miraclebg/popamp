@@ -17,6 +17,8 @@ pub use windows::{attributes, use_parent_console, Platform, MINIMIZE_HIDES_COMPA
 #[cfg(linux_like)]
 pub mod wayland;
 #[cfg(linux_like)]
+mod wayland_strip;
+#[cfg(linux_like)]
 mod x11;
 #[cfg(linux_like)]
 pub use x11::{attributes, choose_window_system, Platform, MINIMIZE_HIDES_COMPANIONS, OWNED_FOLLOW_OWNER};

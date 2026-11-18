@@ -1,18 +1,23 @@
 //! X11: window types through winit, shapes, struts and work areas through
 //! a connection of our own. Under Wayland (see `wayland.rs`) none of that
-//! exists, and the calls for it do nothing.
+//! exists, and the calls for it do nothing. Where the window manager
+//! ignores struts under Xwayland, a Wayland layer holds the bar's strip
+//! (see `wayland_strip.rs`).
 
 use super::wayland::{self, Wayland};
+use super::wayland_strip::StripLayer;
 use super::{shape_rects, Mask, Surface, Win, WindowRole};
 use crate::bar::{Screen, Strip};
 use popamp_core::config::BarEdge;
 use popamp_skin::cursors::CursorImage;
+use std::cell::{OnceCell, RefCell};
 use std::sync::Arc;
 use winit::event_loop::ActiveEventLoop;
 use winit::platform::wayland::ActiveEventLoopExtWayland;
 use winit::platform::x11::{WindowAttributesExtX11, WindowType};
 use winit::window::{Window, WindowAttributes};
 use x11rb::connection::{Connection, RequestConnection};
+use x11rb::protocol::randr::ConnectionExt as _;
 use x11rb::protocol::shape::{self, ConnectionExt as _, SK, SO};
 use x11rb::protocol::xproto::{AtomEnum, ClipOrdering, ConfigureWindowAux, ConnectionExt as _, PropMode, Rectangle, StackMode};
 use x11rb::rust_connection::RustConnection;
@@ -68,11 +73,14 @@ pub struct Platform {
     /// winit's window the Wayland connection was joined with, kept while
     /// the bar stands in for it.
     host: Option<Arc<Window>>,
+    /// Holds the bar's strip where the window manager ignores struts;
+    /// looked for at the first strip reserved.
+    strip_layer: OnceCell<Option<RefCell<StripLayer>>>,
 }
 
 impl Platform {
     pub fn connect() -> Platform {
-        Platform { x11: None, on_wayland: false, wayland: None, layer_shell: false, host: None }
+        Platform { x11: None, on_wayland: false, wayland: None, layer_shell: false, host: None, strip_layer: OnceCell::new() }
     }
 
     /// Finds which window system the event loop is on.
@@ -153,6 +161,9 @@ impl Platform {
 
     /// What happened to the windows made by `child`.
     pub fn events(&mut self) -> Vec<wayland::Event> {
+        if let Some(Some(layer)) = self.strip_layer.get() {
+            layer.borrow_mut().poll();
+        }
         self.wayland.as_mut().map(Wayland::events).unwrap_or_default()
     }
 
@@ -201,7 +212,55 @@ impl Platform {
             conn.change_property32(PropMode::REPLACE, xid, atom(name)?, AtomEnum::CARDINAL, values).map_err(|e| err(&e))?;
         }
         conn.flush().map_err(|e| err(&e))?;
+        if let Some(layer) = self.strip_layer() {
+            let area = strip.area();
+            let monitor = self.monitor_at((area.x + area.w / 2, area.y + area.h / 2));
+            let (name, width) = monitor.map_or((None, strip.screen.w), |(name, w)| (Some(name), w));
+            layer.borrow_mut().hold(name.as_deref(), width, strip.edge, strip.height)?;
+        }
         Ok(())
+    }
+
+    /// The Wayland layer for the bar's strip, where the X server runs
+    /// under a Wayland compositor whose window manager lists no struts
+    /// (KWin) and which makes layers.
+    fn strip_layer(&self) -> Option<&RefCell<StripLayer>> {
+        self.strip_layer
+            .get_or_init(|| {
+                let ignored =
+                    std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty()) && !self.wm_supports("_NET_WM_STRUT_PARTIAL")?;
+                let layer = ignored.then(StripLayer::connect).flatten();
+                log::debug!("struts ignored under Xwayland: {ignored}; bar strip as a Wayland layer: {}", layer.is_some());
+                layer.map(RefCell::new)
+            })
+            .as_ref()
+    }
+
+    /// Whether the window manager lists `atom` in `_NET_SUPPORTED`; `None`
+    /// when it lists nothing.
+    fn wm_supports(&self, atom: &str) -> Option<bool> {
+        let conn = self.x11.as_ref()?;
+        let root = conn.setup().roots.first()?.root;
+        let intern = |name: &str| Some(conn.intern_atom(false, name.as_bytes()).ok()?.reply().ok()?.atom);
+        let (supported, wanted) = (intern("_NET_SUPPORTED")?, intern(atom)?);
+        let reply = conn.get_property(false, root, supported, AtomEnum::ATOM, 0, 4096).ok()?.reply().ok()?;
+        let mut atoms = reply.value32()?.peekable();
+        atoms.peek()?;
+        Some(atoms.any(|a| a == wanted))
+    }
+
+    /// The name and width of the RandR monitor `point` is on.
+    fn monitor_at(&self, (x, y): (i32, i32)) -> Option<(String, i32)> {
+        let conn = self.x11.as_ref()?;
+        let root = conn.setup().roots.first()?.root;
+        let monitors = conn.randr_get_monitors(root, true).ok()?.reply().ok()?.monitors;
+        let inside = |m: &&x11rb::protocol::randr::MonitorInfo| {
+            let (mx, my) = (i32::from(m.x), i32::from(m.y));
+            (mx..mx + i32::from(m.width)).contains(&x) && (my..my + i32::from(m.height)).contains(&y)
+        };
+        let m = monitors.iter().find(inside)?;
+        let name = conn.get_atom_name(m.name).ok()?.reply().ok()?.name;
+        Some((String::from_utf8_lossy(&name).into_owned(), i32::from(m.width)))
     }
 
     /// Makes `window` a companion of `owner` (`WM_TRANSIENT_FOR`): the
@@ -253,8 +312,13 @@ impl Platform {
         Some((reply.root_x.into(), reply.root_y.into()))
     }
 
-    /// Nothing to give back: a strut goes with its window.
-    pub fn release(&self, _window: &Window) {}
+    /// A strut goes with its window; the layer holding the strip in its
+    /// stead is given back.
+    pub fn release(&self, _window: &Window) {
+        if let Some(Some(layer)) = self.strip_layer.get() {
+            layer.borrow_mut().release();
+        }
+    }
 
     /// The work areas the window manager publishes for the current desktop:
     /// one per monitor where it says so (`_GTK_WORKAREAS_Dn`), else one
