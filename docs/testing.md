@@ -18,9 +18,23 @@ controls). Not yet checked on a real Windows machine: the bar's strip
 shrinking the work area, the media keys, and the timeline, shuffle,
 repeat and cover in the media overlay.
 
+Ubuntu 26.04.1 (GNOME Shell 50.1, Xwayland 24.1.10) was checked by hand
+from its live image in QEMU: docking, dragging, snapping and toolbar mode
+(see [ubuntu.md](ubuntu.md)). Other systems built on GNOME were not.
+
+Kubuntu 26.04.1 (KDE Plasma 6.6.6, KWin 6.6.6, Xwayland 24.1.10) was
+checked the same way: docking, dragging, snapping, and toolbar mode at
+the top and the bottom with maximized windows kept out of its strip
+(see [kde.md](kde.md)).
+
+Linux Mint 22.3 Cinnamon (Cinnamon 6.6.4, Muffin 6.6.1, Xorg 21.1.12), a
+plain X11 session, was checked the same way from its live image. The bar's
+strut works there as it is, at the top and the bottom, and the desktop
+icons move out of the bar's way.
+
 **Not tested:**
-- Other distributions, GNOME and other desktops.
-- Plain X11 (non-Wayland) sessions.
+- Other distributions and desktops; Ubuntu, Kubuntu and Mint only from live images.
+- Plain X11 sessions other than Cinnamon.
 - PulseAudio-only or pure-ALSA systems.
 - Non-x86_64 CPUs.
 - HiDPI scaling, and dialogs and menus at a display scaling above 100%

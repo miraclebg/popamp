@@ -111,9 +111,18 @@ cargo build --release                      # add --features plus for popamp-plus
 - [Usage](docs/usage.md): keys, remote control from the command line, where settings live.
 - [Building and installing](docs/building.md): requirements, packages per distribution, installing from source.
 - [Plug-ins](docs/plugins.md) and [the skin format](docs/skin-format.md), for making your own.
-- [Wayland and COSMIC](docs/wayland.md): what works as a Wayland program, on Pop!_OS in particular, and why some things cannot.
 - [Testing](docs/testing.md): what was tested, where and how.
 - [Contributing](CONTRIBUTING.md), [Changelog](CHANGELOG.md), [Roadmap](docs/ROADMAP.md).
+
+### Limits and desktop-specific behaviour
+
+Some desktops limit what a program may do with its windows, or behave in
+ways you might not expect. What that means for Popamp, and what to do
+about it:
+
+- [COSMIC (Pop!_OS) and Wayland](docs/wayland.md): what works as a Wayland program, and why some things cannot.
+- [Ubuntu](docs/ubuntu.md): toolbar mode beside Ubuntu's dock, and a bar smaller than the size you chose.
+- [KDE Plasma](docs/kde.md): toolbar mode at the top covers the desktop icons.
 
 ## License
 

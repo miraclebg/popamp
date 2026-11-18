@@ -138,7 +138,11 @@ the way jetAudio's bar does, on Linux as well as on Windows:
   the strip with `_NET_WM_STRUT_PARTIAL`, so maximized windows stop at the
   bar instead of going under it, and it stays inside the panels the
   desktop already has at that edge (GNOME's top bar, a KDE or Xfce
-  panel). On Windows it is an application bar, as the taskbar is. As a
+  panel). KDE Plasma on Wayland ignores struts of the programs that run
+  through Xwayland, so there Popamp holds the strip with an invisible
+  layer of the desktop under the bar (wlr-layer-shell, on a Wayland
+  connection of its own) while the bar stays an X11 window. On Windows
+  it is an application bar, as the taskbar is. As a
   Wayland program it is a layer of the desktop (wlr-layer-shell, which
   COSMIC, KDE Plasma and the wlroots compositors such as Sway and
   Hyprland have), beside the desktop's own panels.
@@ -147,7 +151,14 @@ the way jetAudio's bar does, on Linux as well as on Windows:
   was put until the bar is turned off; the media library moves freely.
 - **Main menu > Toolbar mode:** *On* / *Off*, *Position* (top or bottom of
   the screen) and *Size* (×1 to ×3, apart from the size of the other
-  windows). Position and size can be chosen before the bar is on.
+  windows; only the sizes the bar fits across the screen at are offered,
+  and on a smaller screen the bar takes the biggest of them). Position and
+  size can be chosen before the bar is on.
+- **Full width, under side panels** (off at first, not as a Wayland
+  program): the bar spans the screen's whole width. Ubuntu's dock makes
+  room for the bar but tells the system only of its full height, which
+  leaves an empty corner beside the bar; a side panel that does not make
+  room covers the bar's end. See [Ubuntu](ubuntu.md).
 - **Skins:** a vector skin describes its bar beside its window
   (`[window.bar]` in `skin.toml`, see [skin-format.md](skin-format.md)),
   so one skin gives both, in all its colour sets. The built-in Default
