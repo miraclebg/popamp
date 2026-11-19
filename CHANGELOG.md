@@ -14,6 +14,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Decoder plug-ins that hand over seconds of audio at once (APE):** the
+  position bar and the visualizer move smoothly instead of jumping once a
+  second, and pause and seeking answer at once.
 - **Album rips with a CUE sheet:** an album file that a `.cue` beside it
   cuts into tracks is listed as those tracks, not as one long file, when
   it is added alone or with its folder, to the playlist or the library. When a rip has
