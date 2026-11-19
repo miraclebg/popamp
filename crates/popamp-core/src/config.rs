@@ -274,6 +274,10 @@ settings! {
     /// without a set of this name shows its first.
     skin_colors: String = String::new(),
     usecursors: bool = true,
+    /// What a right or middle click, or a wheel notch, over a window's title
+    /// bar does, as `window:button:action` rules joined by `;`
+    /// (Preferences > Shortcuts).
+    title_shortcuts: String = String::new(),
     // ReplayGain.
     replaygain: bool = false,
     /// 0 = track, 1 = album.

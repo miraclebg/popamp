@@ -108,6 +108,11 @@ impl SkinWin {
         })
     }
 
+    /// Whether the point is on the title bar: the part that drags the window.
+    pub fn on_title(&self, model: &Model, x: i32, y: i32) -> bool {
+        self.hit(model, x, y).and_then(|i| self.element(model, i)).is_some_and(|(el, _)| matches!(el.kind, Kind::Drag { .. }))
+    }
+
     fn element(&self, model: &Model, i: usize) -> Option<(Element, Rect)> {
         let c = self.current(model)?;
         let el = c.mode.elements.get(i)?;
@@ -929,6 +934,20 @@ mod tests {
         assert!(matches!(w.mouse_down(&mut m, &input(5, 5)), Out::BeginMove));
         m.settings_mut().main_bar = true;
         assert!(matches!(w.mouse_down(&mut m, &input(5, 5)), Out::None), "a bar stays at its screen edge");
+    }
+
+    #[test]
+    fn only_the_title_bar_counts_as_the_title() {
+        let mut m = Model::for_tests();
+        for key in [WindowKey::Main, WindowKey::Eq, WindowKey::Playlist] {
+            let w = SkinWin::new(key);
+            assert!(w.on_title(&m, 100, 5), "{key:?}: the bar that drags the window");
+            assert!(!w.on_title(&m, 100, 60), "{key:?}: not the body");
+        }
+        // The shaded main window is all title bar, but for its buttons.
+        m.settings_mut().windowshade = true;
+        let w = SkinWin::new(WindowKey::Main);
+        assert!(w.on_title(&m, 100, 5) || w.on_title(&m, 60, 5), "shaded");
     }
 
     #[test]

@@ -37,6 +37,7 @@ mod plugins;
 mod render;
 mod scale;
 mod scan;
+mod shortcuts;
 mod skinwin;
 mod ui;
 mod update;

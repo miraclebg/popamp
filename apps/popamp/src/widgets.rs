@@ -89,6 +89,12 @@ pub enum Widget<A> {
         selected: usize,
         action: A,
     },
+    /// A drop-down list: shows the option picked; a click opens the
+    /// options below it. See [`Form::choice`].
+    Choice {
+        options: Vec<String>,
+        selected: usize,
+    },
     /// A picture, or `note` in an empty frame until it arrives.
     Image {
         image: Option<Bitmap>,
@@ -138,11 +144,13 @@ pub struct Form<A> {
     focus: Option<usize>,
     /// The button held down by the mouse.
     pressed: Option<usize>,
+    /// The drop-down whose options are showing.
+    open: Option<usize>,
 }
 
 impl<A: Copy + PartialEq> Form<A> {
     pub fn new(w: i32, h: i32) -> Form<A> {
-        Form { w, h, controls: Vec::new(), pages: Vec::new(), page: 0, focus: None, pressed: None }
+        Form { w, h, controls: Vec::new(), pages: Vec::new(), page: 0, focus: None, pressed: None, open: None }
     }
 
     /// Adds a control shown on every page and returns its index. The first
@@ -217,6 +225,11 @@ impl<A: Copy + PartialEq> Form<A> {
         self.controls[i].0
     }
 
+    /// Moves or resizes control `i`, for a frame sized after what it holds.
+    pub fn set_rect(&mut self, i: usize, r: Rect) {
+        self.controls[i].0 = r;
+    }
+
     /// Changes the text of label or button `i`.
     pub fn set_label(&mut self, i: usize, new: String) {
         if let Widget::Label { text: old, .. } | Widget::Button { label: old, .. } = &mut self.controls[i].1 {
@@ -263,6 +276,61 @@ impl<A: Copy + PartialEq> Form<A> {
     #[cfg(linux_like)]
     pub fn checked(&self, i: usize) -> bool {
         matches!(self.controls[i].1, Widget::Check { checked: true, .. })
+    }
+
+    /// The option picked in drop-down `i`.
+    pub fn choice(&self, i: usize) -> usize {
+        match &self.controls[i].1 {
+            Widget::Choice { selected, .. } => *selected,
+            _ => 0,
+        }
+    }
+
+    /// Picks option `n` of drop-down `i` (the last, when `n` is past it).
+    pub fn set_choice(&mut self, i: usize, n: usize) {
+        if let Widget::Choice { options, selected } = &mut self.controls[i].1 {
+            *selected = n.min(options.len().saturating_sub(1));
+        }
+    }
+
+    /// Where the options of the open drop-down `i` are drawn: under it.
+    fn dropdown(&self, i: usize) -> Rect {
+        let r = self.controls[i].0;
+        let n = match &self.controls[i].1 {
+            Widget::Choice { options, .. } => options.len() as i32,
+            _ => 0,
+        };
+        Rect::new(r.x, r.y + r.h, r.w, n * ROW_H + 4)
+    }
+
+    /// A press while a drop-down is open: it picks the option under the
+    /// mouse, or just closes the list; either way the press is spent.
+    /// A key while drop-down `i` is open, which has the keys: the arrows
+    /// pick, Enter and Escape close it.
+    fn key_in_open(&mut self, i: usize, key: Key) -> Event<A> {
+        let step = match key {
+            Key::Up => -1,
+            Key::Down => 1,
+            Key::Enter | Key::Escape => {
+                self.open = None;
+                return Event::None;
+            }
+            _ => return Event::None,
+        };
+        let n = (self.choice(i) as i64 + step).max(0) as usize;
+        self.set_choice(i, n);
+        Event::Selected
+    }
+
+    fn press_in_open(&mut self, i: usize, x: i32, y: i32) -> Event<A> {
+        self.open = None;
+        let list = self.dropdown(i);
+        if !list.contains(x, y) {
+            return Event::None;
+        }
+        let row = ((y - list.y - 2) / ROW_H).max(0) as usize;
+        self.set_choice(i, row);
+        Event::Selected
     }
 
     /// The picked segment of tabs `i`.
@@ -322,6 +390,9 @@ impl<A: Copy + PartialEq> Form<A> {
     }
 
     pub fn mouse_down(&mut self, x: i32, y: i32, double: bool) -> Event<A> {
+        if let Some(open) = self.open {
+            return self.press_in_open(open, x, y);
+        }
         let Some(i) = (0..self.controls.len()).find(|&i| {
             let (r, w) = &self.controls[i];
             self.shown(i) && r.contains(x, y) && !matches!(w, Widget::Label { .. } | Widget::Group { .. } | Widget::Image { .. })
@@ -366,6 +437,10 @@ impl<A: Copy + PartialEq> Form<A> {
                 }
             }
             Widget::Pages { .. } => self.pick_page(i, y),
+            Widget::Choice { .. } => {
+                self.open = Some(i);
+                Event::None
+            }
             Widget::Label { .. } | Widget::Group { .. } | Widget::Image { .. } => Event::None,
         }
     }
@@ -403,6 +478,9 @@ impl<A: Copy + PartialEq> Form<A> {
     }
 
     pub fn key(&mut self, key: Key) -> Event<A> {
+        if let Some(i) = self.open {
+            return self.key_in_open(i, key);
+        }
         match key {
             Key::Escape => return Event::Cancel,
             Key::Enter => return self.default_action().map_or(Event::Activated, Event::Clicked),
@@ -468,6 +546,15 @@ impl<A: Copy + PartialEq> Form<A> {
                 Widget::Image { image, note } => draw_image(pen, *r, image.as_ref(), note),
                 Widget::Tabs { labels, selected, .. } => draw_tabs(pen, *r, labels, *selected),
                 Widget::Pages { labels, selected, .. } => draw_pages(pen, *r, labels, *selected),
+                Widget::Choice { options, selected } => {
+                    draw_choice(pen, *r, options.get(*selected).map_or("", |s| s), self.open == Some(i))
+                }
+            }
+        }
+        // The options of an open drop-down go over what is below it.
+        if let Some(i) = self.open.filter(|&i| self.shown(i)) {
+            if let Widget::Choice { options, selected } = &self.controls[i].1 {
+                draw_options(pen, self.dropdown(i), options, *selected);
             }
         }
     }
@@ -563,8 +650,14 @@ fn draw_list(pen: &mut Pen, r: Rect, rows: &[String], selected: Option<usize>, s
         if sel {
             pen.fill(r.x + 2, y, r.w - 4, ROW_H, if focused { HILITE } else { mix(HILITE, FIELD_BG, 0.5) });
         }
-        let t = pen.fit(row, r.w - 12);
-        pen.text(r.x + 5, y + (ROW_H - FONT_PX as i32) / 2 - 1, &t, TEXT, r.x + 2, r.w - 4);
+        // A row with tabs is a row of columns of equal width.
+        let cols = row.split('\t').count() as i32;
+        let col = (r.w - 4) / cols;
+        for (n, cell) in row.split('\t').enumerate() {
+            let x = r.x + 2 + n as i32 * col;
+            let t = pen.fit(cell, col - 8);
+            pen.text(x + 3, y + (ROW_H - FONT_PX as i32) / 2 - 1, &t, TEXT, x, col - 2);
+        }
     }
     // A thin bar on the right shows where the visible rows are.
     if rows.len() > page && page > 0 {
@@ -572,6 +665,30 @@ fn draw_list(pen: &mut Pen, r: Rect, rows: &[String], selected: Option<usize>, s
         let bar_h = (track * page as i32 / rows.len() as i32).max(10);
         let bar_y = r.y + 2 + (track - bar_h) * scroll as i32 / (rows.len() - page) as i32;
         pen.fill(r.x + r.w - 5, bar_y, 3, bar_h, BORDER);
+    }
+}
+
+fn draw_choice(pen: &mut Pen, r: Rect, text: &str, open: bool) {
+    sunken(pen, r, open);
+    let t = pen.fit(text, r.w - 24);
+    pen.text(r.x + 5, text_y(r), &t, TEXT, r.x + 2, r.w - 18);
+    // A small arrow, pointing down.
+    let (ax, ay) = (r.x + r.w - 13, r.y + r.h / 2 - 1);
+    for k in 0..4 {
+        pen.vline(ax + k, ay + k, 1, TEXT);
+        pen.vline(ax + 7 - k, ay + k, 1, TEXT);
+    }
+}
+
+fn draw_options(pen: &mut Pen, r: Rect, options: &[String], selected: usize) {
+    sunken(pen, r, true);
+    for (n, option) in options.iter().enumerate() {
+        let y = r.y + 2 + n as i32 * ROW_H;
+        if n == selected {
+            pen.fill(r.x + 2, y, r.w - 4, ROW_H, HILITE);
+        }
+        let t = pen.fit(option, r.w - 12);
+        pen.text(r.x + 5, y + (ROW_H - FONT_PX as i32) / 2 - 1, &t, TEXT, r.x + 2, r.w - 4);
     }
 }
 
@@ -674,6 +791,43 @@ mod tests {
         for c in s.chars() {
             f.key(Key::Char(c));
         }
+    }
+
+    #[test]
+    fn a_drop_down_opens_and_picks_an_option() {
+        let mut f: Form<Act> = Form::new(300, 200);
+        let c = f.add(Rect::new(10, 10, 120, 24), Widget::Choice { options: rows(4), selected: 0 });
+        assert_eq!(f.mouse_down(20, 20, false), Event::None);
+        // The options are under the box; the third is at 10 + 24 + 2 + 2 * ROW_H.
+        assert_eq!(f.mouse_down(20, 10 + 24 + 2 + 2 * ROW_H + 3, false), Event::Selected);
+        assert_eq!(f.choice(c), 2);
+        // Closed again: a press where the options were no longer picks.
+        assert_eq!(f.mouse_down(20, 10 + 24 + 2 + 3, false), Event::None);
+        assert_eq!(f.choice(c), 2);
+    }
+
+    #[test]
+    fn a_press_outside_closes_a_drop_down_without_acting() {
+        let mut f: Form<Act> = Form::new(300, 200);
+        let c = f.add(Rect::new(10, 10, 120, 24), Widget::Choice { options: rows(3), selected: 1 });
+        f.add(Rect::new(10, 150, 80, 24), Widget::Check { label: "x".into(), checked: false, action: Act::Flag });
+        f.mouse_down(20, 20, false);
+        assert_eq!(f.mouse_down(20, 155, false), Event::None, "the check box is not toggled by the press that closes");
+        assert_eq!(f.choice(c), 1);
+        assert_eq!(f.mouse_down(20, 155, false), Event::Toggled(Act::Flag, true));
+    }
+
+    #[test]
+    fn the_arrows_pick_in_an_open_drop_down() {
+        let mut f: Form<Act> = Form::new(300, 200);
+        let c = f.add(Rect::new(10, 10, 120, 24), Widget::Choice { options: rows(3), selected: 0 });
+        f.mouse_down(20, 20, false);
+        assert_eq!(f.key(Key::Down), Event::Selected);
+        assert_eq!(f.key(Key::Down), Event::Selected);
+        assert_eq!(f.key(Key::Down), Event::Selected);
+        assert_eq!(f.choice(c), 2, "stops at the last");
+        assert_eq!(f.key(Key::Escape), Event::None, "closes the list, not the form");
+        assert_eq!(f.key(Key::Escape), Event::Cancel);
     }
 
     #[test]

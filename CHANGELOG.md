@@ -18,6 +18,12 @@ by Thermoptic.
   rolls it up to a strip and another unrolls it; a classic skin also has
   the shade button. A skin that draws the library window itself gets the
   strip too, unless it gives its own `shade`. The setting is `ml_ws`.
+- **Title-bar shortcuts** (Preferences > Shortcuts): a right or middle
+  click, or the wheel, over the title bar of the main, equalizer or
+  playlist window runs previous, next, pause, stop, shuffle, repeat,
+  volume up or volume down. The rules are a table with Assign and Remove,
+  one action per click of a window; a right-click rule replaces that title
+  bar's menu. The setting is `title_shortcuts`.
 
 ## [1.0.3] - 2026-11-19
 

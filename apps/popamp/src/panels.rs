@@ -9,6 +9,7 @@ use crate::fileinfo::{AlbumArt, FileInfo};
 use crate::filetypes::Group;
 use crate::model::{Model, UiReq};
 use crate::museum::{self, Fetched, Job};
+use crate::shortcuts;
 use crate::widgets::{Event, Form, Rect, Widget, BUTTON, PAGE_H, ROW_H};
 use popamp_audio::output::Device;
 use popamp_core::config::Settings;
@@ -54,6 +55,10 @@ pub enum Act {
     InstallSkin,
     /// Opens the Gallery.
     Gallery,
+    /// Puts the title-bar shortcut in the drop-downs into the table.
+    AssignShortcut,
+    /// Takes the title-bar shortcut picked in the table out.
+    RemoveShortcut,
     /// The check box of the n-th plug-in.
     #[cfg(feature = "plugins")]
     Plugin(usize),
@@ -519,11 +524,12 @@ enum Section {
     Library,
     Desktop,
     Internet,
+    Shortcuts,
 }
 
 impl Section {
-    const ALL: [Section; 6] =
-        [Section::Windows, Section::Playlist, Section::Playback, Section::Library, Section::Desktop, Section::Internet];
+    const ALL: [Section; 7] =
+        [Section::Windows, Section::Playlist, Section::Playback, Section::Library, Section::Desktop, Section::Internet, Section::Shortcuts];
 
     fn label(self) -> &'static str {
         match self {
@@ -533,6 +539,7 @@ impl Section {
             Section::Library => "Media Library",
             Section::Desktop => "Desktop",
             Section::Internet => "Internet",
+            Section::Shortcuts => "Shortcuts",
         }
     }
 
@@ -546,6 +553,7 @@ impl Section {
             Section::Library => &[Flag::EnqueueDefault],
             Section::Desktop => &[Flag::TrayIcon, Flag::MinimizeToTray, Flag::NotifyTracks, Flag::GlobalHotkeys],
             Section::Internet => &[Flag::CheckUpdates],
+            Section::Shortcuts => &[],
         }
     }
 
@@ -554,7 +562,7 @@ impl Section {
             Section::Playlist => &[Field::FontSize, Field::TitleFormat],
             Section::Playback => &[Field::FadeMs, Field::CrossfadeMs, Field::BufferMs, Field::SoundFont],
             Section::Internet => &[Field::Proxy],
-            Section::Windows | Section::Library | Section::Desktop => &[],
+            Section::Windows | Section::Library | Section::Desktop | Section::Shortcuts => &[],
         }
     }
 }
@@ -572,6 +580,104 @@ pub struct Preferences {
     devices: Vec<Device>,
     device_list: usize,
     status: usize,
+    shortcuts: ShortcutEditor,
+}
+
+/// The Shortcuts page: the title-bar shortcuts as a table, and under it the
+/// window, mouse and action of the one to assign or remove.
+struct ShortcutEditor {
+    rules: Vec<shortcuts::Rule>,
+    list: usize,
+    window: usize,
+    mouse: usize,
+    action: usize,
+    /// The row of the table last put into the drop-downs.
+    shown: Option<usize>,
+}
+
+/// Rows the shortcut table shows at once.
+const SHORTCUT_ROWS: i32 = 6;
+
+impl ShortcutEditor {
+    /// Lays the editor out on `page` of `form`, from `y` down, `w` wide at
+    /// `x`. Returns it, the bottom of its frame and how far down the
+    /// options of its drop-downs reach.
+    fn build(form: &mut Form<Act>, page: usize, (x, y, w): (i32, i32, i32), spec: &str) -> (ShortcutEditor, i32, i32) {
+        let note = "A click, or the wheel, over a title bar (full size or shaded):";
+        form.add_on(page, Rect::new(x - 8, y - 6, w + 16, 20), Widget::Label { text: note.into(), dim: true });
+        let col = w / 3;
+        let y = y + 20;
+        for (n, head) in ["Window", "Mouse", "Action"].into_iter().enumerate() {
+            form.add_on(page, Rect::new(x + 5 + n as i32 * col, y, col, 18), Widget::Label { text: head.into(), dim: true });
+        }
+        let y = y + 20;
+        let list_h = SHORTCUT_ROWS * ROW_H + 4;
+        let list = form.add_on(page, Rect::new(x, y, w, list_h), Widget::List { rows: vec![], selected: None, scroll: 0 });
+        let y = y + list_h + 8;
+        let names = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let mut choice = |n: i32, options: Vec<String>| {
+            form.add_on(page, Rect::new(x + n * col, y, col - 6, 24), Widget::Choice { options, selected: 0 })
+        };
+        let window = choice(0, names(&shortcuts::TARGETS.map(|t| t.2)));
+        let mouse = choice(1, names(&shortcuts::CLICKS.map(|t| t.2)));
+        let action = choice(2, names(&shortcuts::ACTIONS.map(|t| t.2)));
+        let options_bottom = y + 24 + shortcuts::ACTIONS.len() as i32 * ROW_H + 4;
+        let y = y + 24 + 8;
+        let add = Widget::Button { label: "Assign".into(), action: Act::AssignShortcut, default: false };
+        form.add_on(page, Rect::new(x, y, BUTTON.0, BUTTON.1), add);
+        let remove = Widget::Button { label: "Remove".into(), action: Act::RemoveShortcut, default: false };
+        form.add_on(page, Rect::new(x + BUTTON.0 + 6, y, BUTTON.0, BUTTON.1), remove);
+        let mut editor = ShortcutEditor { rules: shortcuts::parse(spec), list, window, mouse, action, shown: None };
+        editor.show_rules(form, None);
+        (editor, y + BUTTON.1 + 10, options_bottom)
+    }
+
+    /// The table, then the window, mouse and action drop-downs.
+    #[cfg(test)]
+    fn controls(&self) -> [usize; 4] {
+        [self.list, self.window, self.mouse, self.action]
+    }
+
+    fn show_rules(&mut self, form: &mut Form<Act>, select: Option<usize>) {
+        form.set_rows(self.list, self.rules.iter().map(shortcuts::row).collect(), select);
+        self.shown = select;
+    }
+
+    /// The rule the drop-downs make.
+    fn picked(&self, form: &Form<Act>) -> Option<shortcuts::Rule> {
+        Some(shortcuts::Rule {
+            window: shortcuts::TARGETS.get(form.choice(self.window))?.0,
+            click: shortcuts::CLICKS.get(form.choice(self.mouse))?.0,
+            command: shortcuts::ACTIONS.get(form.choice(self.action))?.0,
+        })
+    }
+
+    fn assign(&mut self, form: &mut Form<Act>) {
+        let Some(rule) = self.picked(form) else { return };
+        shortcuts::assign(&mut self.rules, rule);
+        let row = self.rules.iter().position(|r| *r == rule);
+        self.show_rules(form, row);
+    }
+
+    fn remove(&mut self, form: &mut Form<Act>) {
+        let Some(n) = form.selected(self.list).filter(|&n| n < self.rules.len()) else { return };
+        self.rules.remove(n);
+        self.show_rules(form, None);
+    }
+
+    /// A row newly picked in the table shows in the drop-downs.
+    fn follow(&mut self, form: &mut Form<Act>) {
+        let picked = form.selected(self.list);
+        if picked == self.shown {
+            return;
+        }
+        self.shown = picked;
+        let Some(rule) = picked.and_then(|n| self.rules.get(n)) else { return };
+        let at = |found: Option<usize>| found.unwrap_or(0);
+        form.set_choice(self.window, at(shortcuts::TARGETS.iter().position(|t| t.0 == rule.window)));
+        form.set_choice(self.mouse, at(shortcuts::CLICKS.iter().position(|t| t.0 == rule.click)));
+        form.set_choice(self.action, at(shortcuts::ACTIONS.iter().position(|t| t.0 == rule.command)));
+    }
 }
 
 /// Rows the device list shows at once.
@@ -588,10 +694,12 @@ impl Preferences {
         #[cfg(linux_like)]
         let mut type_checks = [0; 3];
         let mut device_list = 0;
+        let mut shortcuts = None;
         for (page, section) in Section::ALL.into_iter().enumerate() {
             let flags = section.flags();
             let rows = flags.len() as i32;
-            form.add_on(page, Rect::new(x0, 10, cw, 22 + rows * 22), Widget::Group { label: section.label().into() });
+            let frame = Rect::new(x0, 10, cw, 22 + rows * 22);
+            let group = form.add_on(page, frame, Widget::Group { label: section.label().into() });
             for (n, &f) in flags.iter().enumerate() {
                 form.add_on(
                     page,
@@ -619,6 +727,13 @@ impl Preferences {
                     device_list = form.add_on(page, Rect::new(x0 + 140, y, cw - 140, DEVICE_ROWS * ROW_H + 4), list);
                     form.set_rows(device_list, devices.iter().map(|d| d.label.clone()).collect(), current);
                     y += DEVICE_ROWS * ROW_H + 10;
+                }
+                Section::Shortcuts => {
+                    let (editor, frame_bottom, options_bottom) =
+                        ShortcutEditor::build(&mut form, page, (x0 + 12, y, cw - 24), &s.title_shortcuts);
+                    form.set_rect(group, Rect { h: frame_bottom - frame.y, ..frame });
+                    shortcuts = Some(editor);
+                    y = options_bottom;
                 }
                 Section::Desktop => {
                     form.add_on(page, Rect::new(x0, y, cw, 22 + 3 * 22), Widget::Group { label: "Open with Popamp".into() });
@@ -665,6 +780,7 @@ impl Preferences {
             devices,
             device_list,
             status,
+            shortcuts: shortcuts.expect("Preferences has a Shortcuts page"),
         }
     }
 
@@ -675,6 +791,18 @@ impl Preferences {
                 true
             }
             Event::Clicked(Act::Ok) => self.apply(model),
+            Event::Clicked(Act::AssignShortcut) => {
+                self.shortcuts.assign(&mut self.form);
+                true
+            }
+            Event::Clicked(Act::RemoveShortcut) => {
+                self.shortcuts.remove(&mut self.form);
+                true
+            }
+            Event::Selected => {
+                self.shortcuts.follow(&mut self.form);
+                true
+            }
             #[cfg(windows)]
             Event::Clicked(Act::DefaultApps) => {
                 crate::filetypes::open_default_apps();
@@ -701,6 +829,7 @@ impl Preferences {
         if let Some(d) = self.form.selected(self.device_list).and_then(|i| self.devices.get(i)) {
             model.settings_mut().output_device = d.name.clone();
         }
+        model.settings_mut().title_shortcuts = shortcuts::format(&self.shortcuts.rules);
         model.settings_mut().sanitize();
         model.push_engine_settings();
         #[cfg(feature = "plugins")]
@@ -1154,6 +1283,48 @@ pub(crate) mod tests {
         click(&mut p, &mut m, r);
         assert!(!m.settings().snap && !m.settings().pladv && m.settings().aot);
         assert!(m.ui.iter().any(|r| matches!(r, UiReq::AlwaysOnTop)), "the windows are told");
+    }
+
+    /// Opens drop-down `i` of Preferences with the mouse and picks its option `n`.
+    fn pick(p: &mut Panel, m: &mut Model, i: usize, n: i32) {
+        let r = reach(p, m, i);
+        click(p, m, r);
+        click(p, m, Rect::new(r.x, r.y + r.h + 2 + n * ROW_H + 1, 1, 1));
+    }
+
+    #[test]
+    fn the_shortcuts_table_assigns_changes_and_removes_rules() {
+        let mut m = songs(&[]);
+        m.settings_mut().title_shortcuts = "main:right:next".into();
+        let mut p = Panel::open(PanelKind::Preferences, &m);
+        assert!(Section::ALL.last() == Some(&Section::Shortcuts), "after Internet");
+        let [list, window, mouse, action] = {
+            let Panel::Prefs(pr) = &p else { unreachable!() };
+            pr.shortcuts.controls()
+        };
+        let rows = |p: &Panel| match p.form().widget(list) {
+            Widget::List { rows, .. } => rows.clone(),
+            _ => unreachable!(),
+        };
+        assert_eq!(rows(&p), ["Main\tRight Mouse\tNext track"]);
+        // Equalizer window, Middle Mouse, Pause: a new row.
+        pick(&mut p, &mut m, window, 1);
+        pick(&mut p, &mut m, mouse, 1);
+        pick(&mut p, &mut m, action, 2);
+        click_button(&mut p, &mut m, Act::AssignShortcut);
+        assert_eq!(rows(&p).len(), 2);
+        // The same click again, now Stop: the row changes, no new one.
+        pick(&mut p, &mut m, action, 3);
+        click_button(&mut p, &mut m, Act::AssignShortcut);
+        assert_eq!(rows(&p), ["Main\tRight Mouse\tNext track", "Equalizer\tMiddle Mouse\tStop"]);
+        // A row picked in the table shows in the drop-downs, and Remove takes it out.
+        let r = p.form().rect(list);
+        click(&mut p, &mut m, Rect::new(r.x, r.y, 1, 1));
+        assert_eq!([window, mouse, action].map(|i| p.form().choice(i)), [0, 0, 1]);
+        click_button(&mut p, &mut m, Act::RemoveShortcut);
+        assert_eq!(rows(&p), ["Equalizer\tMiddle Mouse\tStop"]);
+        assert!(!press(&mut p, &mut m, Key::Enter), "OK closes it");
+        assert_eq!(m.settings().title_shortcuts, "eq:middle:stop");
     }
 
     #[test]
