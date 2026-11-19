@@ -25,6 +25,12 @@ by Thermoptic.
   one action per click of a window; a right-click rule replaces that title
   bar's menu. The setting is `title_shortcuts`.
 
+### Changed
+
+- **A skin folder from Install from file:** picking a vector skin's
+  `skin.toml` puts on the folder it is in, where it is, instead of copying
+  the lone file; the skin reloads as its files change.
+
 ## [1.0.3] - 2026-11-19
 
 ### Added
