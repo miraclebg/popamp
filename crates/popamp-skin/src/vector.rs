@@ -658,6 +658,7 @@ impl Builder<'_> {
             reset: f.reset,
             wheel: f.wheel_step.unwrap_or(0),
             detent: f.detent.unwrap_or(0),
+            thumb_thirds: None,
         })
     }
 

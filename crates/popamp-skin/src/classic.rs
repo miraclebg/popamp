@@ -112,6 +112,7 @@ fn main_shade() -> Mode {
                 reset: None,
                 wheel: 0,
                 detent: 0,
+                thumb_thirds: None,
             }),
         )
         .show(Cond::If(Flag::Seekable))
@@ -251,6 +252,7 @@ fn seek_bar() -> Element {
             reset: None,
             wheel: 0,
             detent: 0,
+            thumb_thirds: None,
         }),
     )
     .show(Cond::If(Flag::Seekable))
@@ -287,6 +289,7 @@ fn volume_slider(value: Value, area: Rect, src_x: i32, sheet_h: i32, detent: i64
             reset: None,
             wheel: 0,
             detent,
+            thumb_thirds: None,
         }),
     )
     .cursor(C::VolBal)
@@ -320,6 +323,29 @@ fn eq_shade() -> Mode {
         Element::new(Place::fixed(0, 0, 275, 14), Kind::Drag { double: Some(Command::ToggleEqShade) }).cursor(C::EqTitle),
     ];
     v.extend(eq_title_buttons(x, Some(e::SHADE_CLOSE_PRESSED), Some(e::UNSHADE_PRESSED)));
+    // Volume and balance, as in Winamp's shaded equalizer.
+    for (value, area, thumbs, detent) in
+        [(Value::Volume, e::AT_SHADE_VOLUME, e::SHADE_VOLUME_THUMBS, 0), (Value::Balance, e::AT_SHADE_BALANCE, e::SHADE_BALANCE_THUMBS, 4)]
+    {
+        v.push(
+            Element::new(
+                rect(area),
+                Kind::Slider(Slider {
+                    value,
+                    vertical: false,
+                    track: None,
+                    thumb: Look::default(),
+                    thumb_len: thumbs[0].w,
+                    live: true,
+                    reset: None,
+                    wheel: 0,
+                    detent,
+                    thumb_thirds: Some(thumbs.map(|t| paint(x, t))),
+                }),
+            )
+            .cursor(C::VolBal),
+        );
+    }
     Mode { width: Dim::Fixed(e::SHADE_SIZE.0), height: Dim::Fixed(e::SHADE_SIZE.1), cursor: C::EqNormal, elements: v, shape: None }
 }
 
@@ -371,6 +397,7 @@ fn eq_slider(value: Value, x: i32) -> Element {
             reset: Some(31),
             wheel: -2,
             detent: 0,
+            thumb_thirds: None,
         }),
     )
     .cursor(C::EqSlid)

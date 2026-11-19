@@ -272,6 +272,13 @@ pub mod eq {
     pub const UNSHADE_PRESSED: Rect = r(1, 38, 9, 9);
     pub const SHADE_CLOSE_PRESSED: Rect = r(11, 38, 9, 9);
 
+    /// Windowshade volume and balance sliders: a 3x7 thumb for the lower,
+    /// middle and upper third of the range.
+    pub const SHADE_VOLUME_THUMBS: [Rect; 3] = [r(1, 30, 3, 7), r(4, 30, 3, 7), r(7, 30, 3, 7)];
+    pub const SHADE_BALANCE_THUMBS: [Rect; 3] = [r(11, 30, 3, 7), r(14, 30, 3, 7), r(17, 30, 3, 7)];
+    pub const AT_SHADE_VOLUME: Rect = r(61, 4, 97, 7);
+    pub const AT_SHADE_BALANCE: Rect = r(164, 4, 42, 7);
+
     pub const AT_ON: (i32, i32) = (14, 18);
     pub const AT_AUTO: (i32, i32) = (40, 18);
     pub const AT_PRESETS: (i32, i32) = (217, 18);
@@ -407,7 +414,11 @@ mod tests {
             fits(Sheet::EqMain, b.normal);
             fits(Sheet::EqMain, b.pressed);
         }
-        for rect in [eq::SHADE_ACTIVE, eq::SHADE_INACTIVE, eq::UNSHADE_PRESSED, eq::SHADE_CLOSE_PRESSED] {
+        for rect in [eq::SHADE_ACTIVE, eq::SHADE_INACTIVE, eq::UNSHADE_PRESSED, eq::SHADE_CLOSE_PRESSED]
+            .into_iter()
+            .chain(eq::SHADE_VOLUME_THUMBS)
+            .chain(eq::SHADE_BALANCE_THUMBS)
+        {
             fits(Sheet::EqEx, rect);
         }
         for (a, b) in [pl::TOP_LEFT, pl::TITLE, pl::TOP_TILE, pl::TOP_RIGHT, pl::SHADE_LEFT, pl::SHADE_RIGHT] {

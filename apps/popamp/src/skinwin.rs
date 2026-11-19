@@ -497,7 +497,8 @@ impl SkinWin {
             let src = f.frame(shown, min, max);
             picture(b, &model.skin, f.picture, src, Rect { x: r.x, y: r.y, ..src });
         }
-        if let Some(p) = s.thumb.pick(false, held, true) {
+        let own = s.thumb_thirds.map(|t| t[(((shown - min).clamp(0, max - min) * 3 / (max - min + 1)) as usize).min(2)]);
+        if let Some(p) = own.or_else(|| s.thumb.pick(false, held, true)) {
             let off = thumb_offset(s, r, shown, min, max);
             let (x, y) = if s.vertical { (r.x, r.y + off) } else { (r.x + off, r.y) };
             draw_paint(b, &model.skin, p, Rect { x, y, ..r }, Fill::Once);

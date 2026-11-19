@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+Taken from the fork [Popamp Deluxe](https://github.com/Thermoptic/popampdeluxe)
+by Thermoptic.
+
+- **Volume and balance in the shaded equalizer,** as in Winamp: a classic
+  skin's sliders in the windowshade strip, with the thumb that changes in
+  the lower, middle and upper third of the range.
+
 ## [1.0.3] - 2026-11-19
 
 ### Added
