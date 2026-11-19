@@ -14,6 +14,10 @@ by Thermoptic.
 - **Volume and balance in the shaded equalizer,** as in Winamp: a classic
   skin's sliders in the windowshade strip, with the thumb that changes in
   the lower, middle and upper third of the range.
+- **Windowshade for the Media Library:** a double click on its title bar
+  rolls it up to a strip and another unrolls it; a classic skin also has
+  the shade button. A skin that draws the library window itself gets the
+  strip too, unless it gives its own `shade`. The setting is `ml_ws`.
 
 ## [1.0.3] - 2026-11-19
 

@@ -1392,6 +1392,11 @@ impl Model {
                 self.settings_mut().pe_ws = v;
                 self.ui.push(UiReq::Layout);
             }
+            C::ToggleLibraryShade => {
+                let v = !self.settings().ml_ws;
+                self.settings_mut().ml_ws = v;
+                self.ui.push(UiReq::Layout);
+            }
             C::ToggleEqWindow => {
                 let v = !self.settings().eq_open;
                 self.settings_mut().eq_open = v;

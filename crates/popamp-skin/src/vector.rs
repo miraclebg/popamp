@@ -530,7 +530,7 @@ impl Builder<'_> {
             }
             normal = spanning_the_screen(normal);
         }
-        let def = WindowDef {
+        let mut def = WindowDef {
             key: w.key.0,
             placement,
             normal,
@@ -542,6 +542,16 @@ impl Builder<'_> {
                 _ => Wheel::Volume(w.wheel_volume.unwrap_or(8)),
             },
         };
+        if def.key == WindowKey::Library {
+            // Every skin's library can shade, as the playlist's does: a
+            // double click on its title bar, where the skin left that open.
+            def.shade.get_or_insert_with(crate::classic::library_shade);
+            for e in &mut def.normal.elements {
+                if let Kind::Drag { double } = &mut e.kind {
+                    double.get_or_insert(Command::ToggleLibraryShade);
+                }
+            }
+        }
         self.skin.layout.windows.retain(|old| old.key != def.key);
         self.skin.layout.windows.push(def);
         Ok(())

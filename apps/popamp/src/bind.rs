@@ -185,7 +185,7 @@ pub fn shaded(model: &Model, key: WindowKey) -> bool {
         WindowKey::Main => s.windowshade,
         WindowKey::Eq => s.eq_ws,
         WindowKey::Playlist => s.pe_ws,
-        WindowKey::Library => false,
+        WindowKey::Library => s.ml_ws,
     }
 }
 
@@ -320,6 +320,13 @@ mod tests {
         assert_eq!(window_size(&m, WindowKey::Playlist), (450, 290));
         m.settings_mut().pe_ws = true;
         assert_eq!(window_size(&m, WindowKey::Playlist), (450, 14));
+        m.settings_mut().ml_width = 500;
+        m.settings_mut().ml_height = 300;
+        assert_eq!(window_size(&m, WindowKey::Library), (500, 300));
+        m.settings_mut().ml_ws = true;
+        assert_eq!(window_size(&m, WindowKey::Library), (500, 14), "shaded: the title bar only");
+        m.exec(Command::ToggleLibraryShade);
+        assert_eq!(window_size(&m, WindowKey::Library), (500, 300), "and back");
     }
 
     #[test]

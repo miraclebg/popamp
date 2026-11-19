@@ -125,6 +125,7 @@ commands! {
     LibraryOpen = 50039,
     LibraryOpenOther = 50040,
     ToggleGroupMove = 50041,
+    ToggleLibraryShade = 50042,
 }
 
 #[cfg(test)]

@@ -448,16 +448,21 @@ fn pl_overlay(src: Rect) -> Look {
 }
 
 fn playlist_shade() -> Mode {
+    shade_bar(Command::TogglePlShade, Command::TogglePlaylistWindow, Text::Title)
+}
+
+/// The playlist editor's windowshade strip, for it and the library: it
+/// shows `title`, a double click or the shade button runs `shade` and the
+/// close button runs `close`.
+fn shade_bar(shade: Command, close: Command, title: Text) -> Mode {
     let v = vec![
         piece(Start(0), Start(0), pair_look(p::SHADE_LEFT), 25, 14),
         tiles(span(Start(25), Start(0), End(-50), Start(14)), p::SHADE_TILE),
         piece(End(-50), Start(0), pair_look(p::SHADE_RIGHT), 50, 14),
-        Element::new(span(Start(0), Start(0), End(0), Start(14)), Kind::Drag { double: Some(Command::TogglePlShade) }),
-        button(span(End(-21), Start(3), End(-12), Start(12)), pl_overlay(p::SHADE_PRESSED), Action::click(Command::TogglePlShade))
-            .cursor(C::PWinBut),
-        button(span(End(-11), Start(3), End(-2), Start(12)), pl_overlay(p::CLOSE_PRESSED), Action::click(Command::TogglePlaylistWindow))
-            .cursor(C::PClose),
-        Element::new(span(Start(5), Start(4), End(-55), Start(10)), Kind::Text(Text::Title)),
+        Element::new(span(Start(0), Start(0), End(0), Start(14)), Kind::Drag { double: Some(shade) }),
+        button(span(End(-21), Start(3), End(-12), Start(12)), pl_overlay(p::SHADE_PRESSED), Action::click(shade)).cursor(C::PWinBut),
+        button(span(End(-11), Start(3), End(-2), Start(12)), pl_overlay(p::CLOSE_PRESSED), Action::click(close)).cursor(C::PClose),
+        Element::new(span(Start(5), Start(4), End(-55), Start(10)), Kind::Text(title)),
     ];
     Mode { width: Dim::Free { min: p::MIN_SIZE.0, step: p::STEP.0 }, height: Dim::Fixed(14), cursor: C::PWSNorm, elements: v, shape: None }
 }
@@ -526,9 +531,12 @@ fn library_window() -> WindowDef {
         tiles(span(Start(12), End(-38), End(-150), End(0)), p::BOTTOM_TILE),
         piece(Start(0), End(-38), Look::plain(paint(Sheet::PlEdit, bottom_left)), 12, 38),
         piece(End(-150), End(-38), Look::plain(paint(Sheet::PlEdit, p::BOTTOM_RIGHT)), 150, 38),
-        Element::new(span(Start(0), Start(0), End(0), Start(20)), Kind::Drag { double: None }).cursor(C::PTBar),
+        Element::new(span(Start(0), Start(0), End(0), Start(20)), Kind::Drag { double: Some(Command::ToggleLibraryShade) })
+            .cursor(C::PTBar),
         button(span(End(-11), Start(3), End(-2), Start(12)), pl_overlay(p::CLOSE_PRESSED), Action::click(Command::ToggleLibraryWindow))
             .cursor(C::PClose),
+        button(span(End(-20), Start(3), End(-11), Start(12)), pl_overlay(p::SHADE_PRESSED), Action::click(Command::ToggleLibraryShade))
+            .cursor(C::PWinBut),
         // Over the right side's groove: each list has a bar of its own.
         Element::new(
             span(Start(12), Start(20), End(-7), End(-38)),
@@ -553,11 +561,17 @@ fn library_window() -> WindowDef {
             elements: v,
             shape: None,
         },
-        shade: None,
+        shade: Some(library_shade()),
         bar: None,
         empty_press: EmptyPress::Nothing,
         wheel: Wheel::ScrollList,
     }
+}
+
+/// The library's windowshade strip, which a skin that draws the library
+/// window itself and gives it none gets.
+pub(crate) fn library_shade() -> Mode {
+    shade_bar(Command::ToggleLibraryShade, Command::ToggleLibraryWindow, Text::LibraryTitle)
 }
 
 /// The small transport buttons drawn in the playlist frame's bottom right.
@@ -682,6 +696,28 @@ mod tests {
             assert!(matches!(hit(pl, w, h, w - 11, 40).unwrap().kind, Kind::ListScroll { .. }));
             assert!(matches!(hit(pl, w, h, w - 40, h - 20).unwrap().kind, Kind::Popup { .. }), "LIST button");
         }
+    }
+
+    #[test]
+    fn the_library_can_shade_like_the_playlist() {
+        let l = layout(433, 433);
+        let def = l.window(WindowKey::Library).unwrap();
+        let shade = &def.shade.as_ref().expect("a shaded look");
+        assert!(matches!(shade.height, Dim::Fixed(14)));
+        let w = 450;
+        for (x, y) in [(100, 5), (w - 30, 5)] {
+            let drag = hit(shade, w, 14, x, y).unwrap();
+            assert!(matches!(drag.kind, Kind::Drag { double: Some(Command::ToggleLibraryShade) }), "a double click on the bar unshades");
+        }
+        let unshade = hit(shade, w, 14, w - 16, 7).unwrap();
+        assert!(matches!(unshade.kind, Kind::Button { action: Action::Click { plain: Command::ToggleLibraryShade, .. }, .. }));
+        let close = hit(shade, w, 14, w - 6, 7).unwrap();
+        assert!(matches!(close.kind, Kind::Button { action: Action::Click { plain: Command::ToggleLibraryWindow, .. }, .. }));
+        // Full size: a double click on the title bar shades, and so does the button.
+        let (nw, nh) = (450, 348);
+        assert!(matches!(hit(&def.normal, nw, nh, 100, 5).unwrap().kind, Kind::Drag { double: Some(Command::ToggleLibraryShade) }));
+        let button = hit(&def.normal, nw, nh, nw - 16, 7).unwrap();
+        assert!(matches!(button.kind, Kind::Button { action: Action::Click { plain: Command::ToggleLibraryShade, .. }, .. }));
     }
 
     #[test]
