@@ -468,8 +468,11 @@ mod tests {
             std::fs::write(dir.join(name), encoding_rs::WINDOWS_1251.encode(&sheet(file)).0).unwrap();
         }
         let items = FileSource::default().expand(&dir.to_string_lossy(), &Context::default()).unwrap().unwrap();
-        let names: Vec<_> = items.iter().map(|i| i.location.strip_prefix(&*dir.to_string_lossy()).unwrap().to_string()).collect();
-        assert_eq!(names, ["/single.mp3", "/Альбом (WAV).cue#1", "/Альбом (WAV).cue#2"]);
+        let names: Vec<_> = items
+            .iter()
+            .map(|i| i.location.strip_prefix(&*dir.to_string_lossy()).unwrap().trim_start_matches(['/', '\\']).to_string())
+            .collect();
+        assert_eq!(names, ["single.mp3", "Альбом (WAV).cue#1", "Альбом (WAV).cue#2"]);
         assert_eq!(items[1].title.as_deref(), Some("Тучи"));
         let album = FileSource::default().expand(&dir.join("Альбом.wav").to_string_lossy(), &Context::default()).unwrap();
         assert_eq!(album.map(|a| a.len()), Some(2), "the album file given alone is listed by its sheet too");
@@ -498,8 +501,11 @@ mod tests {
         std::fs::write(dir.join("album.cue"), sheet).unwrap();
         let files = FileSource(Decoders::new(vec![Arc::new(Ape(vec!["ape".into()]))]));
         let items = files.expand(&dir.to_string_lossy(), &Context::default()).unwrap().unwrap();
-        let names: Vec<_> = items.iter().map(|i| i.location.strip_prefix(&*dir.to_string_lossy()).unwrap().to_string()).collect();
-        assert_eq!(names, ["/album.cue#1", "/album.cue#2"]);
+        let names: Vec<_> = items
+            .iter()
+            .map(|i| i.location.strip_prefix(&*dir.to_string_lossy()).unwrap().trim_start_matches(['/', '\\']).to_string())
+            .collect();
+        assert_eq!(names, ["album.cue#1", "album.cue#2"]);
         let alone = files.expand(&dir.join("album.ape").to_string_lossy(), &Context::default()).unwrap();
         assert_eq!(alone.map(|a| a.len()), Some(2));
         std::fs::remove_dir_all(dir).unwrap();
@@ -521,8 +527,11 @@ mod tests {
         std::fs::write(dir.join("album.flac"), flac).unwrap();
         std::fs::write(dir.join("plain.flac"), b"").unwrap();
         let items = FileSource::default().expand(&dir.to_string_lossy(), &Context::default()).unwrap().unwrap();
-        let names: Vec<_> = items.iter().map(|i| i.location.strip_prefix(&*dir.to_string_lossy()).unwrap().to_string()).collect();
-        assert_eq!(names, ["/album.flac#1", "/album.flac#2", "/plain.flac"]);
+        let names: Vec<_> = items
+            .iter()
+            .map(|i| i.location.strip_prefix(&*dir.to_string_lossy()).unwrap().trim_start_matches(['/', '\\']).to_string())
+            .collect();
+        assert_eq!(names, ["album.flac#1", "album.flac#2", "plain.flac"]);
         assert_eq!(items[0].title.as_deref(), Some("One"));
         let album = dir.join("album.flac").to_string_lossy().into_owned();
         assert_eq!(FileSource::default().expand(&album, &Context::default()).unwrap().map(|a| a.len()), Some(2));
