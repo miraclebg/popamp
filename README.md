@@ -42,8 +42,9 @@ Linux and Windows.
 - **Plug-ins you allow.** Sandboxed WebAssembly plug-ins, each switched
   on by you: [YouTube](https://github.com/popamp/plugin-youtube) as a
   source, [Crossfeed](https://github.com/popamp/plugin-crossfeed) for
-  headphones, [Monkey's Audio](https://github.com/popamp/plugin-ape) for
-  `.ape` files.
+  headphones, [Monkey's Audio](https://github.com/popamp/plugin-ape) and
+  [WavPack](https://github.com/popamp/plugin-wavpack) for `.ape` and
+  `.wv` files.
 - **Your music stays yours.** No account, no cloud, no library to import:
   it plays files and the streams you open.
 

@@ -84,7 +84,8 @@
   sources such as [YouTube](https://github.com/popamp/plugin-youtube),
   sound effects such as [Crossfeed](https://github.com/popamp/plugin-crossfeed),
   and decoders of more formats such as
-  [Monkey's Audio](https://github.com/popamp/plugin-ape),
+  [Monkey's Audio](https://github.com/popamp/plugin-ape) and
+  [WavPack](https://github.com/popamp/plugin-wavpack),
   each allowed by you in Options > Plug-ins…. In a build with
   `--features visualizers`, also GPU visualizers such as
   [Spectrum](https://github.com/popamp/plugin-spectrum), in a window that
