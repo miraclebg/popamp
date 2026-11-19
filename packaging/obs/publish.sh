@@ -33,8 +33,10 @@ grep -q vendored-sources "$work/$name/cargo-config.toml" || {
 
 rm -f "$checkout"/popamp-*.tar.xz
 xz -T0 -6 < "$work/src.tar" > "$checkout/$name.tar.xz"
+# Modes fixed too: cargo vendor writes under the umask, which differs
+# between machines (002 on some, 022 on others).
 tar -c -C "$work" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
-    "$name/vendor" "$name/cargo-config.toml" | xz -T0 -6 > "$checkout/$name-vendor.tar.xz"
+    --mode=u+rwX,go+rX,go-w "$name/vendor" "$name/cargo-config.toml" | xz -T0 -6 > "$checkout/$name-vendor.tar.xz"
 cp "$here/_multibuild" "$here/_constraints" "$checkout/"
 sed "s/^Version:.*/Version:        $version/" "$here/popamp.spec" > "$checkout/popamp.spec"
 
