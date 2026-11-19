@@ -6,6 +6,38 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-19
+
+### Added
+
+- **WavPack:** a new decoder plug-in,
+  [plugin-wavpack](https://github.com/popamp/plugin-wavpack), plays `.wv`
+  files, whole-album rips with their CUE sheets included.
+- **CUE sheets inside the album file:** a FLAC, APE or WavPack file that
+  keeps its sheet in a CUESHEET tag, or a FLAC file with a CUESHEET
+  block, is listed as its tracks.
+
+### Changed
+
+- **The default skin** shows Popamp's lightning bolt in the main window,
+  in place of the little spectrum in its well.
+
+### Fixed
+
+- **Decoder plug-ins that hand over seconds of audio at once (APE):** the
+  position bar and the visualizer move smoothly instead of jumping once a
+  second, and pause and seeking answer at once.
+- **Album rips with a CUE sheet:** an album file that a `.cue` beside it
+  cuts into tracks is listed as those tracks, not as one long file, when
+  it is added alone or with its folder, to the playlist or the library.
+  When a rip has two sheets of the same file (one for the WAV, one for the FLAC), its
+  tracks are listed once. A sheet that names a WAV file the album was
+  since converted from also finds it in a format a decoder plug-in adds,
+  such as APE.
+- **Cyrillic CUE sheets and playlists** saved in Windows-1251 read
+  correctly; before, their titles came out garbled and the sheet could
+  not find its audio file.
+
 ## [1.0.2] - 2026-11-18
 
 ### Added
@@ -586,7 +618,8 @@ First release.
 - **Packaging:** desktop entry, `.wsz` MIME type, icons and a per-user
   install script.
 
-[Unreleased]: https://github.com/popamp/popamp/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/popamp/popamp/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/popamp/popamp/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/popamp/popamp/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/popamp/popamp/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/popamp/popamp/compare/v0.9.1...v1.0.0
