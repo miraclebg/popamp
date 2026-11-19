@@ -71,8 +71,11 @@ rm -rf "$tree/usr/share/doc"
 [ -n "$licenses" ] || die "$deb: no LICENSE-* files"
 
 mkdir -p "$out"
+# Modes fixed too, so the umask of the machine does not show in the
+# tarball. One xz thread: xz 5.6 and newer compress with several by
+# default, which gives other bytes than the tarballs already sent.
 tar -c -C "$work" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
-    "$package-$version" | xz -6 > "$out/$package-$version.tar.xz"
+    --mode=u+rwX,go+rX,go-w "$package-$version" | xz -T1 -6 > "$out/$package-$version.tar.xz"
 
 summary=$(field Description | head -1)
 description=$(field Description | sed '1d; s/^ //; s/^\.$//')
