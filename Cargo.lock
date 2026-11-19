@@ -3086,6 +3086,7 @@ version = "1.0.2"
 dependencies = [
  "crossbeam-channel",
  "ebur128",
+ "encoding_rs",
  "libloading",
  "lofty",
  "log",
@@ -3108,6 +3109,7 @@ dependencies = [
 name = "popamp-core"
 version = "1.0.2"
 dependencies = [
+ "encoding_rs",
  "fastrand",
  "log",
 ]

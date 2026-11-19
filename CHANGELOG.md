@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **CUE sheets inside the album file:** a FLAC, APE or WavPack file that
+  keeps its sheet in a CUESHEET tag, or a FLAC file with a CUESHEET
+  block, is listed as its tracks.
+
+### Fixed
+
+- **Album rips with a CUE sheet:** an album file that a `.cue` beside it
+  cuts into tracks is listed as those tracks, not as one long file, when
+  it is added alone or with its folder, to the playlist or the library. When a rip has
+  two sheets of the same file (one for the WAV, one for the FLAC), its
+  tracks are listed once. A sheet that names a WAV file the album was
+  since converted from also finds it in a format a decoder plug-in adds,
+  such as APE.
+- **Cyrillic CUE sheets and playlists** saved in Windows-1251 read
+  correctly; before, their titles came out garbled and the sheet could
+  not find its audio file.
+
 ## [1.0.2] - 2026-11-18
 
 ### Added

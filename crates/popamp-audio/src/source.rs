@@ -162,9 +162,13 @@ impl Source for HttpSource {
 pub struct CueSource(pub Decoders);
 
 impl CueSource {
-    fn track(location: &str) -> Result<(cue::Sheet, cue::Track), String> {
+    fn sheet(&self, path: &str) -> Result<cue::Sheet, String> {
+        cue::read(Path::new(path), &self.0.extensions()).map_err(|e| format!("{path}: {e}"))
+    }
+
+    fn track(&self, location: &str) -> Result<(cue::Sheet, cue::Track), String> {
         let (sheet_path, number) = cue::split_location(location).ok_or("not a track of a CUE sheet")?;
-        let sheet = cue::read(Path::new(sheet_path)).map_err(|e| format!("{sheet_path}: {e}"))?;
+        let sheet = self.sheet(sheet_path)?;
         let track = sheet.track(number).cloned().ok_or_else(|| format!("{sheet_path} has no track {number}"))?;
         Ok((sheet, track))
     }
@@ -192,6 +196,22 @@ impl CueSource {
         meta.replaygain_track_peak = None;
         meta
     }
+
+    /// The tracks of the sheet at `location`; with `only`, those of that one file.
+    fn items(&self, location: &str, only: Option<&Path>) -> Result<Vec<Item>, String> {
+        let sheet = self.sheet(location)?;
+        let items = sheet.tracks.iter().filter(|t| only.is_none_or(|f| t.file == f)).map(|t| {
+            let performer = t.performer.as_ref().or(sheet.performer.as_ref());
+            let title = match (performer, &t.title) {
+                (Some(p), Some(t)) => Some(format!("{p} - {t}")),
+                (None, t) => t.clone(),
+                (Some(_), None) => None,
+            };
+            let file_length = if t.end_ms.is_none() { self.file_length_ms(t) } else { None };
+            Item { location: cue::track_location(location, t.number), title, length_ms: Self::length_ms(t, file_length) }
+        });
+        Ok(items.collect())
+    }
 }
 
 impl Source for CueSource {
@@ -207,26 +227,15 @@ impl Source for CueSource {
         if !cue::is_cue(location) {
             return Ok(None);
         }
-        let sheet = cue::read(Path::new(location)).map_err(|e| format!("{location}: {e}"))?;
-        let items = sheet.tracks.iter().map(|t| {
-            let performer = t.performer.as_ref().or(sheet.performer.as_ref());
-            let title = match (performer, &t.title) {
-                (Some(p), Some(t)) => Some(format!("{p} - {t}")),
-                (None, t) => t.clone(),
-                (Some(_), None) => None,
-            };
-            let file_length = if t.end_ms.is_none() { self.file_length_ms(t) } else { None };
-            Item { location: cue::track_location(location, t.number), title, length_ms: Self::length_ms(t, file_length) }
-        });
-        Ok(Some(items.collect()))
+        self.items(location, None).map(Some)
     }
 
     fn describe(&self, location: &str) -> Option<Result<TrackMeta, String>> {
-        Some(Self::track(location).map(|(sheet, track)| self.meta(&sheet, &track)))
+        Some(self.track(location).map(|(sheet, track)| self.meta(&sheet, &track)))
     }
 
     fn open(&self, location: &str, _cx: &Context) -> Result<Playback, String> {
-        let (sheet, track) = Self::track(location)?;
+        let (sheet, track) = self.track(location)?;
         let meta = Box::new(self.meta(&sheet, &track));
         Ok(Playback::Part { path: track.file, start_ms: track.start_ms, end_ms: track.end_ms, meta })
     }
@@ -251,12 +260,17 @@ impl Source for FileSource {
             let mut files = Vec::new();
             walk(path, &mut files, 0, &self.0);
             files.sort_by(|a, b| text::natural_cmp(a, b));
-            return Ok(Some(files.into_iter().map(|f| Item { location: f, title: None, length_ms: None }).collect()));
+            return Ok(Some(files.into_iter().flat_map(|f| self.listed(f)).collect()));
         }
         if is_playlist(location) {
             return plformats::read_file(path).map(Some).map_err(|e| e.to_string());
         }
-        Ok(None)
+        // An album file given alone, as a folder lists it: by the sheet that cuts it.
+        let sheet = sheets_over_files(sheets_beside(path), vec![location.to_string()], &self.0).into_iter().find(|f| cue::is_cue(f));
+        match sheet {
+            Some(sheet) => CueSource(self.0.clone()).items(&sheet, Some(path)).map(Some),
+            None => Ok(self.inside(location)),
+        }
     }
 
     fn describe(&self, location: &str) -> Option<Result<TrackMeta, String>> {
@@ -268,11 +282,34 @@ impl Source for FileSource {
     }
 }
 
+impl FileSource {
+    /// What a folder lists for one of its entries: a sheet's tracks, an
+    /// album file's tracks by the sheet inside it, or the file.
+    fn listed(&self, f: String) -> Vec<Item> {
+        if cue::is_cue(&f) {
+            return CueSource(self.0.clone()).items(&f, None).unwrap_or_else(|e| {
+                log::warn!("cannot read {e}");
+                Vec::new()
+            });
+        }
+        self.inside(&f).unwrap_or_else(|| vec![Item { location: f, title: None, length_ms: None }])
+    }
+
+    /// The tracks of the sheet inside an album file, if it has one.
+    fn inside(&self, file: &str) -> Option<Vec<Item>> {
+        if !cue::may_carry_sheet(file) {
+            return None;
+        }
+        CueSource(self.0.clone()).items(file, None).ok().filter(|items| !items.is_empty())
+    }
+}
+
 fn walk(dir: &Path, out: &mut Vec<String>, depth: usize, decoders: &Decoders) {
     if depth > 32 {
         return;
     }
     let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let (mut files, mut sheets) = (Vec::new(), Vec::new());
     for e in rd.flatten() {
         let p = e.path();
         let Ok(ft) = e.file_type() else { continue };
@@ -280,11 +317,39 @@ fn walk(dir: &Path, out: &mut Vec<String>, depth: usize, decoders: &Decoders) {
             walk(&p, out, depth + 1, decoders);
         } else {
             let s = p.to_string_lossy().into_owned();
-            if decoders.plays(&s) {
-                out.push(s);
+            if cue::is_cue(&s) {
+                sheets.push(s);
+            } else if decoders.plays(&s) {
+                files.push(s);
             }
         }
     }
+    out.extend(sheets_over_files(sheets, files, decoders));
+}
+
+/// The CUE sheets in the folder of `file`.
+fn sheets_beside(file: &Path) -> Vec<String> {
+    let Some(rd) = file.parent().and_then(|dir| std::fs::read_dir(dir).ok()) else { return Vec::new() };
+    rd.flatten().map(|e| e.path().to_string_lossy().into_owned()).filter(|s| cue::is_cue(s)).collect()
+}
+
+/// A folder's tracks: each audio file a sheet cuts into tracks is listed
+/// by that sheet, the rest as they are. Of two sheets of one file (a rip
+/// often has one for the WAV and one for the FLAC) the first is taken.
+fn sheets_over_files(mut sheets: Vec<String>, mut files: Vec<String>, decoders: &Decoders) -> Vec<String> {
+    sheets.sort_by(|a, b| text::natural_cmp(a, b));
+    let mut taken = Vec::new();
+    for sheet in sheets {
+        let Ok(read) = CueSource(decoders.clone()).sheet(&sheet) else { continue };
+        let cut: Vec<String> = read.tracks.iter().map(|t| t.file.to_string_lossy().into_owned()).collect();
+        let before = files.len();
+        files.retain(|f| !cut.contains(f));
+        if files.len() < before {
+            taken.push(sheet);
+        }
+    }
+    taken.extend(files);
+    taken
 }
 
 #[cfg(test)]
@@ -385,6 +450,87 @@ mod tests {
             Ok(Playback::Part { path: dir.join("album.wav"), start_ms: 200, end_ms: None, meta: Box::new(meta) })
         );
         assert!(CueSource::default().open(&format!("{cue}#9"), &Context::default()).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_folder_lists_an_album_file_by_its_cue_sheet_once() {
+        let dir = std::env::temp_dir().join(format!("popamp-cue-dir-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/silence.wav");
+        std::fs::copy(&fixture, dir.join("Альбом.wav")).unwrap();
+        std::fs::write(dir.join("single.mp3"), b"").unwrap();
+        // Two sheets of one rip, as EAC leaves them: one names the WAV it was ripped to.
+        let sheet = |file: &str| {
+            format!("FILE \"{file}\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"Тучи\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    INDEX 01 00:00:15\n")
+        };
+        for (name, file) in [("Альбом.cue", "Альбом.flac"), ("Альбом (WAV).cue", "Альбом.wav")] {
+            std::fs::write(dir.join(name), encoding_rs::WINDOWS_1251.encode(&sheet(file)).0).unwrap();
+        }
+        let items = FileSource::default().expand(&dir.to_string_lossy(), &Context::default()).unwrap().unwrap();
+        let names: Vec<_> = items.iter().map(|i| i.location.strip_prefix(&*dir.to_string_lossy()).unwrap().to_string()).collect();
+        assert_eq!(names, ["/single.mp3", "/Альбом (WAV).cue#1", "/Альбом (WAV).cue#2"]);
+        assert_eq!(items[1].title.as_deref(), Some("Тучи"));
+        let album = FileSource::default().expand(&dir.join("Альбом.wav").to_string_lossy(), &Context::default()).unwrap();
+        assert_eq!(album.map(|a| a.len()), Some(2), "the album file given alone is listed by its sheet too");
+        assert_eq!(FileSource::default().expand(&dir.join("single.mp3").to_string_lossy(), &Context::default()), Ok(None));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A decoder plug-in for `.ape` that is never asked to play.
+    struct Ape(Vec<String>);
+
+    impl crate::formats::FileDecoder for Ape {
+        fn extensions(&self) -> &[String] {
+            &self.0
+        }
+        fn open(&self, _: &Path) -> Result<(Box<dyn crate::decoder::AudioSource>, TrackMeta), String> {
+            Err("not here".into())
+        }
+    }
+
+    #[test]
+    fn a_sheet_of_a_wav_finds_the_album_in_a_format_of_a_plugin() {
+        let dir = std::env::temp_dir().join(format!("popamp-cue-ape-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("album.ape"), b"").unwrap();
+        let sheet = "FILE \"album.wav\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    INDEX 01 00:00:15\n";
+        std::fs::write(dir.join("album.cue"), sheet).unwrap();
+        let files = FileSource(Decoders::new(vec![Arc::new(Ape(vec!["ape".into()]))]));
+        let items = files.expand(&dir.to_string_lossy(), &Context::default()).unwrap().unwrap();
+        let names: Vec<_> = items.iter().map(|i| i.location.strip_prefix(&*dir.to_string_lossy()).unwrap().to_string()).collect();
+        assert_eq!(names, ["/album.cue#1", "/album.cue#2"]);
+        let alone = files.expand(&dir.join("album.ape").to_string_lossy(), &Context::default()).unwrap();
+        assert_eq!(alone.map(|a| a.len()), Some(2));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn an_album_file_with_its_sheet_inside_lists_its_tracks() {
+        let dir = std::env::temp_dir().join(format!("popamp-cue-inside-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // A FLAC file's head with one block: comments with the sheet.
+        let tag = "CUESHEET=FILE \"a.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"One\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    INDEX 01 00:00:15\n";
+        let mut comments = 0u32.to_le_bytes().to_vec();
+        comments.extend_from_slice(&1u32.to_le_bytes());
+        comments.extend_from_slice(&(tag.len() as u32).to_le_bytes());
+        comments.extend_from_slice(tag.as_bytes());
+        let mut flac = b"fLaC\x84".to_vec();
+        flac.extend_from_slice(&(comments.len() as u32).to_be_bytes()[1..]);
+        flac.extend_from_slice(&comments);
+        std::fs::write(dir.join("album.flac"), flac).unwrap();
+        std::fs::write(dir.join("plain.flac"), b"").unwrap();
+        let items = FileSource::default().expand(&dir.to_string_lossy(), &Context::default()).unwrap().unwrap();
+        let names: Vec<_> = items.iter().map(|i| i.location.strip_prefix(&*dir.to_string_lossy()).unwrap().to_string()).collect();
+        assert_eq!(names, ["/album.flac#1", "/album.flac#2", "/plain.flac"]);
+        assert_eq!(items[0].title.as_deref(), Some("One"));
+        let album = dir.join("album.flac").to_string_lossy().into_owned();
+        assert_eq!(FileSource::default().expand(&album, &Context::default()).unwrap().map(|a| a.len()), Some(2));
+        assert_eq!(FileSource::default().expand(&dir.join("plain.flac").to_string_lossy(), &Context::default()), Ok(None));
+        let second = format!("{album}#2");
+        assert!(CueSource::default().handles(&second));
+        let Ok(Playback::Part { path, start_ms, .. }) = CueSource::default().open(&second, &Context::default()) else { panic!() };
+        assert_eq!((path, start_ms), (dir.join("album.flac"), 200));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
