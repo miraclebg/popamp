@@ -282,6 +282,14 @@ impl Platform {
     /// which the window manager never focuses.
     pub fn no_activate(&self, _window: &Window) {}
 
+    /// Nothing to follow: the system cuts the window and passes clicks.
+    pub fn tracks_cursor(&self) -> bool {
+        false
+    }
+
+    /// Nothing to do: the system passes clicks through a shape.
+    pub fn track_cursor(&self, _windows: &[&Window], _button_down: bool) {}
+
     /// Brings `windows` up, back to front. Not every window manager brings
     /// a window's companions up with it: xfwm4 raises only the one clicked,
     /// and another program's window then cuts the docked group in two.
