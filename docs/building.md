@@ -19,7 +19,7 @@ libraries below are loaded at runtime, not linked at build time.
 
 | Library / tool | Required? | Used for |
 |---|---|---|
-| X11 server, XWayland or a Wayland compositor | **required** | windows (X11 where it runs, also on Wayland desktops; Wayland itself where it does not, or with `wayland=1` in `popamp.ini`) |
+| X11 server, XWayland or a Wayland compositor | **required** | windows (X11 where it runs, also on Wayland desktops; Wayland itself where it does not, on COSMIC, or with `wayland=1` in `popamp.ini`) |
 | `libasound.so.2` (ALSA) | **required** | audio output; on PipeWire/PulseAudio it goes through their ALSA `default` device |
 | `libX11`, `libX11-xcb`, `libxcb`, `libXcursor`, `libXi`, `libxkbcommon`, `libxkbcommon-x11` | **required** | windowing and keyboard (loaded with `dlopen`) |
 | `libwayland-client` | for Wayland | windows as a Wayland program (loaded with `dlopen`) |
@@ -144,7 +144,7 @@ the other.
 | System | Package |
 |---|---|
 | Debian / Ubuntu | `sudo apt install ./popamp-<version>-linux-amd64.deb`, or `./popamp-plus-…` (ARM64: `-arm64.deb`) |
-| Anything else | `Popamp-<version>-linux-x86_64.AppImage`, or `Popamp-Plus-…`: `chmod +x` it and run it |
+| Anything else | `Popamp-<version>-x86_64.AppImage`, or `Popamp-Plus-…`: `chmod +x` it and run it |
 | Windows | `Popamp-<version>-windows-x86_64-setup.exe`, or `Popamp-Plus-…`: run it |
 | Windows, portable | `Popamp-<version>-windows-x86_64-portable.zip`, or `Popamp-Plus-…`: unpack it anywhere and run `popamp.exe` |
 | macOS | `Popamp-<version>-macos-universal.dmg`, or `Popamp-Plus-…`: open it and drag Popamp to Applications |
@@ -207,14 +207,14 @@ The skins and plug-ins with a release are in both repositories too, as
 `popamp-skin-<name>` and `popamp-plugin-<id>` (e.g. `popamp-skin-steel`,
 `popamp-plugin-youtube`); a plug-in needs popamp-plus.
 
-The AppImage uses the system's ALSA, X11 and xkbcommon libraries, which
-nearly every desktop has. To build the packages yourself after
+The AppImage carries xkbcommon, Xcursor, Xi, Opus and libopenmpt, and
+uses the system's ALSA and X11, which nearly every desktop has. To build the packages yourself after
 `cargo build --release` (or with `--features plus` for popamp-plus;
 the scripts ask the binary which it is):
 
 ```sh
 packaging/build-deb.sh        # needs dpkg-deb and binutils
-packaging/build-appimage.sh   # needs appimagetool
+packaging/build-appimage.sh   # needs appimagetool, patchelf and the libraries it carries
 ```
 
 Both write to `dist/`. Or build from source:

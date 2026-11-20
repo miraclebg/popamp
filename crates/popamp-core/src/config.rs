@@ -205,6 +205,9 @@ settings! {
     snap: bool = true,
     snaplen: i32 = 10,
     easymove: bool = true,
+    /// Dragging the equalizer or the playlist by its title bar, while docked
+    /// to the main window, moves all the docked windows together.
+    groupmove: bool = false,
     aot: bool = false,
     /// Windows drawn at `zoom` instead of 1x ("Double Size", Ctrl+D).
     dsize: bool = false,
@@ -213,7 +216,8 @@ settings! {
     wsz_scaling: Scaling = Scaling::Sharp,
     keeponscreen: bool = true,
     /// On a Wayland desktop, be a Wayland program even where X11 programs
-    /// run too (Xwayland). Where they do not, Popamp always is one.
+    /// run too (Xwayland). Where they do not, and on COSMIC, Popamp
+    /// always is one.
     wayland: bool = false,
     /// The main window is shown as a bar, in a skin that describes it both
     /// as a window and as a bar.
@@ -223,6 +227,10 @@ settings! {
     /// How big a bar skin's bar is, in percent, whatever size the other
     /// windows are: 200 makes it as thick as jetAudio's bar.
     bar_zoom: i32 = 200,
+    /// A bar spans its monitor's whole width, under the desktop's side
+    /// panels: Ubuntu's dock gives the corner up to a bar, but tells only of
+    /// the area beside its full height.
+    bar_under_side_panels: bool = false,
     dim_inactive: bool = true,
     // Main window.
     timeleftmode: bool = false,

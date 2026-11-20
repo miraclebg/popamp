@@ -36,7 +36,7 @@ jiff.workspace = true
 # X11, D-Bus: Linux and the other Unix systems, not macOS. Cargo cannot
 # see the `linux_like` cfg that build.rs sets, so it is spelled out here.
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
-x11rb = { version = "0.13", features = ["shape"] }
+x11rb = { version = "0.13", features = ["randr", "shape"] }
 zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
 # The tray icon (StatusNotifierItem), on the same zbus and executor.
 ksni = { version = "0.3", default-features = false, features = ["async-io", "blocking"] }
@@ -44,8 +44,15 @@ ksni = { version = "0.3", default-features = false, features = ["async-io", "blo
 # (see platform/wayland.rs). The versions winit and softbuffer use.
 wayland-client = "0.31"
 wayland-backend = { version = "0.3", features = ["client_system"] }
-wayland-protocols = { version = "0.32", features = ["client"] }
+wayland-protocols = { version = "0.32", features = ["client", "unstable", "staging"] }
+# Where COSMIC has the main window (protocols/, from cosmic-protocols).
+wayland-scanner = "0.31"
+# The bar: a layer of the desktop (wlr-layer-shell), as panels are.
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 wayland-cursor = "0.31"
+# winit's toolkit, for the xdg_surface of its main window that the menus,
+# the equalizer and the playlist are popups of.
+smithay-client-toolkit = { version = "0.19", default-features = false }
 memmap2 = "0.9"
 
 # System fonts through CoreText, and Finder's Apple Events.

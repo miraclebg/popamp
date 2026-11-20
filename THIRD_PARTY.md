@@ -32,7 +32,8 @@ contributors, MIT OR Apache-2.0.
 
 ## Shipped with the Windows downloads
 
-Linux takes these from the system; the Windows installer and zip carry
+The Linux packages take these from the system (the AppImage carries its
+own, see below); the Windows installer and zip carry
 them beside `popamp.exe`, with their licences in `licenses/`
 (`packaging/windows/fetch-libs.sh` fetches them).
 
@@ -54,3 +55,17 @@ releases for macOS 12).
 | `libopus.0.dylib` | [Opus](https://opus-codec.org) 1.5.2 | BSD-3-Clause |
 | `libopenmpt.0.dylib` | [libopenmpt](https://lib.openmpt.org) 0.8.10, built without its mpg123 and Vorbis decoders | BSD-3-Clause |
 | `GeneralUser-GS.sf2` | [GeneralUser GS](https://www.schristiancollins.com/generaluser.php) by S. Christian Collins, the SoundFont for MIDI | GeneralUser GS License v2.0 (free to use and to ship in software) |
+
+## Shipped with the AppImage
+
+The AppImage carries, in `usr/lib`, the Ubuntu 22.04 builds of the
+libraries a desktop may lack, with their Debian copyright files in
+`usr/share/doc/popamp/libraries` (`packaging/build-appimage.sh` picks
+them).
+
+| Library | Licence |
+|---|---|
+| xkbcommon, xkbcommon-x11, xcb-xkb | MIT |
+| Xcursor, Xi, Xext, Xfixes, Xrender | MIT |
+| Opus | BSD-3-Clause |
+| libopenmpt, with mpg123, Ogg and Vorbis | BSD-3-Clause; LGPL-2.1 (mpg123); BSD (Ogg, Vorbis) |

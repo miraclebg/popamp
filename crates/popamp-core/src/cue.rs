@@ -1,7 +1,10 @@
 //! CUE sheets: one audio file (or a few) cut into tracks.
 //!
 //! A track of a sheet is played from the location `<sheet>#<number>`, so
-//! a playlist keeps it like any other file.
+//! a playlist keeps it like any other file. A sheet may also be kept
+//! inside the album file; its tracks are then `<file>#<number>`.
+
+mod embedded;
 
 use crate::text::decode_lossy;
 use std::path::{Path, PathBuf};
@@ -41,15 +44,28 @@ pub fn track_location(sheet: &str, number: u32) -> String {
 /// The sheet and track number of a location made by [`track_location`].
 pub fn split_location(location: &str) -> Option<(&str, u32)> {
     let (sheet, number) = location.rsplit_once('#')?;
-    if !is_cue(sheet) || number.is_empty() || !number.bytes().all(|b| b.is_ascii_digit()) {
+    if !(is_cue(sheet) || embedded::may_carry(sheet)) || number.is_empty() || !number.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
     Some((sheet, number.parse().ok()?))
 }
 
-pub fn read(path: &Path) -> std::io::Result<Sheet> {
+/// Reads a sheet; `extra` are the formats plug-ins add, which a missing
+/// file named by the sheet may have been converted to.
+/// A path that is not a `.cue` file is an album file, and its sheet is
+/// the one inside it: every track of that plays from the file itself.
+pub fn read(path: &Path, extra: &[String]) -> std::io::Result<Sheet> {
+    if !is_cue(&path.to_string_lossy()) {
+        let text = embedded::sheet_text(path).ok_or_else(|| std::io::Error::other("no CUE sheet in the file"))?;
+        return Ok(parse_with(&text, |_| path.to_path_buf()));
+    }
     let bytes = std::fs::read(path)?;
-    Ok(parse(&decode_lossy(&bytes), path.parent().unwrap_or(Path::new(""))))
+    Ok(parse(&decode_lossy(&bytes), path.parent().unwrap_or(Path::new("")), extra))
+}
+
+/// True for a file that may keep its sheet inside.
+pub fn may_carry_sheet(location: &str) -> bool {
+    embedded::may_carry(location)
 }
 
 /// The value after a command: quoted, or the first word.
@@ -70,15 +86,21 @@ fn index_ms(time: &str) -> Option<u64> {
 
 /// The file a sheet names; when it is not there, one of the same name in
 /// another format (sheets often outlive a conversion from WAV).
-fn find_file(base: &Path, name: &str) -> PathBuf {
+fn find_file(base: &Path, name: &str, extra: &[String]) -> PathBuf {
     let path = base.join(name.replace('\\', "/"));
     if path.exists() {
         return path;
     }
-    crate::COMMON_EXTENSIONS.iter().map(|e| path.with_extension(e)).find(|p| p.exists()).unwrap_or(path)
+    let formats = crate::COMMON_EXTENSIONS.iter().copied().chain(extra.iter().map(String::as_str));
+    formats.map(|e| path.with_extension(e)).find(|p| p.exists()).unwrap_or(path)
 }
 
-pub fn parse(text: &str, base: &Path) -> Sheet {
+pub fn parse(text: &str, base: &Path, extra: &[String]) -> Sheet {
+    parse_with(text, |name| find_file(base, name, extra))
+}
+
+/// Parses a sheet; `file_of` finds the file a `FILE` line names.
+fn parse_with(text: &str, file_of: impl Fn(&str) -> PathBuf) -> Sheet {
     let mut sheet = Sheet::default();
     let mut file: Option<PathBuf> = None;
     // The track being read: its number, and whether it is audio.
@@ -88,7 +110,7 @@ pub fn parse(text: &str, base: &Path) -> Sheet {
         let line = line.trim().trim_start_matches('\u{feff}');
         let (command, rest) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
         match command.to_ascii_uppercase().as_str() {
-            "FILE" => file = Some(find_file(base, &value(rest))),
+            "FILE" => file = Some(file_of(&value(rest))),
             "TRACK" => {
                 done.extend(current.take().filter(|t| t.start_ms != u64::MAX));
                 let mut words = rest.split_whitespace();
@@ -155,7 +177,7 @@ FILE \"bonus.flac\" WAVE
 
     #[test]
     fn a_sheet_cuts_its_files_into_tracks() {
-        let sheet = parse(SHEET, Path::new("/music"));
+        let sheet = parse(SHEET, Path::new("/music"), &[]);
         assert_eq!((sheet.title.as_deref(), sheet.performer.as_deref()), (Some("Live"), Some("The Band")));
         let t = &sheet.tracks;
         assert_eq!(t.iter().map(|t| t.number).collect::<Vec<_>>(), [1, 2, 4], "the data track is left out");
@@ -170,7 +192,17 @@ FILE \"bonus.flac\" WAVE
         let dir = std::env::temp_dir().join(format!("popamp-cue-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("live.flac"), b"").unwrap();
-        assert_eq!(parse(SHEET, &dir).tracks[0].file, dir.join("live.flac"));
+        assert_eq!(parse(SHEET, &dir, &[]).tracks[0].file, dir.join("live.flac"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_named_file_in_a_format_of_a_plugin_is_found_when_it_is_on() {
+        let dir = std::env::temp_dir().join(format!("popamp-cue-ape-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("live.ape"), b"").unwrap();
+        assert_eq!(parse(SHEET, &dir, &[]).tracks[0].file, dir.join("live.wav"), "no decoder, no file");
+        assert_eq!(parse(SHEET, &dir, &["ape".to_string()]).tracks[0].file, dir.join("live.ape"));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -178,9 +210,130 @@ FILE \"bonus.flac\" WAVE
     fn a_track_location_names_the_sheet_and_the_number() {
         let loc = track_location("/music/Live.CUE", 2);
         assert_eq!(split_location(&loc), Some(("/music/Live.CUE", 2)));
-        assert_eq!(split_location("/music/a.flac#2"), None);
+        assert_eq!(split_location("/music/a.flac#2"), Some(("/music/a.flac", 2)), "a sheet inside the file");
+        assert_eq!(split_location("/music/a.mp3#2"), None);
         assert_eq!(split_location("/music/a.cue"), None);
         assert_eq!(split_location("/music/a.cue#x"), None);
         assert!(is_cue("/music/a.cue") && !is_cue("/music/a.flac"));
+    }
+
+    /// A FLAC file's metadata blocks, as (type, body); no audio follows.
+    fn flac(blocks: &[(u8, Vec<u8>)]) -> Vec<u8> {
+        let mut out = b"fLaC".to_vec();
+        for (i, (kind, body)) in blocks.iter().enumerate() {
+            let last = if i + 1 == blocks.len() { 0x80 } else { 0 };
+            out.push(last | kind);
+            out.extend_from_slice(&(body.len() as u32).to_be_bytes()[1..]);
+            out.extend_from_slice(body);
+        }
+        out
+    }
+
+    fn stream_info(rate: u32) -> (u8, Vec<u8>) {
+        let mut b = vec![0u8; 34];
+        b[10] = (rate >> 12) as u8;
+        b[11] = (rate >> 4) as u8;
+        b[12] = ((rate & 0xF) << 4) as u8 | 0x02;
+        (0, b)
+    }
+
+    fn comments(pairs: &[&str]) -> (u8, Vec<u8>) {
+        let mut b = 4u32.to_le_bytes().to_vec();
+        b.extend_from_slice(b"test");
+        b.extend_from_slice(&(pairs.len() as u32).to_le_bytes());
+        for p in pairs {
+            b.extend_from_slice(&(p.len() as u32).to_le_bytes());
+            b.extend_from_slice(p.as_bytes());
+        }
+        (4, b)
+    }
+
+    /// A track of a CUESHEET block: number, offset, its index points as (number, offset).
+    type BlockTrack<'a> = (u8, u64, &'a [(u8, u64)]);
+
+    /// A CD's CUESHEET block.
+    fn cuesheet_block(tracks: &[BlockTrack]) -> (u8, Vec<u8>) {
+        let mut b = vec![0u8; 128 + 8];
+        b.push(0x80);
+        b.extend_from_slice(&[0; 258]);
+        b.push(tracks.len() as u8);
+        for (number, offset, points) in tracks {
+            b.extend_from_slice(&offset.to_be_bytes());
+            b.push(*number);
+            b.extend_from_slice(&[0; 12 + 14]);
+            b.push(points.len() as u8);
+            for (n, o) in *points {
+                b.extend_from_slice(&o.to_be_bytes());
+                b.push(*n);
+                b.extend_from_slice(&[0; 3]);
+            }
+        }
+        (5, b)
+    }
+
+    fn temp_file(name: &str, bytes: &[u8]) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("popamp-cue-in-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    #[test]
+    fn a_flac_file_may_carry_its_sheet_in_a_tag() {
+        let tag = "CUESHEET=PERFORMER \"Band\"\nFILE \"Range.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"Тучи\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    INDEX 01 00:04:00\n";
+        let padding = (1, vec![0u8; 5000]);
+        let path = temp_file("album.flac", &flac(&[stream_info(44_100), padding, comments(&["TITLE=Whole", tag])]));
+        let sheet = read(&path, &[]).unwrap();
+        assert_eq!(sheet.performer.as_deref(), Some("Band"));
+        let t = &sheet.tracks;
+        assert_eq!((t[0].title.as_deref(), t[0].file.as_path(), t[0].end_ms), (Some("Тучи"), path.as_path(), Some(4000)));
+        assert_eq!((t[1].number, t[1].file.as_path(), t[1].start_ms), (2, path.as_path(), 4000));
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_flac_file_may_carry_its_sheet_as_a_cuesheet_block() {
+        // Track 2 has a pregap (index 0) of a second before it starts at 5 s; 170 is the lead-out.
+        let blocks = [stream_info(44_100), cuesheet_block(&[(1, 0, &[(1, 0)]), (2, 176_400, &[(0, 0), (1, 44_100)]), (170, 441_000, &[])])];
+        let path = temp_file("disc.flac", &flac(&blocks));
+        let t = read(&path, &[]).unwrap().tracks;
+        assert_eq!(t.iter().map(|t| (t.number, t.start_ms, t.end_ms)).collect::<Vec<_>>(), [(1, 0, Some(5000)), (2, 5000, None)]);
+        assert_eq!(t[0].file, path);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn an_ape_file_may_carry_its_sheet_in_its_ape_tag() {
+        let sheet = "FILE \"x.wav\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    INDEX 01 01:00:00\n";
+        let mut items = Vec::new();
+        for (key, value) in [("Artist", "Band"), ("Cuesheet", sheet)] {
+            items.extend_from_slice(&(value.len() as u32).to_le_bytes());
+            items.extend_from_slice(&0u32.to_le_bytes());
+            items.extend_from_slice(key.as_bytes());
+            items.push(0);
+            items.extend_from_slice(value.as_bytes());
+        }
+        let mut file = b"MAC \x96\x0f audio".to_vec();
+        file.extend_from_slice(&items);
+        file.extend_from_slice(b"APETAGEX");
+        for n in [2000, items.len() as u32 + 32, 2, 0] {
+            file.extend_from_slice(&n.to_le_bytes());
+        }
+        file.extend_from_slice(&[0; 8]);
+        file.extend_from_slice(b"TAG");
+        file.extend_from_slice(&[0; 125]);
+        let path = temp_file("album.ape", &file);
+        let t = read(&path, &[]).unwrap().tracks;
+        assert_eq!(t.iter().map(|t| (t.number, t.start_ms)).collect::<Vec<_>>(), [(1, 0), (2, 60_000)]);
+        assert_eq!(t[1].file, path);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_file_without_a_sheet_has_none() {
+        let path = temp_file("plain.flac", &flac(&[stream_info(44_100), comments(&["TITLE=Song"])]));
+        assert!(read(&path, &[]).is_err());
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }

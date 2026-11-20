@@ -26,7 +26,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
-use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, StartCause, WindowEvent};
+use winit::event::{DeviceEvent, DeviceId, ElementState, KeyEvent, MouseButton, MouseScrollDelta, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::{CursorIcon, CustomCursor, Window, WindowId, WindowLevel};
@@ -100,8 +100,18 @@ struct PanelWindow {
 }
 
 enum Drag {
-    Move { group: Vec<(WindowKey, (i32, i32))>, start: (i32, i32) },
-    Resize { start_size: (i32, i32), start: (i32, i32) },
+    /// `held` is the window the mouse holds.
+    Move {
+        held: WindowKey,
+        group: Vec<(WindowKey, (i32, i32))>,
+        start: (i32, i32),
+        /// How far the group goes, from [`reach`].
+        reach: Reach,
+    },
+    Resize {
+        start_size: (i32, i32),
+        start: (i32, i32),
+    },
 }
 
 pub struct App {
@@ -136,6 +146,12 @@ pub struct App {
     /// The companions hidden while the main window is minimized, where
     /// they do not go to the Dock with it (macOS).
     hidden_with_main: Vec<WindowKey>,
+    /// Under Wayland on COSMIC: the windows not docked to the main one,
+    /// hidden while it is dragged, which would take them along, and when
+    /// to show them again where they were should COSMIC not tell that the
+    /// main window moved.
+    aside: Vec<WindowKey>,
+    aside_until: Option<Instant>,
     /// `POPAMP_SNAPSHOT=<dir>`: write each window as PNG after a few frames and exit.
     snapshot: Option<(std::path::PathBuf, u32)>,
     platform: Platform,
@@ -181,6 +197,8 @@ impl App {
             start_minimized,
             popup_focus_check: None,
             hidden_with_main: Vec::new(),
+            aside: Vec::new(),
+            aside_until: None,
             snapshot: std::env::var_os("POPAMP_SNAPSHOT").map(|d| (std::path::PathBuf::from(d), 0)),
             platform: Platform::connect(),
             media,
@@ -262,7 +280,12 @@ impl App {
         // The strip as reserved, not where the window is: the system may
         // move the bar out of its own strip when the work area shrinks.
         let strip = self.win(WindowKey::Main).filter(|w| w.role == WindowRole::Bar && w.visible).and_then(|w| w.strip).map(|s| s.area());
-        let area = self.monitor.map(|m| bar::usable(m, &self.platform.work_areas(), strip));
+        let under = self.model.settings().bar_under_side_panels;
+        let mut area = self.monitor.map(|m| bar::span(m, &self.platform.work_areas(), strip, under));
+        // A Wayland compositor gives the bar its width itself.
+        if let (Some(area), Some(w)) = (&mut area, self.platform.bar_width().filter(|_| self.platform.on_wayland())) {
+            area.w = w;
+        }
         let changed = area != self.model.screen;
         self.model.screen = area;
         changed
@@ -270,7 +293,8 @@ impl App {
 
     fn create_windows(&mut self, el: &ActiveEventLoop) {
         self.platform.start(el);
-        self.model.no_bar = self.platform.on_wayland();
+        self.model.no_bar = !self.platform.can_bar();
+        self.model.bar_width_given = self.platform.on_wayland();
         let monitors = Self::monitors(el);
         self.monitor = self.screen_of_main(&monitors);
         self.update_bar_area();
@@ -303,6 +327,9 @@ impl App {
                 pos = (monitors[0].x + 100, monitors[0].y + 100 + scale.px(k.index() as i32 * 116));
             }
         }
+        if wayland && k != WindowKey::Main {
+            pos = self.near_main(k, pos, monitors);
+        }
         let role = self.role(k);
         let mut attrs = platform::attributes(role)
             .with_title(crate::bind::title(k))
@@ -317,6 +344,17 @@ impl App {
         // carries its shape, so it has see-through pixels.
         let made = if wayland && k != WindowKey::Main {
             self.platform.child(pos, true).ok_or_else(|| "no main window to place it against".to_string())
+        } else if let (true, Some(edge)) = (wayland, bar::edge(&self.model).filter(|_| role == WindowRole::Bar)) {
+            // The bar is a layer of the desktop. A window of winit's is
+            // still made for the connection, and never shown.
+            if !self.platform.joined() {
+                let attrs = platform::attributes(WindowRole::Main).with_title(crate::bind::title(k)).with_visible(false);
+                match el.create_window(attrs) {
+                    Ok(w) => drop(self.platform.surface(&Arc::new(w), pos)),
+                    Err(e) => log::error!("cannot create window: {e}"),
+                }
+            }
+            self.platform.bar(edge, pos, (scale.px(w), scale.px(h))).ok_or_else(|| "the compositor makes no bar".to_string())
         } else {
             el.create_window(attrs.with_transparent(wayland)).map_err(|e| e.to_string()).and_then(|w| {
                 let w = Arc::new(w);
@@ -348,6 +386,34 @@ impl App {
         });
         self.store_pos(k, pos);
         true
+    }
+
+    /// Under Wayland, where the equalizer, the playlist and the library are
+    /// parts of the main window: one kept more than half a screen away from
+    /// it, as an X11 session or a stray drag may leave it, goes back against
+    /// it, since off the screen nothing could bring it back.
+    fn near_main(&self, k: WindowKey, pos: (i32, i32), monitors: &[Screen]) -> (i32, i32) {
+        let main = self.saved_pos(WindowKey::Main);
+        let screen = monitors.first().map_or((1920, 1080), |m| (m.w, m.h));
+        if (pos.0 - main.0).abs() <= screen.0 / 2 && (pos.1 - main.1).abs() <= screen.1 / 2 {
+            return pos;
+        }
+        let px = |k: WindowKey| {
+            let (w, h) = self.logical_size(k);
+            (self.scale(k).px(w), self.scale(k).px(h))
+        };
+        let (mw, mh) = px(WindowKey::Main);
+        let pos = match k {
+            WindowKey::Eq => (main.0, main.1 + mh),
+            // Under the equalizer, where it is shown.
+            WindowKey::Playlist => match self.win(WindowKey::Eq).filter(|_| self.wanted_visible(WindowKey::Eq)) {
+                Some(eq) => (eq.pos.0, eq.pos.1 + px(WindowKey::Eq).1),
+                None => (main.0, main.1 + mh),
+            },
+            _ => (main.0 + mw, main.1),
+        };
+        log::info!("Wayland: {k:?} was far from the main window, put back against it at {pos:?}");
+        pos
     }
 
     /// Minimizes or restores the windows. Where the system does that with
@@ -419,9 +485,18 @@ impl App {
         self.monitor = self.screen_of_main(&monitors);
         self.update_bar_area();
         let left_bar = self.win(WindowKey::Main).is_some_and(|w| w.role == WindowRole::Bar) && bar::edge(&self.model).is_none();
+        // Under Wayland the other windows are parts of the main window or
+        // the bar: they go first, and come again with the new one.
+        if self.platform.on_wayland() && self.win(WindowKey::Main).is_some_and(|w| w.role != self.role(WindowKey::Main)) {
+            self.popups.clear();
+            self.tip = None;
+            for k in WindowKey::ALL.into_iter().rev() {
+                self.wins[k.index()] = None;
+            }
+        }
         for k in WindowKey::ALL {
-            if let Some(w) = self.win(k).filter(|w| w.role != self.role(k)) {
-                if let Some(bar) = w.window.top().filter(|_| w.role == WindowRole::Bar) {
+            if self.win(k).is_none_or(|w| w.role != self.role(k)) {
+                if let Some(bar) = self.win(k).and_then(|w| w.window.top().filter(|_| w.role == WindowRole::Bar)) {
                     self.platform.release(bar);
                 }
                 self.wins[k.index()] = None;
@@ -461,6 +536,7 @@ impl App {
             plan = self.plan(&old, anchor, bar);
         }
         let Plan { sizes, pos: new_pos } = plan;
+        let wayland = self.platform.on_wayland();
         for (i, &k) in WindowKey::ALL.iter().enumerate() {
             let visible = self.wanted_visible(k);
             let (lw, lh) = self.logical_size(k);
@@ -469,6 +545,13 @@ impl App {
             if let Some(w) = self.win_mut(k) {
                 let size = (scale.px(lw), scale.px(lh));
                 if let Some(top) = w.window.top() {
+                    // winit holds a window that cannot be resized by the
+                    // user to its first size under Wayland, as its least
+                    // and greatest size: those go along.
+                    if wayland {
+                        top.set_min_inner_size(Some(platform::size(size.0, size.1)));
+                        top.set_max_inner_size(Some(platform::size(size.0, size.1)));
+                    }
                     let _ = top.request_inner_size(platform::size(size.0, size.1));
                 }
                 if w.pos != pos {
@@ -565,6 +648,13 @@ impl App {
         if w.strip == Some(strip) {
             return;
         }
+        // A Wayland bar keeps its strip itself; it only changes edge.
+        #[cfg(linux_like)]
+        if let platform::Win::Sub(bar) = &w.window {
+            bar.set_bar_edge(edge);
+            w.strip = Some(strip);
+            return;
+        }
         let Some(top) = w.window.top() else { return };
         match self.platform.reserve(top, strip) {
             Ok(()) => w.strip = Some(strip),
@@ -597,6 +687,9 @@ impl App {
     fn render(&mut self, k: WindowKey) {
         let i = k.index();
         let layout = self.scale(k);
+        if self.aside.contains(&k) {
+            return;
+        }
         let Some(w) = self.wins[i].as_mut() else { return };
         if !w.visible {
             return;
@@ -631,6 +724,9 @@ impl App {
     // --- pop-up menus ---------------------------------------------------------
 
     fn cursor_screen(&self, k: WindowKey) -> (i32, i32) {
+        if let Some(at) = self.platform.pointer() {
+            return at;
+        }
         self.win(k).map(|w| (w.pos.0 + w.cursor.0, w.pos.1 + w.cursor.1)).unwrap_or((100, 100))
     }
 
@@ -644,7 +740,11 @@ impl App {
         let pct = if platform::DESKTOP_IN_POINTS { pct_on(&screens, at, self.dialog_pct()) } else { self.dialog_pct() };
         let layout = menu::layout(&items, &mut self.fonts.list, pct);
         let (w, h) = layout.screen();
-        let main_monitor = self.main_monitor().map(|m| platform::monitor(&m));
+        // Under Wayland a bar is where Popamp put it, on the monitor it
+        // spans: its menus open above it at the bottom, as elsewhere.
+        let bar = self.win(WindowKey::Main).is_some_and(|w| w.role == WindowRole::Bar);
+        let main_monitor =
+            if self.platform.on_wayland() && bar { self.monitor } else { self.main_monitor().map(|m| platform::monitor(&m)) };
         let monitor = menu_screen(platform::DESKTOP_IN_POINTS, &screens, at, main_monitor);
         // Placed in the desktop's units, as the cursor and the monitor are.
         let units = (platform::from_drawn(w, pct), platform::from_drawn(h, pct));
@@ -1041,6 +1141,17 @@ impl App {
         group
     }
 
+    /// Brings `k` up with the other shown windows under it: the window
+    /// manager brings up only the window clicked, and another program's
+    /// window would then cut the docked group in two. A minimized one stays
+    /// minimized: bringing it up would restore it.
+    fn raise_with_companions(&self, k: WindowKey) {
+        let order =
+            raise_order(k, |o| self.win(o).is_some_and(|w| w.visible && w.window.top().and_then(|t| t.is_minimized()) != Some(true)));
+        let windows: Vec<&Window> = order.iter().filter_map(|&o| self.win(o)).filter_map(|w| w.window.top()).map(|t| &**t).collect();
+        self.platform.raise_together(&windows);
+    }
+
     fn begin_move(&mut self, k: WindowKey) {
         // The bar stays where it is; another window moves alone and
         // leaves the bar.
@@ -1048,20 +1159,89 @@ impl App {
         if by_bar && k == WindowKey::Main {
             return;
         }
+        // With "Move docked windows together", a window docked to the main
+        // one takes the main one along, and so the whole group.
+        let whole = !by_bar && k != WindowKey::Main && self.model.settings().groupmove && self.docked_group(WindowKey::Main).contains(&k);
+        if whole && self.platform.on_wayland() {
+            if self.platform.drag_main() {
+                self.set_aside();
+            }
+            return;
+        }
         // Under Wayland only the compositor moves a window, and the others
         // go with the main one as parts of it.
         if let Some(main) = self.win(k).and_then(|w| w.window.top()).filter(|_| self.platform.on_wayland()) {
             if let Err(e) = main.drag_window() {
                 log::debug!("move: {e}");
+                return;
             }
+            self.set_aside();
             return;
         }
         // A free window takes the windows docked to it along.
-        let group = if self.placement(k) == Placement::Free && !by_bar { self.docked_group(k) } else { vec![k] };
+        let group = if whole {
+            self.docked_group(WindowKey::Main)
+        } else if self.placement(k) == Placement::Free && !by_bar {
+            self.docked_group(k)
+        } else {
+            vec![k]
+        };
         let start = self.cursor_screen(k);
+        // Windows lets a window past the work area's edges; X11 window
+        // managers hold it inside.
+        // Under Wayland nobody tells where the windows are on the monitors.
+        let reach = if cfg!(windows) || self.platform.on_wayland() {
+            Reach::FREE
+        } else {
+            let rects: Vec<Rect> = group.iter().filter_map(|&g| self.rect(g)).collect();
+            let monitors: Vec<Screen> = self.screens().into_iter().map(|(m, _)| m).collect();
+            reach(&rects, &monitors, &self.platform.work_areas())
+        };
         let group: Vec<_> = group.into_iter().filter_map(|g| self.win(g).map(|w| (g, w.pos))).collect();
-        log::debug!(target: "moves", "begin {k:?}: group {group:?}, cursor {start:?}, x1 is 100 px wide: {}", self.scale(k).px(100));
-        self.drag = Some(Drag::Move { group, start });
+        log::debug!(target: "moves", "begin {k:?}: group {group:?}, cursor {start:?}, reach {reach:?}, x1 is 100 px wide: {}", self.scale(k).px(100));
+        if self.platform.on_wayland() {
+            log::debug!(target: "moves", "monitors: {:?}", self.platform.wayland_monitors());
+        }
+        self.drag = Some(Drag::Move { held: k, group, start, reach });
+    }
+
+    /// Under Wayland, as the main window starts to be dragged: hides the
+    /// windows not docked to it, which go along with it as its parts. Only
+    /// where COSMIC tells where it went, which they go back by.
+    fn set_aside(&mut self) {
+        if !self.aside.is_empty() || self.platform.wayland_monitors().is_empty() {
+            return;
+        }
+        let docked = self.docked_group(WindowKey::Main);
+        for k in WindowKey::ALL.into_iter().filter(|k| !docked.contains(k)) {
+            let scale = self.scale(k);
+            let Some(w) = self.win_mut(k).filter(|w| w.visible && w.window.top().is_none()) else { continue };
+            w.surface.hide((scale.px(w.size.0), scale.px(w.size.1)));
+            self.aside.push(k);
+        }
+        log::debug!(target: "moves", "set aside {:?}", self.aside);
+    }
+
+    /// Shows the windows hidden by `set_aside` where they were on the
+    /// screen, the main window having moved by `by`.
+    fn bring_back(&mut self, by: (i32, i32)) {
+        self.aside_until = None;
+        for k in std::mem::take(&mut self.aside) {
+            let Some(w) = self.win_mut(k) else { continue };
+            let p = (w.pos.0 - by.0, w.pos.1 - by.1);
+            w.pos = p;
+            w.window.move_to(p);
+            w.window.request_redraw();
+            self.store_pos(k, p);
+        }
+    }
+
+    /// The mouse is back in a window after the main one was dragged: COSMIC
+    /// tells where it went about then, if it moved at all.
+    fn mouse_back(&mut self) {
+        if !self.aside.is_empty() && self.aside_until.is_none() {
+            self.aside_until = Some(Instant::now() + Duration::from_millis(400));
+        }
     }
 
     fn snap_delta(&self, group: &[(WindowKey, (i32, i32))], dx: i32, dy: i32) -> (i32, i32) {
@@ -1073,8 +1253,19 @@ impl App {
         let in_group = |k: WindowKey| group.iter().any(|(g, _)| *g == k);
         let mut targets: Vec<(i32, i32, i32, i32)> =
             WindowKey::ALL.iter().filter(|&&k| !in_group(k)).filter_map(|&k| self.rect(k)).collect();
-        if let Some(m) = self.main_monitor() {
-            let Screen { x: mx, y: my, w: mw, h: mh } = platform::monitor(&m);
+        // Under Wayland the monitors are known in the windows' positions
+        // only where the compositor tells where the main window is: the
+        // one the moved window is on.
+        let monitor = if self.platform.on_wayland() {
+            let held = group.first().and_then(|&(k, start)| Some((self.win(k)?, start)));
+            let centre = held.map(|(w, start)| (start.0 + dx + w.shown.px(w.size.0) / 2, start.1 + dy + w.shown.px(w.size.1) / 2));
+            let monitors = self.platform.wayland_monitors();
+            let on = |m: &&Screen| centre.is_some_and(|(x, y)| x >= m.x && x < m.x + m.w && y >= m.y && y < m.y + m.h);
+            monitors.iter().find(on).or(monitors.first()).copied()
+        } else {
+            self.main_monitor().map(|m| platform::monitor(&m))
+        };
+        if let Some(Screen { x: mx, y: my, w: mw, h: mh }) = monitor {
             // Screen edges as zero-thickness rectangles around the monitor.
             targets.push((mx - 10_000, my - 10_000, 10_000 + mx + mw + 10_000 - mx, 10_000));
             targets.push((mx - 10_000, my + mh, 30_000, 10_000));
@@ -1114,16 +1305,24 @@ impl App {
     fn drag_to(&mut self, k: WindowKey) {
         let cursor = self.cursor_screen(k);
         match &self.drag {
-            Some(Drag::Move { group, start }) => {
+            Some(Drag::Move { group, start, reach, .. }) => {
                 let (dx, dy) = (cursor.0 - start.0, cursor.1 - start.1);
-                let group = group.clone();
+                let (group, reach) = (group.clone(), *reach);
                 let (sx, sy) = self.snap_delta(&group, dx, dy);
+                let (sx, sy) = reach.clamp(sx, sy);
                 log::debug!(target: "moves", "drag {k:?}: cursor {cursor:?} (local {:?}), by ({dx},{dy}) snapped ({sx},{sy})", self.win(k).map(|w| w.cursor));
                 let (dx, dy) = (sx, sy);
+                let wayland = self.platform.on_wayland();
                 for (g, origin) in group {
                     let p = (origin.0 + dx, origin.1 + dy);
                     if let Some(w) = self.win_mut(g) {
                         if w.pos != p {
+                            // Under Wayland the mouse is known only from
+                            // the window: it stays where it is on the screen
+                            // as the window goes, as when a snap moves it.
+                            if wayland {
+                                w.cursor = (w.cursor.0 - (p.0 - w.pos.0), w.cursor.1 - (p.1 - w.pos.1));
+                            }
                             w.pos = p;
                             w.window.move_to(p);
                         }
@@ -1212,6 +1411,8 @@ impl App {
         }
         if self.platform.on_wayland() {
             self.set_key_focus(k);
+        } else if !cfg!(target_os = "macos") {
+            self.raise_with_companions(k);
         }
         let right = button == MouseButton::Right;
         let pos = self.win(k).map(|w| w.cursor).unwrap_or_default();
@@ -1322,7 +1523,11 @@ impl App {
     fn pump_children(&mut self, el: &ActiveEventLoop) {
         use platform::wayland::Event as E;
         for ev in self.platform.events() {
-            let (E::Moved(id, _) | E::Left(id) | E::Button(id, ..) | E::Wheel(id, _) | E::Redraw(id)) = ev;
+            if let E::MainMoved(by) = ev {
+                self.bring_back(by);
+                continue;
+            }
+            let (E::Moved(id, _) | E::Left(id) | E::Button(id, ..) | E::Wheel(id, _) | E::Redraw(id)) = ev else { continue };
             let id = WinId::Sub(id);
             if let Some(level) = self.popups.iter().position(|p| p.window.id() == id) {
                 match ev {
@@ -1354,6 +1559,7 @@ impl App {
                     E::Button(..) => {}
                     E::Wheel(_, steps) => self.wheel(k, steps),
                     E::Redraw(_) => self.render(k),
+                    E::MainMoved(_) => {}
                 }
             }
         }
@@ -1623,7 +1829,10 @@ impl App {
                 UiReq::Dialog(kind, req) => {
                     let events = self.model.events().clone();
                     let _ = std::thread::Builder::new().name("popamp-dialog".into()).spawn(move || {
-                        let values = dialogs::execute(&req);
+                        let values = dialogs::show(&req).unwrap_or_else(|why| {
+                            events.send(AppEvent::DialogFailed(why));
+                            Vec::new()
+                        });
                         events.send(AppEvent::Dialog(DialogResult { kind, values }));
                     });
                 }
@@ -1635,6 +1844,7 @@ impl App {
                     self.open_popup(el, items, at, false);
                 }
                 UiReq::Layout => {
+                    self.update_bar_area();
                     self.apply_layout(WindowKey::Main);
                     self.redraw_all();
                 }
@@ -1830,6 +2040,9 @@ impl ApplicationHandler<AppEvent> for App {
                     el.exit();
                 }
             }
+            if self.aside_until.is_some_and(|t| Instant::now() >= t) {
+                self.bring_back((0, 0));
+            }
             if let Some(t) = self.popup_focus_check {
                 if t.elapsed() > Duration::from_millis(150) {
                     self.popup_focus_check = None;
@@ -1846,6 +2059,16 @@ impl ApplicationHandler<AppEvent> for App {
 
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         self.pump_children(el);
+    }
+
+    /// Under X11 a window being dragged follows the mouse itself, not the
+    /// window's mouse events: winit drops one where the mouse has kept its
+    /// place in the window, as it does when the window has just caught up
+    /// with it, and the window would stay a step behind.
+    fn device_event(&mut self, _el: &ActiveEventLoop, _id: DeviceId, ev: DeviceEvent) {
+        if let (true, DeviceEvent::MouseMotion { .. }, Some(&Drag::Move { held, .. })) = (cfg!(linux_like), ev, self.drag.as_ref()) {
+            self.drag_to(held);
+        }
     }
 
     fn resumed(&mut self, el: &ActiveEventLoop) {
@@ -1883,6 +2106,10 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             AppEvent::Dialog(r) => self.model.on_dialog(r),
+            AppEvent::DialogFailed(why) => {
+                log::warn!("no dialog: {why}");
+                self.model.flash(why.short());
+            }
             #[cfg(feature = "plugins")]
             AppEvent::Plugins(n, list, effects) => self.model.on_plugins(n, list, effects),
             #[cfg(feature = "plugins")]
@@ -1944,6 +2171,8 @@ impl ApplicationHandler<AppEvent> for App {
         let Some(k) = self.kind_of(id) else { return };
         match ev {
             WindowEvent::CursorLeft { .. } => self.tip = None,
+            // As after the main window is dragged under Wayland.
+            WindowEvent::CursorEntered { .. } => self.mouse_back(),
             WindowEvent::CloseRequested => self.run(el, Command::Exit),
             WindowEvent::RedrawRequested => {
                 if let Some(w) = self.win_mut(k) {
@@ -1980,16 +2209,11 @@ impl ApplicationHandler<AppEvent> for App {
                     // Back from the Dock: so are the companions.
                     self.show_hidden_companions();
                 }
+                // On macOS raising does not move the focus. X11 window
+                // managers may focus a window brought up, which would come
+                // back here for ever: there the click raises (`mouse_down`).
                 if f && cfg!(target_os = "macos") {
-                    // Clicked, the window comes up alone on macOS; its
-                    // companions come up with it, under it. A minimized one
-                    // stays in the Dock: bringing it up would restore it.
-                    let order = raise_order(k, |o| {
-                        self.win(o).is_some_and(|w| w.visible && w.window.top().and_then(|t| t.is_minimized()) != Some(true))
-                    });
-                    let windows: Vec<&Window> =
-                        order.iter().filter_map(|&o| self.win(o)).filter_map(|w| w.window.top()).map(|t| &**t).collect();
-                    self.platform.raise_together(&windows);
+                    self.raise_with_companions(k);
                 }
                 if !f && !self.popups.is_empty() {
                     self.popup_focus_check = Some(Instant::now());
@@ -2136,6 +2360,63 @@ fn raise_order(focused: WindowKey, visible: impl Fn(WindowKey) -> bool) -> Vec<W
     others.chain([focused]).collect()
 }
 
+/// How far a group of windows may go from where a drag started: X11
+/// window managers hold each window inside the work area, and a group that
+/// went on would slide apart, the held windows staying behind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Reach {
+    /// The most negative and the most positive step on (x, y).
+    lo: (i32, i32),
+    hi: (i32, i32),
+}
+
+impl Reach {
+    const FREE: Reach = Reach { lo: (i32::MIN, i32::MIN), hi: (i32::MAX, i32::MAX) };
+
+    fn clamp(&self, dx: i32, dy: i32) -> (i32, i32) {
+        (dx.max(self.lo.0).min(self.hi.0), dy.max(self.lo.1).min(self.hi.1))
+    }
+}
+
+/// The [`Reach`] of a group from its windows' screen rectangles at the
+/// start. An edge holds a window that starts inside it, and only where no
+/// monitor lies beyond that edge.
+fn reach(group: &[Rect], monitors: &[Screen], work_areas: &[Screen]) -> Reach {
+    let mut r = Reach::FREE;
+    for &(x, y, w, h) in group {
+        let (cx, cy) = (x + w / 2, y + h / 2);
+        let Some(&m) = monitors.iter().find(|m| cx >= m.x && cx < m.x + m.w && cy >= m.y && cy < m.y + m.h) else { continue };
+        let a = bar::usable(m, work_areas, None);
+        let [left, right, up, down] = monitors_beside(monitors, m);
+        let (lx, hx) = edge_reach(x, w, a.x, a.w, (left, right));
+        let (ly, hy) = edge_reach(y, h, a.y, a.h, (up, down));
+        r.lo = (r.lo.0.max(lx), r.lo.1.max(ly));
+        r.hi = (r.hi.0.min(hx), r.hi.1.min(hy));
+    }
+    r
+}
+
+/// On one axis, how far a window at `pos`, `len` long, may go before and
+/// after inside an area from `from`, `size` long; free where a monitor lies
+/// beyond the area (`open`) or the window starts outside it.
+fn edge_reach(pos: i32, len: i32, from: i32, size: i32, open: (bool, bool)) -> (i32, i32) {
+    let lo = if pos >= from && !open.0 { from - pos } else { i32::MIN };
+    let hi = if pos + len <= from + size && !open.1 { from + size - (pos + len) } else { i32::MAX };
+    (lo, hi)
+}
+
+/// Whether another monitor lies left of, right of, above and below `m`.
+fn monitors_beside(monitors: &[Screen], m: Screen) -> [bool; 4] {
+    let rows = |o: &&Screen| o.y < m.y + m.h && m.y < o.y + o.h;
+    let columns = |o: &&Screen| o.x < m.x + m.w && m.x < o.x + o.w;
+    [
+        monitors.iter().filter(rows).any(|o| o.x + o.w <= m.x),
+        monitors.iter().filter(rows).any(|o| o.x >= m.x + m.w),
+        monitors.iter().filter(columns).any(|o| o.y + o.h <= m.y),
+        monitors.iter().filter(columns).any(|o| o.y >= m.y + m.h),
+    ]
+}
+
 /// New positions after windows change size. `anchor`, then the first shown
 /// window of every other docked group, stays put; a window docked to a placed
 /// one goes back against the same edge, its offset along that edge passed
@@ -2202,6 +2483,31 @@ fn reattach(a: Rect, b: Rect, now: Rect, size: (i32, i32), rescale: &impl Fn(i32
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const MONITOR: [Screen; 1] = [Screen { x: 0, y: 0, w: 1920, h: 1080 }];
+    const BELOW_PANEL: [Screen; 1] = [Screen { x: 0, y: 32, w: 1920, h: 1048 }];
+
+    #[test]
+    fn a_docked_group_stops_where_the_window_manager_holds_one_of_it() {
+        // Main against the panel and the right edge, the equalizer and the
+        // playlist under it, the playlist slid 53 px to the left.
+        let group = [(1645, 32, 275, 116), (1645, 148, 275, 116), (1592, 264, 275, 232)];
+        let r = reach(&group, &MONITOR, &BELOW_PANEL);
+        assert_eq!((r.lo, r.hi), ((-1592, 0), (0, 1080 - 496)));
+        assert_eq!(r.clamp(200, -100), (0, 0), "held at the right edge and the panel");
+        assert_eq!(r.clamp(-300, 50), (-300, 50), "free to go left and down");
+        assert_eq!(reach(&group, &MONITOR, &[]).lo.1, -32, "no work area: the monitor's top");
+    }
+
+    #[test]
+    fn a_group_goes_freely_to_a_monitor_beside_it_or_from_beyond_an_edge() {
+        let side_by_side = [Screen { x: 0, y: 0, w: 1920, h: 1080 }, Screen { x: 1920, y: 0, w: 1920, h: 1080 }];
+        let r = reach(&[(1645, 100, 275, 116)], &side_by_side, &side_by_side);
+        assert_eq!(r.hi.0, i32::MAX);
+        let stacked = [Screen { x: 0, y: 0, w: 1920, h: 1080 }, Screen { x: 0, y: 1080, w: 1920, h: 1080 }];
+        assert_eq!(reach(&[(100, 1200, 275, 116)], &stacked, &stacked).lo.1, i32::MIN);
+        assert_eq!(reach(&[(100, -50, 275, 116)], &MONITOR, &MONITOR).lo.1, i32::MIN, "already above: left alone");
+    }
 
     #[test]
     fn a_menu_is_drawn_at_the_density_of_the_screen_it_opens_on() {

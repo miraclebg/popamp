@@ -55,6 +55,17 @@ pub fn usable(monitor: Screen, work_areas: &[Screen], bar: Option<Screen>) -> Sc
     Screen { y: top, h: bottom - top, ..area }
 }
 
+/// The part of `monitor` a bar spans, as [`usable`] finds it; across the
+/// whole width when it goes `under_side_panels`.
+pub fn span(monitor: Screen, work_areas: &[Screen], bar: Option<Screen>, under_side_panels: bool) -> Screen {
+    let area = usable(monitor, work_areas, bar);
+    if under_side_panels {
+        Screen { x: monitor.x, w: monitor.w, ..area }
+    } else {
+        area
+    }
+}
+
 /// Top-left corners of the windows in [`WindowKey::ALL`] order, from their
 /// sizes in screen pixels: the bar across `screen` at `edge`, the playlist
 /// at the right end against the bar and the equalizer left of the playlist,
@@ -145,6 +156,15 @@ mod tests {
         let work = Screen { y: 28, h: 1000, ..ABOVE_PANEL };
         let bar = Screen { y: 0, ..bar };
         assert_eq!(usable(MONITOR, &[work], Some(bar)), ABOVE_PANEL);
+    }
+
+    #[test]
+    fn a_bar_under_side_panels_spans_the_monitors_width_inside_the_others() {
+        // A dock 64 wide at the left and a panel 32 high at the top.
+        let work = Screen { x: 64, y: 32, w: 1920 - 64, h: 1080 - 32 };
+        assert_eq!(span(MONITOR, &[work], None, false), work);
+        assert_eq!(span(MONITOR, &[work], None, true), Screen { x: 0, y: 32, w: 1920, h: 1080 - 32 });
+        assert_eq!(span(RIGHT_MONITOR, &[], None, true), RIGHT_MONITOR);
     }
 
     #[test]

@@ -9,7 +9,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.0.0"
+version = "1.0.3"
 edition = "2021"
 rust-version = "1.96"
 authors = ["Gunyakov <web@gunyakov.pro>", "Sayooj K Karun <sayoojkkarun@gmail.com>"]
@@ -53,6 +53,8 @@ extism = "1.41"
 serde = { version = "1", features = ["derive"] }
 toml = "1"
 log = "0.4"
+# Legacy 8-bit text: Windows-1251 CUE sheets and playlists.
+encoding_rs = "0.8"
 env_logger = { version = "0.11", default-features = false, features = ["auto-color", "humantime"] }
 jiff = "0.2"
 
@@ -62,3 +64,10 @@ opt-level = 2
 [profile.release]
 lto = "thin"
 codegen-units = 4
+
+# winit with one change, on the popamp-0.30 branch of Popamp's fork:
+# under COSMIC, which calls its floating windows tiled, winit 0.30 does
+# not resize the main window when Popamp asks it to. Rebase the branch
+# onto each new 0.30 release.
+[patch.crates-io]
+winit = { git = "https://github.com/popamp/winit", branch = "popamp-0.30" }

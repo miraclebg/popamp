@@ -1,24 +1,20 @@
 //! Text helpers shared by the parsers.
 
-/// Windows-1252 code points for bytes 0x80..=0x9F; other bytes map to Latin-1.
-const CP1252_HIGH: [char; 32] = [
-    '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8d}', 'Ž', '\u{8f}', '\u{90}', '‘', '’', '“', '”', '•', '–',
-    '—', '˜', '™', 'š', '›', 'œ', '\u{9d}', 'ž', 'Ÿ',
-];
-
-/// Decodes UTF-8 (with or without BOM); falls back to Windows-1252.
+/// Decodes UTF-8 (with or without BOM); falls back to Windows-1251 for
+/// Cyrillic text and to Windows-1252 for the rest.
 pub fn decode_lossy(bytes: &[u8]) -> String {
     let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
-    match std::str::from_utf8(bytes) {
-        Ok(s) => s.to_string(),
-        Err(_) => bytes
-            .iter()
-            .map(|&b| match b {
-                0x80..=0x9F => CP1252_HIGH[(b - 0x80) as usize],
-                _ => b as char,
-            })
-            .collect(),
+    if let Ok(s) = std::str::from_utf8(bytes) {
+        return s.to_string();
     }
+    let legacy = if looks_cyrillic(bytes) { encoding_rs::WINDOWS_1251 } else { encoding_rs::WINDOWS_1252 };
+    legacy.decode_without_bom_handling(bytes).0.into_owned()
+}
+
+/// Cyrillic words in Windows-1251 are runs of bytes 0xC0..=0xFF (А..я);
+/// Western text has an accented letter here and there, seldom three in a row.
+fn looks_cyrillic(bytes: &[u8]) -> bool {
+    bytes.split(|&b| b < 0xC0).any(|run| run.len() >= 3)
 }
 
 /// Decodes `%XX` escapes (as found in `file://` URLs).
@@ -181,6 +177,13 @@ mod tests {
     fn decodes_cp1252() {
         assert_eq!(decode_lossy(b"caf\xe9 \x93x\x94"), "café “x”");
         assert_eq!(decode_lossy("naïve".as_bytes()), "naïve");
+    }
+
+    #[test]
+    fn decodes_cyrillic_cp1251() {
+        let (bytes, _, _) = encoding_rs::WINDOWS_1251.encode("TITLE \"Тучи\" — Иванушки");
+        assert_eq!(decode_lossy(&bytes), "TITLE \"Тучи\" — Иванушки");
+        assert_eq!(decode_lossy(b"Gr\xf6\xdfe \xc0 la"), "Größe À la", "short runs stay Western");
     }
 
     #[test]

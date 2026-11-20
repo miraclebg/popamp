@@ -47,6 +47,8 @@ pub enum AppEvent {
         mode: AddMode,
     },
     Dialog(DialogResult),
+    /// No dialog came up, and why.
+    DialogFailed(crate::dialogs::DialogError),
     Remote(crate::ipc::Request),
     Museum(crate::museum::Fetched),
     Gallery(crate::gallery::Fetched),
@@ -154,6 +156,8 @@ pub struct Model {
     /// The window system has no place for a bar (Wayland): the main
     /// window is always a window.
     pub no_bar: bool,
+    /// The desktop gives a bar its width itself, as on Wayland.
+    pub bar_width_given: bool,
 }
 
 /// How a bookmark shows in menus and lists: its title, else its location.
@@ -272,6 +276,7 @@ impl Model {
             stop_after_current: false,
             screen: None,
             no_bar: false,
+            bar_width_given: false,
             transient: None,
             update: None,
             eq_presets,
@@ -1368,6 +1373,10 @@ impl Model {
                 let v = !self.settings().easymove;
                 self.settings_mut().easymove = v;
             }
+            C::ToggleGroupMove => {
+                let v = !self.settings().groupmove;
+                self.settings_mut().groupmove = v;
+            }
             C::ToggleWindowshade => {
                 let v = !self.settings().windowshade;
                 self.settings_mut().windowshade = v;
@@ -1479,6 +1488,11 @@ impl Model {
                 self.settings_mut().bar_zoom = pct;
                 self.ui.push(UiReq::Layout);
             }
+            MenuAction::BarUnderSidePanels => {
+                let s = self.settings_mut();
+                s.bar_under_side_panels = !s.bar_under_side_panels;
+                self.ui.push(UiReq::Layout);
+            }
             MenuAction::ReplayGain(mode) => {
                 let s = self.settings_mut();
                 match mode {
@@ -1550,7 +1564,11 @@ impl Model {
             }
             let at = |label: &str, e: BarEdge| MenuItem::action(label, "", MenuAction::BarEdge(e)).checked(edge == e);
             mode.push(MenuItem::sub("Position", vec![at("Top of the screen", BarEdge::Top), at("Bottom of the screen", BarEdge::Bottom)]));
-            mode.push(MenuItem::sub("Size", zooms(s.bar_zoom, MenuAction::BarZoom)));
+            mode.push(MenuItem::sub("Size", zooms(&crate::bind::bar_zooms(self), crate::bind::bar_zoom(self), MenuAction::BarZoom)));
+            if !self.bar_width_given {
+                let under = MenuItem::action("Full width, under side panels", "", MenuAction::BarUnderSidePanels);
+                mode.push(under.checked(s.bar_under_side_panels));
+            }
             items.push(MenuItem::sub("Toolbar mode", mode));
         }
         items.extend([
@@ -1590,7 +1608,7 @@ impl Model {
     fn size_menu(&self) -> Vec<MenuItem> {
         use popamp_core::config::Scaling;
         let s = self.settings();
-        let mut items = zooms(if s.dsize { s.zoom } else { 100 }, MenuAction::Zoom);
+        let mut items = zooms(&popamp_core::config::ZOOMS, if s.dsize { s.zoom } else { 100 }, MenuAction::Zoom);
         items.push(MenuItem::sep());
         let modes = [(Scaling::Sharp, "Sharp scaling"), (Scaling::Integer, "Whole multiples only"), (Scaling::Nearest, "Nearest pixel")];
         items.extend(modes.map(|(m, label)| MenuItem::action(label, "", MenuAction::Scaling(m)).checked(s.wsz_scaling == m)));
@@ -1615,6 +1633,7 @@ impl Model {
             MenuItem::cmd("Double Size", "Ctrl+D", C::ToggleDoubleSize).checked(s.dsize),
             MenuItem::sub("Size", self.size_menu()),
             MenuItem::cmd("EasyMove", "Ctrl+E", C::ToggleEasyMove).checked(s.easymove),
+            MenuItem::cmd("Move docked windows together", "", C::ToggleGroupMove).checked(s.groupmove),
             MenuItem::cmd("Windowshade", "Ctrl+W", C::ToggleWindowshade).checked(s.windowshade),
             MenuItem::sep(),
             MenuItem::cmd("Repeat", "R", C::ToggleRepeat).checked(s.repeat),
@@ -1881,12 +1900,9 @@ impl Model {
     }
 }
 
-/// A menu of the sizes, ×1 to ×3, with `current` checked.
-fn zooms(current: i32, action: fn(i32) -> MenuAction) -> Vec<MenuItem> {
-    popamp_core::config::ZOOMS
-        .iter()
-        .map(|&pct| MenuItem::action(&format!("×{}", pct as f32 / 100.0), "", action(pct)).checked(pct == current))
-        .collect()
+/// A menu of the `offered` sizes, with `current` checked.
+fn zooms(offered: &[i32], current: i32, action: fn(i32) -> MenuAction) -> Vec<MenuItem> {
+    offered.iter().map(|&pct| MenuItem::action(&format!("×{}", pct as f32 / 100.0), "", action(pct)).checked(pct == current)).collect()
 }
 
 /// The tags and format of a track as File info lists them.
@@ -2132,6 +2148,34 @@ mod tests {
         assert_eq!(m.settings().bar_zoom, 150);
         assert!(!m.settings().dsize, "the windows keep their size");
         assert!(matches!(m.ui.last(), Some(UiReq::Layout)));
+    }
+
+    #[test]
+    fn the_bar_goes_under_side_panels_only_when_asked_and_where_it_can() {
+        let mut m = Model::for_tests();
+        m.skin.layout.windows[0].placement = popamp_skin::layout::Placement::Bar(BarEdge::Bottom);
+        let item = toolbar(&m, "Full width, under side panels").unwrap();
+        assert!(!item.checked, "off at first");
+        m.on_menu(item.action.unwrap());
+        assert!(m.settings().bar_under_side_panels);
+        assert!(matches!(m.ui.last(), Some(UiReq::Layout)));
+        assert!(toolbar(&m, "Full width, under side panels").unwrap().checked);
+        m.bar_width_given = true;
+        assert!(toolbar(&m, "Full width, under side panels").is_none(), "the desktop sizes the bar");
+    }
+
+    #[test]
+    fn the_bar_size_menu_offers_only_the_sizes_that_fit_the_monitor() {
+        let mut m = Model::for_tests();
+        m.skin.layout.windows[0].bar = None;
+        m.skin.layout.windows[0].placement = popamp_skin::layout::Placement::Bar(BarEdge::Bottom);
+        m.skin.layout.windows[0].normal.width = popamp_skin::layout::Dim::Free { min: 400, step: 1 };
+        m.screen = Some(crate::bar::Screen { x: 0, y: 0, w: 700, h: 600 });
+        let sizes = toolbar(&m, "Size").unwrap().sub;
+        let labels: Vec<_> = sizes.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels, ["×1", "×1.25", "×1.5", "×1.75"]);
+        let checked: Vec<_> = sizes.iter().filter(|i| i.checked).map(|i| i.label.as_str()).collect();
+        assert_eq!(checked, ["×1.75"], "the size shown, x2 being chosen");
     }
 
     #[test]
