@@ -1507,7 +1507,9 @@ mod tests {
     fn enter_enqueues_by_default_and_shift_enter_plays() {
         let mut m = Model::for_tests();
         let keys = |m: &Model| m.library_menu().into_iter().take(2).map(|i| (i.label, i.accel)).collect::<Vec<_>>();
-        let pair = |a: &str, b: &str| vec![("Play".to_string(), a.to_string()), ("Enqueue".to_string(), b.to_string())];
+        // As the menu shows the keys: ⇧Enter on a Mac.
+        let shown = |k: &str| if cfg!(target_os = "macos") { crate::mac_keys::label(k) } else { k.to_string() };
+        let pair = |a: &str, b: &str| vec![("Play".to_string(), shown(a)), ("Enqueue".to_string(), shown(b))];
         assert_eq!((m.library_open(false), m.library_open(true)), (Command::LibraryEnqueue, Command::LibraryPlay));
         assert_eq!(keys(&m), pair("Shift+Enter", "Enter"), "the menu tells which key does what");
         m.settings_mut().enqueuedef = false;
