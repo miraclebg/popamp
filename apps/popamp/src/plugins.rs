@@ -612,7 +612,10 @@ mod tests {
         let help = controls(&p).into_iter().find(|&i| text_of(p.form().widget(i)).is_some_and(|t| t.starts_with("To turn one on")));
         assert!(help.is_some_and(|i| p.form().visible(i)), "{:?}", labels(&p));
         let empty = labels(&Panel::open(PanelKind::Plugins, &Model::for_tests()));
-        assert!(empty.join(" ").contains("There are none yet in /"), "{empty:?}");
+        let dir = Model::for_tests().paths.plugins_dir();
+        let said = empty.join(" ");
+        assert!(said.contains("There are none yet in"), "{empty:?}");
+        assert!(said.contains(dir.file_name().unwrap().to_str().unwrap()), "names the folder: {empty:?}");
     }
 
     #[test]
