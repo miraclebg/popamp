@@ -405,14 +405,14 @@ disturb the whole screen for a moment.
   started through `exec` included (a program still running then is
   killed). A plug-in that traps or runs out of time or memory (64 MiB)
   fails that call; three such failures in a row switch it off until the
-  user presses OK in "Plug-ins…". The title display says so with the
-  last failure, and "Plug-ins…" shows it next to the plug-in. An error the plug-in returns itself
+  user presses OK in Preferences. The title display says so with the
+  last failure, and the plug-in's page in Preferences shows it. An error the plug-in returns itself
   ("video unavailable") is not a failure.
 - A `dsp` plug-in runs on the engine thread, which decodes and fills
   the output buffer (`buffer_ms`), never in a sound card callback. A
   block that fails, comes back with another length or takes longer
   than half its playing time plays unchanged; three in a row switch the
-  plug-in off until the user presses OK in "Plug-ins…". A call that
+  plug-in off until the user presses OK in Preferences. A call that
   hangs is stopped after 250 ms.
 - A `decoder` runs on the thread that asks: the engine's when it plays,
   a worker's when it reads tags. A call that hangs is stopped after 1 s;

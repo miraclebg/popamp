@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-11-20
+
 ### Added
 
 - **Removing a plug-in:** a Remove button on the plug-in's page in
@@ -667,7 +669,8 @@ First release.
 - **Packaging:** desktop entry, `.wsz` MIME type, icons and a per-user
   install script.
 
-[Unreleased]: https://github.com/popamp/popamp/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/popamp/popamp/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/popamp/popamp/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/popamp/popamp/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/popamp/popamp/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/popamp/popamp/compare/v1.0.0...v1.0.1
