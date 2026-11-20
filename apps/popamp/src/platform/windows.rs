@@ -133,6 +133,12 @@ impl Platform {
     /// Nothing to do: owned windows come up with their owner.
     pub fn raise_together(&self, _windows: &[&Window]) {}
 
+    /// None: a window moves at once on Windows, so its own mouse position
+    /// is right.
+    pub fn pointer(&self) -> Option<(i32, i32)> {
+        None
+    }
+
     /// Gives back the strip of `window`, a bar about to go.
     pub fn release(&self, window: &Window) {
         if hwnd(window).is_some_and(|h| h == self.bar.get()) {

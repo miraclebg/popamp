@@ -101,6 +101,9 @@ pub enum EngineEvent {
 }
 
 const VIS_LEN: usize = 1 << 15;
+/// The most frames queued at once, well inside the vis ring.
+const PIECE_FRAMES: usize = 4096;
+const _: () = assert!(PIECE_FRAMES * 4 <= VIS_LEN);
 
 /// Mono samples of what was written, indexed by the global frame counter.
 pub struct VisRing {
@@ -399,7 +402,9 @@ struct Worker {
     upcoming: Option<Upcoming>,
     ahead: Option<(u64, u64)>,
     blend: Option<Blend>,
+    /// The decoded block, and how much of it is queued to the device.
     buf: Vec<f32>,
+    buf_at: usize,
     /// Opening a track can take seconds (a stream connecting), so it runs
     /// on its own thread and answers here; commands are handled meanwhile.
     opened_tx: Sender<OpenDone>,
@@ -447,6 +452,7 @@ impl Worker {
             ahead: None,
             blend: None,
             buf: Vec::with_capacity(8192),
+            buf_at: 0,
             opened_tx,
             opened_rx,
             tickets: 0,
@@ -660,6 +666,7 @@ impl Worker {
         self.written = played;
         self.pending = None;
         self.blend = None;
+        self.drop_queued();
     }
 
     fn ensure_pcm(&mut self, rate: u32) -> Result<(), String> {
@@ -746,6 +753,7 @@ impl Worker {
                 self.seek_base_ms = base;
                 self.eq.reset();
                 self.effects.reset();
+                self.drop_queued();
                 let gain = self.track_gain(&meta);
                 let info = dec.info().clone();
                 self.shared.channels.store(info.channels as u32, Ordering::Relaxed);
@@ -860,6 +868,7 @@ impl Worker {
             p.discard();
         }
         self.written = self.played_frames();
+        self.drop_queued();
         self.track = None;
         self.next = None;
         self.fade = None;
@@ -877,24 +886,69 @@ impl Worker {
         }
     }
 
+    /// Queues one piece of the decoded block, decoding the next block
+    /// when this one is all queued. A decoder may give seconds at once (a
+    /// plug-in's APE frame); piece by piece, the position, the vis ring
+    /// and the commands keep up with what plays.
     fn step(&mut self) {
+        if self.buf_at >= self.buf.len() && !self.decode_block() {
+            return;
+        }
+        let end = (self.buf_at + PIECE_FRAMES * 2).min(self.buf.len());
+        let mut buf = std::mem::take(&mut self.buf);
+        let piece = &mut buf[self.buf_at..end];
+        // Vis sees the signal before volume, like the original.
+        self.shared.vis.lock().push_stereo(piece, self.written);
+        let fade_done = self.apply_volume(piece);
+        let result = match &mut self.pcm {
+            Some(p) => p.write(piece),
+            None => Err("no output device".into()),
+        };
+        self.written += (piece.len() / 2) as u64;
+        self.buf = buf;
+        self.buf_at = end;
+        if let Err(e) = result {
+            let id = self.track.as_ref().map(|t| t.id).unwrap_or(0);
+            self.pcm = None;
+            self.fail(id, e);
+            return;
+        }
+        if fade_done {
+            if let Some(p) = &mut self.pcm {
+                p.drain();
+            }
+            return self.stop(true);
+        }
+        if self.buf_at >= self.buf.len() {
+            self.look_ahead();
+            self.start_blend();
+        }
+    }
+
+    /// Decodes the next block into `buf`, with gain, crossfade, EQ and
+    /// effects; false when the track has ended instead.
+    fn decode_block(&mut self) -> bool {
+        self.drop_queued();
         let Some(track) = &mut self.track else {
             if self.opening.is_none() {
                 self.set_state(PlayState::Stopped);
             }
-            return;
+            return false;
         };
-        self.buf.clear();
         match track.dec.next(&mut self.buf) {
             Ok(Status::Data) => {}
-            Ok(Status::Eof) => return self.end_of_track(),
+            Ok(Status::Eof) => {
+                self.end_of_track();
+                return false;
+            }
             Err(e) => {
                 let id = track.id;
                 log::warn!("{e}");
                 // A broken tail is treated like the end of the file.
                 if self.buf.is_empty() {
                     (self.emit)(EngineEvent::Error { id, message: e });
-                    return self.end_of_track();
+                    self.end_of_track();
+                    return false;
                 }
             }
         }
@@ -908,12 +962,22 @@ impl Worker {
         }
         self.eq.process(&mut buf);
         self.effects.process(&mut buf);
-        // Vis sees the signal before volume, like the original.
-        self.shared.vis.lock().push_stereo(&buf, self.written);
+        self.buf = buf;
+        true
+    }
+
+    /// Forgets the decoded audio not yet queued.
+    fn drop_queued(&mut self) {
+        self.buf.clear();
+        self.buf_at = 0;
+    }
+
+    /// Volume, balance and a fade-out on `piece`; true when the fade ends in it.
+    fn apply_volume(&mut self, piece: &mut [f32]) -> bool {
         let vol = volume_gain(self.volume);
         let (gl, gr) = balance_gains(self.balance);
         let mut fade_done = false;
-        for frame in buf.as_chunks_mut::<2>().0 {
+        for frame in piece.as_chunks_mut::<2>().0 {
             let mut g = vol;
             if let Some((left, total)) = &mut self.fade {
                 g *= *left as f32 / *total as f32;
@@ -923,33 +987,15 @@ impl Worker {
             frame[0] = (frame[0] * g * gl).clamp(-1.0, 1.0);
             frame[1] = (frame[1] * g * gr).clamp(-1.0, 1.0);
         }
-        let result = match &mut self.pcm {
-            Some(p) => p.write(&buf),
-            None => Err("no output device".into()),
-        };
-        self.written += (buf.len() / 2) as u64;
-        self.buf = buf;
-        if let Err(e) = result {
-            let id = self.track.as_ref().map(|t| t.id).unwrap_or(0);
-            self.pcm = None;
-            self.fail(id, e);
-            return;
-        }
-        if fade_done {
-            if let Some(p) = &mut self.pcm {
-                p.drain();
-            }
-            return self.stop(true);
-        }
-        self.look_ahead();
-        self.start_blend();
+        fade_done
     }
 
     /// Frames of the current track not yet decoded, when its length is known.
     fn frames_left(&self) -> Option<u64> {
         let length_ms = self.track.as_ref()?.dec.info().length_ms?;
         let rate = self.rate();
-        let decoded = self.seek_base_ms * rate / 1000 + self.written.saturating_sub(self.track_start);
+        let queued = (self.buf.len() - self.buf_at) as u64 / 2;
+        let decoded = self.seek_base_ms * rate / 1000 + self.written.saturating_sub(self.track_start) + queued;
         Some((length_ms * rate / 1000).saturating_sub(decoded))
     }
 

@@ -108,6 +108,11 @@ impl Platform {
     /// Nothing to give back.
     pub fn release(&self, _window: &Window) {}
 
+    /// None: the window's own mouse position serves.
+    pub fn pointer(&self) -> Option<(i32, i32)> {
+        None
+    }
+
     /// What is on the clipboard: the paths of copied files, and the text.
     pub fn clipboard(&self) -> (Vec<String>, Option<String>) {
         use objc2::ClassType;

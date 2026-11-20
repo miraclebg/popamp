@@ -45,3 +45,4 @@ objc2-core-foundation = { version = "0.3.2", default-features = false, features 
 rtrb = "0.4"
 
 [dev-dependencies]
+encoding_rs.workspace = true

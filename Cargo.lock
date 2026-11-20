@@ -1090,9 +1090,8 @@ checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 
 [[package]]
 name = "dpi"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
+version = "0.1.1"
+source = "git+https://github.com/popamp/winit?branch=popamp-0.30#492e4ef7b2a4527e5ede5c61c6a47476319e924e"
 
 [[package]]
 name = "dtor"
@@ -3087,7 +3086,7 @@ dependencies = [
 
 [[package]]
 name = "popamp"
-version = "1.0.0"
+version = "1.0.3"
 dependencies = [
  "block2 0.6.2",
  "crossbeam-channel",
@@ -3118,11 +3117,14 @@ dependencies = [
  "rustfft",
  "serde_json",
  "sha2",
+ "smithay-client-toolkit",
  "softbuffer",
  "wayland-backend",
  "wayland-client",
  "wayland-cursor",
  "wayland-protocols",
+ "wayland-protocols-wlr",
+ "wayland-scanner",
  "windows",
  "windows-sys 0.61.2",
  "winit",
@@ -3134,10 +3136,11 @@ dependencies = [
 
 [[package]]
 name = "popamp-audio"
-version = "1.0.0"
+version = "1.0.3"
 dependencies = [
  "crossbeam-channel",
  "ebur128",
+ "encoding_rs",
  "libloading",
  "lofty",
  "log",
@@ -3158,8 +3161,9 @@ dependencies = [
 
 [[package]]
 name = "popamp-core"
-version = "1.0.0"
+version = "1.0.3"
 dependencies = [
+ "encoding_rs",
  "fastrand",
  "log",
 ]
@@ -3174,7 +3178,7 @@ dependencies = [
 
 [[package]]
 name = "popamp-plugins"
-version = "1.0.0"
+version = "1.0.3"
 dependencies = [
  "extism",
  "log",
@@ -3189,7 +3193,7 @@ dependencies = [
 
 [[package]]
 name = "popamp-skin"
-version = "1.0.0"
+version = "1.0.3"
 dependencies = [
  "fontdue",
  "image",
@@ -3205,7 +3209,7 @@ dependencies = [
 [[package]]
 name = "popamp-skin-default"
 version = "1.0.0"
-source = "git+https://github.com/popamp/popamp-skin-default?branch=main#2d9fb6107e523236220c0fcc776aa37265149894"
+source = "git+https://github.com/popamp/popamp-skin-default?branch=main#1dc1271edf2365b12162cf11d5eafc3491a3a690"
 
 [[package]]
 name = "popamp-visual"
@@ -5807,8 +5811,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 [[package]]
 name = "winit"
 version = "0.30.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6755fa58a9f8350bd1e472d4c3fcc25f824ec358933bba33306d0b63df5978d"
+source = "git+https://github.com/popamp/winit?branch=popamp-0.30#492e4ef7b2a4527e5ede5c61c6a47476319e924e"
 dependencies = [
  "ahash",
  "android-activity",

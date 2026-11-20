@@ -124,6 +124,7 @@ commands! {
     LibraryRemoveFolder = 50038,
     LibraryOpen = 50039,
     LibraryOpenOther = 50040,
+    ToggleGroupMove = 50041,
 }
 
 #[cfg(test)]

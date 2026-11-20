@@ -17,6 +17,8 @@ pub use windows::{attributes, use_parent_console, Platform, MINIMIZE_HIDES_COMPA
 #[cfg(linux_like)]
 pub mod wayland;
 #[cfg(linux_like)]
+mod wayland_strip;
+#[cfg(linux_like)]
 mod x11;
 #[cfg(linux_like)]
 pub use x11::{attributes, choose_window_system, Platform, MINIMIZE_HIDES_COMPANIONS, OWNED_FOLLOW_OWNER};
@@ -250,6 +252,30 @@ impl Platform {
 
     pub fn child(&self, _pos: (i32, i32), _input: bool) -> Option<(Win, Surface)> {
         None
+    }
+
+    pub fn can_bar(&self) -> bool {
+        true
+    }
+
+    pub fn joined(&self) -> bool {
+        false
+    }
+
+    pub fn bar_width(&self) -> Option<i32> {
+        None
+    }
+
+    pub fn bar(&mut self, _edge: popamp_core::config::BarEdge, _pos: (i32, i32), _size: (i32, i32)) -> Option<(Win, Surface)> {
+        None
+    }
+
+    pub fn wayland_monitors(&self) -> Vec<crate::bar::Screen> {
+        Vec::new()
+    }
+
+    pub fn drag_main(&self) -> bool {
+        false
     }
 
     pub fn set_scale(&self, _scale: f64) {}

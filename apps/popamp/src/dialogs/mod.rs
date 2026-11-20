@@ -4,18 +4,55 @@
 
 use std::path::PathBuf;
 
-#[cfg(linux_like)]
-mod zenity;
-#[cfg(linux_like)]
-pub use zenity::execute;
 #[cfg(target_os = "macos")]
 mod osascript;
+#[cfg(linux_like)]
+mod zenity;
 #[cfg(target_os = "macos")]
-pub use osascript::execute;
+use osascript::execute;
 #[cfg(any(windows, test))]
 mod windows;
 #[cfg(windows)]
-pub use windows::execute;
+use windows::execute;
+
+/// Why no dialog came up; only the Linux programs ever say.
+#[derive(Debug, PartialEq)]
+#[cfg_attr(not(linux_like), allow(dead_code))]
+pub enum DialogError {
+    /// Neither zenity nor kdialog is installed.
+    Missing,
+    /// The dialog program could not run, or failed: its message.
+    Failed(String),
+}
+
+impl DialogError {
+    /// Short enough for the main window's display.
+    pub fn short(&self) -> &'static str {
+        match self {
+            DialogError::Missing => "DIALOGS NEED ZENITY",
+            DialogError::Failed(_) => "DIALOG FAILED, SEE THE LOG",
+        }
+    }
+}
+
+impl std::fmt::Display for DialogError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            DialogError::Missing => f.write_str("neither zenity nor kdialog is installed"),
+            DialogError::Failed(why) => f.write_str(why),
+        }
+    }
+}
+
+/// Runs `req` and waits for it: the chosen values, none when cancelled, or
+/// why no dialog came up. On Linux that is up to programs that may be
+/// missing; the system's own dialogs log their rare failures themselves.
+pub fn show(req: &Request) -> Result<Vec<String>, DialogError> {
+    #[cfg(linux_like)]
+    return zenity::execute(req);
+    #[cfg(not(linux_like))]
+    Ok(execute(req))
+}
 
 #[derive(Debug, Clone)]
 pub enum DialogKind {

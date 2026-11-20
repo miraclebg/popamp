@@ -4,8 +4,9 @@ Status: **agreed 2026-11-05**. Steps 1 to 7 of the order of work are
 built; the plug-ins are
 [plugin-youtube](https://github.com/popamp/plugin-youtube) (`source`),
 [plugin-crossfeed](https://github.com/popamp/plugin-crossfeed) (`dsp`),
-[plugin-spectrum](https://github.com/popamp/plugin-spectrum) (`visual`)
-and [plugin-ape](https://github.com/popamp/plugin-ape) (`decoder`).
+[plugin-spectrum](https://github.com/popamp/plugin-spectrum) (`visual`),
+[plugin-ape](https://github.com/popamp/plugin-ape) and
+[plugin-wavpack](https://github.com/popamp/plugin-wavpack) (`decoder`).
 
 Popamp's core plays local files, HTTP streams and playlists, and draws
 skins. Everything else that only some users want, such as YouTube, more

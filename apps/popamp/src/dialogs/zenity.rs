@@ -1,8 +1,8 @@
 //! Dialogs through `zenity`, or `kdialog` where only that is installed.
 
-use super::Request;
+use super::{DialogError, Request};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Output};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Backend {
@@ -20,29 +20,45 @@ fn backend() -> Backend {
         } else if has("kdialog") {
             Backend::KDialog
         } else {
-            log::warn!("neither zenity nor kdialog found; dialogs are unavailable");
             Backend::None
         }
     })
 }
 
-fn run(cmd: &mut Command) -> Option<String> {
-    let out = cmd.output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&out.stdout).trim_end_matches('\n').to_string();
-    Some(s)
+/// What the dialog program printed, none when cancelled, or why it failed.
+fn run(cmd: &mut Command) -> Result<Option<String>, DialogError> {
+    let name = cmd.get_program().to_string_lossy().into_owned();
+    let out = cmd.output().map_err(|e| DialogError::Failed(format!("cannot run {name}: {e}")))?;
+    outcome(&name, &out)
 }
 
-/// Runs `req`; the chosen values, or none when cancelled.
-pub fn execute(req: &Request) -> Vec<String> {
+/// How a run of the dialog program `name` ended. Both programs leave with
+/// 1 when cancelled or answered no; they also print warnings that mean
+/// nothing, so only another end is a failure, told by its last message.
+fn outcome(name: &str, out: &Output) -> Result<Option<String>, DialogError> {
+    match out.status.code() {
+        Some(0) => Ok(Some(String::from_utf8_lossy(&out.stdout).trim_end_matches('\n').to_string())),
+        Some(1) => Ok(None),
+        _ => {
+            let err = String::from_utf8_lossy(&out.stderr);
+            let why = err.lines().rev().map(str::trim).find(|l| !l.is_empty()).unwrap_or("no message");
+            Err(DialogError::Failed(format!("{name} failed ({}): {why}", out.status)))
+        }
+    }
+}
+
+/// Runs `req`: the chosen values, none when cancelled, or why no dialog
+/// came up.
+pub fn execute(req: &Request) -> Result<Vec<String>, DialogError> {
     let b = backend();
-    let lines = |s: Option<String>| -> Vec<String> {
-        s.map(|s| s.lines().filter(|l| !l.is_empty()).map(str::to_string).collect()).unwrap_or_default()
+    let lines = |s: Result<Option<String>, DialogError>| -> Result<Vec<String>, DialogError> {
+        Ok(s?.map(|s| s.lines().filter(|l| !l.is_empty()).map(str::to_string).collect()).unwrap_or_default())
+    };
+    let yes = |s: Result<Option<String>, DialogError>| -> Result<Vec<String>, DialogError> {
+        Ok(s?.map(|_| vec!["yes".into()]).unwrap_or_default())
     };
     match (b, req) {
-        (Backend::None, _) => vec![],
+        (Backend::None, _) => Err(DialogError::Missing),
         (Backend::Zenity, Request::Files { title, multiple, filter, start }) => {
             let mut c = Command::new("zenity");
             c.args(["--file-selection", "--title", title, "--separator", "\n"]);
@@ -87,15 +103,11 @@ pub fn execute(req: &Request) -> Vec<String> {
             lines(run(&mut c))
         }
         (Backend::Zenity, Request::Info { title, text }) => {
-            let _ = run(Command::new("zenity").args(["--info", "--no-markup", "--title", title, "--text", text]));
-            vec![]
+            run(Command::new("zenity").args(["--info", "--no-markup", "--title", title, "--text", text]))?;
+            Ok(vec![])
         }
         (Backend::Zenity, Request::Question { title, text }) => {
-            if run(Command::new("zenity").args(["--question", "--no-markup", "--title", title, "--text", text])).is_some() {
-                vec!["yes".into()]
-            } else {
-                vec![]
-            }
+            yes(run(Command::new("zenity").args(["--question", "--no-markup", "--title", title, "--text", text])))
         }
         (Backend::KDialog, Request::Files { title, multiple, filter, start }) => {
             let mut c = Command::new("kdialog");
@@ -128,15 +140,45 @@ pub fn execute(req: &Request) -> Vec<String> {
             lines(run(&mut c))
         }
         (Backend::KDialog, Request::Info { title, text }) => {
-            let _ = run(Command::new("kdialog").args(["--title", title, "--msgbox", text]));
-            vec![]
+            run(Command::new("kdialog").args(["--title", title, "--msgbox", text]))?;
+            Ok(vec![])
         }
         (Backend::KDialog, Request::Question { title, text }) => {
-            if run(Command::new("kdialog").args(["--title", title, "--yesno", text])).is_some() {
-                vec!["yes".into()]
-            } else {
-                vec![]
-            }
+            yes(run(Command::new("kdialog").args(["--title", title, "--yesno", text])))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::{ExitStatus, Output};
+
+    fn exited(code: i32, stdout: &str, stderr: &str) -> Output {
+        Output { status: ExitStatus::from_raw(code << 8), stdout: stdout.into(), stderr: stderr.into() }
+    }
+
+    #[test]
+    fn a_choice_is_what_was_printed() {
+        assert_eq!(outcome("zenity", &exited(0, "/a.mp3\n/b.mp3\n", "")), Ok(Some("/a.mp3\n/b.mp3".into())));
+    }
+
+    #[test]
+    fn exit_one_is_cancel_or_no() {
+        assert_eq!(outcome("zenity", &exited(1, "", "Gtk-WARNING: noise")), Ok(None));
+    }
+
+    #[test]
+    fn another_exit_is_a_failure_with_its_last_message() {
+        let Err(DialogError::Failed(why)) = outcome("zenity", &exited(255, "", "Gtk-WARNING: noise\ncannot open display\n\n")) else {
+            panic!("not a failure")
+        };
+        assert!(why.starts_with("zenity") && why.ends_with("cannot open display"), "{why}");
+    }
+
+    #[test]
+    fn a_kill_is_a_failure() {
+        assert!(outcome("kdialog", &Output { status: ExitStatus::from_raw(9), stdout: vec![], stderr: vec![] }).is_err());
     }
 }

@@ -5,6 +5,8 @@
   x1 to x3 in steps of 0.25 (`Ctrl+D` switches between x1 and the chosen
   size). Classic skins stay crisp at fractional sizes. Windows dock and snap together, and
   support windowshade mode, EasyMove, always-on-top and `region.txt` shapes.
+  With *Move docked windows together* (Options), the equalizer or the
+  playlist drags the whole docked group by its title bar.
   Tooltips explain the main window's buttons.
 - **Media library** (`Alt+L`): a window of its own, docking with the
   others, for the folders you give it. It lists all the music, the newest
@@ -82,7 +84,8 @@
   sources such as [YouTube](https://github.com/popamp/plugin-youtube),
   sound effects such as [Crossfeed](https://github.com/popamp/plugin-crossfeed),
   and decoders of more formats such as
-  [Monkey's Audio](https://github.com/popamp/plugin-ape),
+  [Monkey's Audio](https://github.com/popamp/plugin-ape) and
+  [WavPack](https://github.com/popamp/plugin-wavpack),
   each allowed by you in Options > Plug-ins…. In a build with
   `--features visualizers`, also GPU visualizers such as
   [Spectrum](https://github.com/popamp/plugin-spectrum), in a window that
@@ -136,33 +139,56 @@ the way jetAudio's bar does, on Linux as well as on Windows:
   the strip with `_NET_WM_STRUT_PARTIAL`, so maximized windows stop at the
   bar instead of going under it, and it stays inside the panels the
   desktop already has at that edge (GNOME's top bar, a KDE or Xfce
-  panel). On Windows it is an application bar, as the taskbar is.
+  panel). KDE Plasma on Wayland ignores struts of the programs that run
+  through Xwayland, so there Popamp holds the strip with an invisible
+  layer of the desktop under the bar (wlr-layer-shell, on a Wayland
+  connection of its own) while the bar stays an X11 window. On Windows
+  it is an application bar, as the taskbar is. As a
+  Wayland program it is a layer of the desktop (wlr-layer-shell, which
+  COSMIC, KDE Plasma and the wlroots compositors such as Sway and
+  Hyprland have), beside the desktop's own panels.
 - **The other windows go along.** The playlist and the equalizer sit
   against the bar at its right end. Drag one away and it stays where it
   was put until the bar is turned off; the media library moves freely.
 - **Main menu > Toolbar mode:** *On* / *Off*, *Position* (top or bottom of
   the screen) and *Size* (×1 to ×3, apart from the size of the other
-  windows). Position and size can be chosen before the bar is on.
+  windows; only the sizes the bar fits across the screen at are offered,
+  and on a smaller screen the bar takes the biggest of them). Position and
+  size can be chosen before the bar is on.
+- **Full width, under side panels** (off at first, not as a Wayland
+  program): the bar spans the screen's whole width. Ubuntu's dock makes
+  room for the bar but tells the system only of its full height, which
+  leaves an empty corner beside the bar; a side panel that does not make
+  room covers the bar's end. See [Ubuntu](ubuntu.md).
 - **Skins:** a vector skin describes its bar beside its window
   (`[window.bar]` in `skin.toml`, see [skin-format.md](skin-format.md)),
   so one skin gives both, in all its colour sets. The built-in Default
   and the Modern, Steel, Classified and D11 skins have one. Classic
   `.wsz` skins have no bar.
 
-Not as a Wayland program: Wayland does not let a program place its
-windows or reserve part of the screen. Under Xwayland, the default where
-it runs, the bar works as on X11.
+As a Wayland program the bar takes no keys: use the mouse, the media
+keys or the global hotkeys. GNOME has no layer shell, and there the bar
+is not offered to a Wayland program; under Xwayland, the default there,
+it works as on X11.
 
 ## Known limitations
 
-- As a Wayland program (by itself where there is no Xwayland, or with
-  `wayland=1` in `popamp.ini`) Popamp has no always on top, no bar view
-  and no file drops, does not remember where on the screen its windows
+- As a Wayland program (by itself where there is no Xwayland, on COSMIC,
+  whose Xwayland does not let a program move its windows, or with
+  `wayland=1` in `popamp.ini`) Popamp has no always on top and no file
+  drops, does not remember where on the screen its windows
   were, and a menu opened at the screen's edge can go past it: Wayland
   tells a program neither where its windows are nor lets it place them.
-  The equalizer and the playlist always move with the main window there.
-  Through Xwayland, which stays the default where it runs, all of that
-  works.
+  The equalizer and the playlist move with the main window there, but
+  on COSMIC, which hides the ones not docked to it while it is dragged.
+  On COSMIC they snap to the screen's edges and the desktop's panels, as
+  Popamp learns from it where the main window is; the main window, which
+  COSMIC moves, snaps to them with its *Edge gravity* (Settings →
+  Desktop → Window management), and so does the group dragged by the
+  equalizer or the playlist with *Move docked windows together*.
+  Through Xwayland, which stays the default where it runs (but on
+  COSMIC), all of that works.
+  [wayland.md](wayland.md) explains each limit and why.
 - The Preferences window (`Ctrl+P`) covers the common options, in sections
   listed down its left side; the rest are in the menus and `popamp.ini`.
 - Tags can be changed in MP3, FLAC, Ogg Vorbis, Opus and MP4 files only, one

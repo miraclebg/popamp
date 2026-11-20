@@ -1046,7 +1046,9 @@ fn scan(
                 return;
             }
             let path = item.location;
-            let Some(stamp) = Stamp::of(std::path::Path::new(&path)) else { continue };
+            // A track of a CUE sheet changes with its sheet.
+            let file = popamp_core::cue::split_location(&path).map_or(path.as_str(), |(sheet, _)| sheet);
+            let Some(stamp) = Stamp::of(std::path::Path::new(file)) else { continue };
             let track = match known.get(&path) {
                 Some(old) if old.stamp == stamp => old.clone(),
                 old => {
@@ -1451,6 +1453,34 @@ mod tests {
         let mut names: Vec<(&str, &str)> = found.iter().map(|t| (t.title.as_str(), t.artist.as_str())).collect();
         names.sort();
         assert_eq!(names, [("As it was", "Kept"), ("new", "")], "the text file is no track; the new one shows its name");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_scan_lists_the_tracks_of_a_cue_sheet() {
+        let dir = std::env::temp_dir().join(format!("popamp-libcue-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/popamp-audio/tests/fixtures/silence.wav");
+        std::fs::copy(fixture, dir.join("album.wav")).unwrap();
+        let sheet = "FILE \"album.flac\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"One\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"Two\"\n    INDEX 01 00:00:15\n";
+        std::fs::write(dir.join("album.cue"), sheet).unwrap();
+        let m = Model::for_tests();
+        let events = std::cell::RefCell::new(Vec::new());
+        scan(
+            1,
+            vec![dir.to_string_lossy().into_owned()],
+            HashMap::new(),
+            &m.sources,
+            &m.source_context(),
+            &AtomicBool::new(false),
+            &|ev| {
+                events.borrow_mut().push(ev);
+                true
+            },
+        );
+        let events = events.into_inner();
+        let [LibEvent::Folder(1, _, found), LibEvent::Done(1)] = events.as_slice() else { panic!("{events:?}") };
+        assert_eq!(found.iter().map(|t| t.title.as_str()).collect::<Vec<_>>(), ["One", "Two"]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
