@@ -96,6 +96,13 @@ pub enum DialogKind {
     ConfirmPhysicalRemove {
         paths: Vec<String>,
     },
+    /// Asks before deleting a plug-in's folder.
+    #[cfg(feature = "plugins")]
+    RemovePlugin {
+        dir: PathBuf,
+        id: Option<String>,
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone)]

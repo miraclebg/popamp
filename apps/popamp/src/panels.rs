@@ -1,6 +1,6 @@
 //! Popamp's own dialog windows: Jump to file, Preferences, the Skin
 //! browser and the Skin Museum (File info and Album art are in `fileinfo.rs`, the Plug-ins
-//! window in `plugins.rs`).
+//! pages of Preferences in `plugins.rs`).
 //! Each is a [`Form`] plus the logic that turns its events into changes to
 //! the [`Model`]; the windows themselves live in `app.rs`.
 
@@ -10,7 +10,7 @@ use crate::filetypes::Group;
 use crate::model::{Model, UiReq};
 use crate::museum::{self, Fetched, Job};
 use crate::shortcuts;
-use crate::widgets::{Event, Form, Rect, Widget, BUTTON, PAGE_H, ROW_H};
+use crate::widgets::{Event, Form, PageEntry, Rect, Widget, BUTTON, PAGE_H, ROW_H};
 use popamp_audio::output::Device;
 use popamp_core::config::Settings;
 use popamp_core::Command;
@@ -22,6 +22,7 @@ pub enum PanelKind {
     JumpToFile,
     FileInfo,
     Preferences,
+    /// Preferences, at the Plug-ins page.
     #[cfg(feature = "plugins")]
     Plugins,
     SkinMuseum,
@@ -67,14 +68,29 @@ pub enum Act {
     PluginHost(usize, usize),
     #[cfg(feature = "plugins")]
     PluginJournal(usize),
+    /// Shows or puts away the commands plug-in `.0` runs.
+    #[cfg(feature = "plugins")]
+    PluginCommands(usize),
+    /// Asks to remove plug-in `.0`.
+    #[cfg(feature = "plugins")]
+    PluginRemove(usize),
+}
+
+impl PanelKind {
+    /// The kind of window it opens: Plug-ins open in Preferences.
+    pub fn window(self) -> PanelKind {
+        match self {
+            #[cfg(feature = "plugins")]
+            PanelKind::Plugins => PanelKind::Preferences,
+            kind => kind,
+        }
+    }
 }
 
 pub enum Panel {
     Jump(JumpToFile),
     Info(FileInfo),
     Prefs(Preferences),
-    #[cfg(feature = "plugins")]
-    Plugins(crate::plugins::PluginsPanel),
     Museum(SkinMuseum),
     Gallery(crate::gallery::GalleryPanel),
     Art(AlbumArt),
@@ -88,11 +104,13 @@ impl Panel {
         match kind {
             PanelKind::JumpToFile => Panel::Jump(JumpToFile::new(model)),
             PanelKind::FileInfo => Panel::Info(FileInfo::new(model)),
-            PanelKind::Preferences => {
-                Panel::Prefs(Preferences::new(model.settings(), popamp_audio::output::devices(), FileTypes::from_env()))
-            }
+            PanelKind::Preferences => Panel::Prefs(Preferences::new(model, popamp_audio::output::devices(), FileTypes::from_env())),
             #[cfg(feature = "plugins")]
-            PanelKind::Plugins => Panel::Plugins(crate::plugins::PluginsPanel::new(model)),
+            PanelKind::Plugins => {
+                let mut p = Panel::open(PanelKind::Preferences, model);
+                p.show(PanelKind::Plugins);
+                p
+            }
             PanelKind::SkinMuseum => Panel::Museum(SkinMuseum::new()),
             PanelKind::Gallery => Panel::Gallery(crate::gallery::GalleryPanel::new(model)),
             PanelKind::AlbumArt => Panel::Art(AlbumArt::new(model)),
@@ -107,8 +125,6 @@ impl Panel {
             Panel::Jump(_) => PanelKind::JumpToFile,
             Panel::Info(_) => PanelKind::FileInfo,
             Panel::Prefs(_) => PanelKind::Preferences,
-            #[cfg(feature = "plugins")]
-            Panel::Plugins(_) => PanelKind::Plugins,
             Panel::Museum(_) => PanelKind::SkinMuseum,
             Panel::Gallery(_) => PanelKind::Gallery,
             Panel::Art(_) => PanelKind::AlbumArt,
@@ -123,8 +139,6 @@ impl Panel {
             Panel::Jump(_) => "Jump to file",
             Panel::Info(_) => "File info",
             Panel::Prefs(_) => "Popamp Preferences",
-            #[cfg(feature = "plugins")]
-            Panel::Plugins(_) => "Plug-ins",
             Panel::Museum(_) => "Winamp Skin Museum",
             Panel::Gallery(_) => "Popamp Gallery",
             Panel::Art(_) => "Album art",
@@ -139,8 +153,6 @@ impl Panel {
             Panel::Jump(p) => &p.form,
             Panel::Info(p) => &p.form,
             Panel::Prefs(p) => &p.form,
-            #[cfg(feature = "plugins")]
-            Panel::Plugins(p) => &p.form,
             Panel::Museum(p) => &p.form,
             Panel::Gallery(p) => &p.form,
             Panel::Art(p) => &p.form,
@@ -155,8 +167,6 @@ impl Panel {
             Panel::Jump(p) => &mut p.form,
             Panel::Info(p) => &mut p.form,
             Panel::Prefs(p) => &mut p.form,
-            #[cfg(feature = "plugins")]
-            Panel::Plugins(p) => &mut p.form,
             Panel::Museum(p) => &mut p.form,
             Panel::Gallery(p) => &mut p.form,
             Panel::Art(p) => &mut p.form,
@@ -173,8 +183,6 @@ impl Panel {
             Panel::Jump(p) => p.handle(ev, model),
             Panel::Info(p) => p.handle(ev, model),
             Panel::Prefs(p) => p.handle(ev, model),
-            #[cfg(feature = "plugins")]
-            Panel::Plugins(p) => p.handle(ev, model),
             Panel::Museum(p) => p.handle(ev, model),
             Panel::Gallery(p) => p.handle(ev, model),
             Panel::Art(p) => p.handle(ev),
@@ -229,8 +237,20 @@ impl Panel {
             Panel::Skins(p) => p.refresh(model),
             Panel::History(p) => p.refresh(model),
             Panel::Scan(p) => p.refresh(model),
+            #[cfg(feature = "plugins")]
+            Panel::Prefs(p) => p.plugins.refresh(&mut p.form, p.pages, model),
             _ => false,
         }
+    }
+
+    /// Shows the part of the panel `kind` opens at, for a panel already
+    /// open: the Plug-ins page of Preferences.
+    pub fn show(&mut self, kind: PanelKind) {
+        #[cfg(feature = "plugins")]
+        if let (Panel::Prefs(p), PanelKind::Plugins) = (&mut *self, kind) {
+            p.form.select_page(p.pages, p.plugins.page);
+        }
+        let _ = kind;
     }
 
     /// The panel's work is over and it closes by itself.
@@ -581,6 +601,11 @@ pub struct Preferences {
     device_list: usize,
     status: usize,
     shortcuts: ShortcutEditor,
+    /// The list of pages on the left.
+    #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
+    pages: usize,
+    #[cfg(feature = "plugins")]
+    plugins: crate::plugins::PluginPages,
 }
 
 /// The Shortcuts page: the title-bar shortcuts as a table, and under it the
@@ -684,12 +709,14 @@ impl ShortcutEditor {
 const DEVICE_ROWS: i32 = 4;
 
 impl Preferences {
-    fn new(s: &Settings, mut devices: Vec<Device>, file_types: FileTypes) -> Preferences {
+    fn new(model: &Model, mut devices: Vec<Device>, file_types: FileTypes) -> Preferences {
+        let s = model.settings();
         let w = 560;
         let mut form = Form::new(w, 0);
-        let labels = Section::ALL.map(|p| p.label().to_string()).to_vec();
+        #[cfg_attr(not(feature = "plugins"), allow(unused_mut))]
+        let mut entries: Vec<PageEntry> = Section::ALL.iter().map(|p| PageEntry::top(p.label())).collect();
         let (x0, cw) = (160, w - 170);
-        let mut bottom = 14 + labels.len() as i32 * PAGE_H;
+        let mut bottom = 14 + entries.len() as i32 * PAGE_H;
         let mut fields = Vec::new();
         #[cfg(linux_like)]
         let mut type_checks = [0; 3];
@@ -764,13 +791,22 @@ impl Preferences {
             }
             bottom = bottom.max(y);
         }
-        let y = bottom + 10;
+        #[cfg(feature = "plugins")]
+        let plugins = {
+            let (plugins, y) =
+                crate::plugins::PluginPages::build(&mut form, &mut entries, crate::plugins::Column { x: x0, w: cw - 4 }, model);
+            bottom = bottom.max(y);
+            plugins
+        };
+        let y = bottom.max(14 + entries.len() as i32 * PAGE_H) + 10;
+        // The pages scroll above the buttons when the screen is too low for them.
+        form.set_view(Rect::new(x0 - 6, 0, w - x0 + 6, y - 6));
         let status = form.add(Rect::new(x0, y, w - 2 * BUTTON.0 - 22 - x0, BUTTON.1), Widget::Label { text: String::new(), dim: false });
         button(&mut form, w - 2 * BUTTON.0 - 16, y, "OK", Act::Ok, true);
         button(&mut form, w - BUTTON.0 - 10, y, "Cancel", Act::Close, false);
         form.h = y + BUTTON.1 + 10;
         // The list of sections runs down to the buttons, room to spare.
-        form.add(Rect::new(10, 10, 140, form.h - 20), Widget::Pages { labels, selected: 0, action: Act::Section });
+        let pages = form.add(Rect::new(10, 10, 140, form.h - 20), Widget::Pages { entries, selected: 0, action: Act::Section });
         Preferences {
             form,
             file_types,
@@ -781,10 +817,17 @@ impl Preferences {
             device_list,
             status,
             shortcuts: shortcuts.expect("Preferences has a Shortcuts page"),
+            pages,
+            #[cfg(feature = "plugins")]
+            plugins,
         }
     }
 
     fn handle(&mut self, ev: Event<Act>, model: &mut Model) -> bool {
+        #[cfg(feature = "plugins")]
+        if self.plugins.handle(ev, &mut self.form, model) {
+            return true;
+        }
         match ev {
             Event::Toggled(Act::Flag(f), on) => {
                 f.set(model, on);
@@ -832,9 +875,9 @@ impl Preferences {
         model.settings_mut().title_shortcuts = shortcuts::format(&self.shortcuts.rules);
         model.settings_mut().sanitize();
         model.push_engine_settings();
+        // Plug-ins get the proxy when they load.
         #[cfg(feature = "plugins")]
-        if model.settings().proxy != proxy {
-            // Plug-ins get the proxy when they load.
+        if self.plugins.apply(&self.form, model) || model.settings().proxy != proxy {
             model.load_plugins();
         }
         model.pl_dirty += 1;
@@ -1245,13 +1288,21 @@ pub(crate) mod tests {
 
     /// Shows the section of Preferences control `i` is on, picking it on
     /// the left as a user would, and gives where the control is.
-    fn reach(p: &mut Panel, m: &mut Model, i: usize) -> Rect {
+    pub(crate) fn reach(p: &mut Panel, m: &mut Model, i: usize) -> Rect {
         let Panel::Prefs(pr) = &*p else { panic!("not preferences") };
         let (page, r) = (pr.form.page_of(i), pr.form.rect(i));
         if let Some(page) = page {
-            click(p, m, Rect::new(10, 10 + page as i32 * PAGE_H, 1, 1));
+            let row = pr.form.page_row(pr.pages, page).expect("its page is listed");
+            click(p, m, row);
         }
         r
+    }
+
+    /// The Plug-ins page; the pages of the plug-ins follow it.
+    #[cfg(feature = "plugins")]
+    pub(crate) fn plugins_page(p: &Panel) -> usize {
+        let Panel::Prefs(pr) = p else { panic!("not preferences") };
+        pr.plugins.page
     }
 
     fn check_index(p: &Panel, flag: Flag) -> usize {
@@ -1401,14 +1452,14 @@ pub(crate) mod tests {
     fn prefs_with_devices(m: &Model) -> Panel {
         let cards =
             vec![device("default", "Default device"), device("hdmi:CARD=NVidia,DEV=0", "HDMI"), device("front:CARD=Audio,DEV=0", "USB")];
-        Panel::Prefs(Preferences::new(m.settings(), cards, test_types("devices")))
+        Panel::Prefs(Preferences::new(m, cards, test_types("devices")))
     }
 
     #[cfg(target_os = "macos")]
     #[test]
     fn preferences_say_where_a_mac_chooses_the_player() {
         let m = songs(&[]);
-        let p = Panel::Prefs(Preferences::new(m.settings(), vec![], test_types("mac")));
+        let p = Panel::Prefs(Preferences::new(&m, vec![], test_types("mac")));
         let Panel::Prefs(pr) = &p else { unreachable!() };
         assert!(pr.form.labels().iter().any(|l| l.starts_with("Choose Popamp in Finder")));
     }
@@ -1439,14 +1490,14 @@ pub(crate) mod tests {
         let mut m = songs(&[]);
         let types = test_types("ok");
         let root = types.config.parent().unwrap().to_path_buf();
-        let mut p = Panel::Prefs(Preferences::new(m.settings(), vec![], types));
+        let mut p = Panel::Prefs(Preferences::new(&m, vec![], types));
         let r = type_check(&mut p, &mut m, Group::Playlists);
         click(&mut p, &mut m, r);
         assert!(!root.exists(), "nothing written before OK");
         assert!(!press(&mut p, &mut m, Key::Enter));
         let Panel::Prefs(pr) = &p else { unreachable!() };
         assert_eq!(pr.file_types.defaults(), [false, true, false]);
-        let reopened = Panel::Prefs(Preferences::new(m.settings(), vec![], test_types_at(&root)));
+        let reopened = Panel::Prefs(Preferences::new(&m, vec![], test_types_at(&root)));
         let Panel::Prefs(pr) = &reopened else { unreachable!() };
         assert!(pr.form.checked(pr.type_checks[1]) && !pr.form.checked(pr.type_checks[0]), "shown ticked next time");
         let _ = std::fs::remove_dir_all(root);
@@ -1463,7 +1514,7 @@ pub(crate) mod tests {
         let mut m = songs(&[]);
         let types = test_types("cancel");
         let root = types.config.parent().unwrap().to_path_buf();
-        let mut p = Panel::Prefs(Preferences::new(m.settings(), vec![], types));
+        let mut p = Panel::Prefs(Preferences::new(&m, vec![], types));
         let r = type_check(&mut p, &mut m, Group::Audio);
         click(&mut p, &mut m, r);
         assert!(!press(&mut p, &mut m, Key::Escape));

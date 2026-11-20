@@ -938,6 +938,11 @@ impl Model {
                 filter: ["jpg", "jpeg", "png", "gif", "bmp"].iter().map(|e| format!("*.{e}")).collect(),
                 start: dir.clone(),
             },
+            #[cfg(feature = "plugins")]
+            DialogKind::RemovePlugin { dir, name, .. } => Request::Question {
+                title: "Remove plug-in".into(),
+                text: format!("Remove the plug-in {name}?\n\nIts folder is deleted:\n{}", dir.display()),
+            },
             DialogKind::ConfirmPhysicalRemove { paths } => Request::Question {
                 title: "Delete files".into(),
                 text: format!(
@@ -1114,6 +1119,12 @@ impl Model {
             DialogKind::Info => {}
             // The File info window takes the picture (app.rs).
             DialogKind::PickCover { .. } => {}
+            #[cfg(feature = "plugins")]
+            DialogKind::RemovePlugin { dir, id, .. } => {
+                if first.as_deref() == Some("yes") {
+                    self.remove_plugin(&dir, id.as_deref());
+                }
+            }
             DialogKind::ConfirmPhysicalRemove { paths } => {
                 if first.as_deref() == Some("yes") {
                     for p in &paths {

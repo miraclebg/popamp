@@ -97,8 +97,13 @@ the way to install one. A plug-in can also be installed by cloning its repositor
 `/usr/share/popamp/plugins/<id>/`; your own folder of the same name wins.
 A packaged plug-in, too, stays off until you allow what it asks for.
 The core ships no plug-ins.
-The menu "Plug-ins…" lists them, turns each on or off, and shows its
-settings and permissions.
+Preferences > Plug-ins (the menu "Plug-ins…" opens it) says how to turn
+one on, and lists every plug-in under it. A plug-in's page shows the Enabled
+tick, what it does and may do, what it may reach and its settings
+(greyed out while it is off), and the commands it runs, on request.
+Remove on that page deletes a plug-in in your own folder after asking,
+and takes back its permission; a packaged one is removed with the
+package manager.
 
 ### Manifest
 
@@ -225,15 +230,15 @@ version asks for more:
   profiles), `AppData` and `Library` in the home, and the player's own
   folders stay closed whatever was chosen.
 
-The Plug-ins window shows these above the plug-in's own settings. What
+A plug-in's page in Preferences shows these above its own settings. What
 the user unticks or chooses is kept apart from those settings, so no
 manifest can set or read it, and being refused is an answer to the
 plug-in, not a failure of it.
 
 Every request of these three kinds, allowed or refused, is written to
 `.journal/<id>.log` in the user's plug-ins folder with the values the
-plug-in gave, never the contents of a file. The Journal button in the
-Plug-ins window opens it.
+plug-in gave, never the contents of a file. The Journal button on the
+plug-in's page in Preferences opens it.
 
 Rejected alternative: plug-ins as separate processes speaking JSON over
 standard input and output. They wrap programs such as yt-dlp naturally,

@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Removing a plug-in:** a Remove button on the plug-in's page in
+  Preferences asks, then deletes its folder and takes back its
+  permission, so a new copy asks again. A plug-in installed as a package
+  says to remove it with the package manager instead.
+
 Taken from the fork [Popamp Deluxe](https://github.com/Thermoptic/popampdeluxe)
 by Thermoptic.
 
@@ -27,6 +32,13 @@ by Thermoptic.
 
 ### Changed
 
+- **Plug-ins moved into Preferences** ([#62](https://github.com/popamp/popamp/issues/62)):
+  Preferences > Plug-ins says how to turn one on and lists every plug-in
+  under it. A plug-in's page has an Enabled tick at the top, what it
+  does and may do, and its permissions and settings, greyed out while it
+  is off. The commands it runs are put away behind "Show the commands it
+  runs". The menu "Plug-ins…" opens Preferences there. OK loads the
+  plug-ins again only when something changed, or one stopped.
 - **A skin folder from Install from file:** picking a vector skin's
   `skin.toml` puts on the folder it is in, where it is, instead of copying
   the lone file; the skin reloads as its files change.
@@ -34,6 +46,14 @@ by Thermoptic.
   them; the table is in [usage.md](docs/usage.md)), pastes copied links
   and files into the playlist with ⌘V, and cuts classic skins to their
   shape. There is still no macOS download from this project.
+
+### Fixed
+
+- **Dialogs on a low screen** ([#62](https://github.com/popamp/popamp/issues/62)):
+  a dialog is no taller than what the desktop's panels leave of the
+  screen. A page of Preferences that does not fit scrolls, with the
+  wheel, a scroll bar, Page Up and Page Down, and Tab brings the field it
+  moves to into view; OK and Cancel stay in sight.
 
 ## [1.0.3] - 2026-11-19
 
