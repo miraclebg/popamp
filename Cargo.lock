@@ -3169,7 +3169,7 @@ dependencies = [
 [[package]]
 name = "popamp-skin-default"
 version = "1.0.0"
-source = "git+https://github.com/popamp/popamp-skin-default?branch=main#1dc1271edf2365b12162cf11d5eafc3491a3a690"
+source = "git+https://github.com/popamp/popamp-skin-default?branch=main#5f36587383a56143d74ca4654a23d81251ac8d6a"
 
 [[package]]
 name = "popamp-visual"
