@@ -6,8 +6,30 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+Taken from the fork [Popamp Deluxe](https://github.com/Thermoptic/popampdeluxe)
+by Thermoptic.
+
+- **Volume and balance in the shaded equalizer,** as in Winamp: a classic
+  skin's sliders in the windowshade strip, with the thumb that changes in
+  the lower, middle and upper third of the range.
+- **Windowshade for the Media Library:** a double click on its title bar
+  rolls it up to a strip and another unrolls it; a classic skin also has
+  the shade button. A skin that draws the library window itself gets the
+  strip too, unless it gives its own `shade`. The setting is `ml_ws`.
+- **Title-bar shortcuts** (Preferences > Shortcuts): a right or middle
+  click, or the wheel, over the title bar of the main, equalizer or
+  playlist window runs previous, next, pause, stop, shuffle, repeat,
+  volume up or volume down. The rules are a table with Assign and Remove,
+  one action per click of a window; a right-click rule replaces that title
+  bar's menu. The setting is `title_shortcuts`.
+
 ### Changed
 
+- **A skin folder from Install from file:** picking a vector skin's
+  `skin.toml` puts on the folder it is in, where it is, instead of copying
+  the lone file; the skin reloads as its files change.
 - **macOS:** the code takes the Mac's keys (⌘ first, and menus that show
   them; the table is in [usage.md](docs/usage.md)), pastes copied links
   and files into the playlist with ⌘V, and cuts classic skins to their

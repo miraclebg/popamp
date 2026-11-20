@@ -463,6 +463,9 @@ pub struct Slider {
     pub wheel: i64,
     /// Values this close to the middle of the range snap to it.
     pub detent: i64,
+    /// A thumb that looks different in the lower, middle and upper third
+    /// of the range (the equalizer's windowshade sliders); replaces `thumb`.
+    pub thumb_thirds: Option<[Paint; 3]>,
 }
 
 /// A grid of background pictures, one per step of the value.

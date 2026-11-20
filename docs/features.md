@@ -117,6 +117,13 @@
     even when the icon is otherwise off. On Linux, notifications of each
     new track with its cover, off by default. Both are in Preferences >
     Desktop.
+  - Title-bar shortcuts (Preferences > Shortcuts): a right or middle click
+    on the title bar of the main, equalizer or playlist window (full size
+    or shaded) can go to the previous or next track, pause, stop or switch
+    shuffle or repeat, or turn the volume up or down. The wheel over a
+    title bar (Scroll Up, Scroll Down) works without a click. The rules
+    are a table: pick the window, the mouse button or wheel direction and
+    the action, then Assign; one action per click of a window.
   - Global hotkeys, as in Winamp (off by default, Preferences > Desktop):
     Ctrl+Alt+Insert play, Home pause, End stop, Page Up/Down previous and
     next, Up/Down volume, Left/Right 5 seconds back and forward. On X11

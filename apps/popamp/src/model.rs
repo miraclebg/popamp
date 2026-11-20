@@ -922,7 +922,12 @@ impl Model {
             DialogKind::InstallSkin => Request::Files {
                 title: "Install skin".into(),
                 multiple: false,
-                filter: popamp_skin::ARCHIVE_EXTENSIONS.iter().chain(&["zip"]).map(|e| format!("*.{e}")).collect(),
+                filter: popamp_skin::ARCHIVE_EXTENSIONS
+                    .iter()
+                    .chain(&["zip"])
+                    .map(|e| format!("*.{e}"))
+                    .chain([popamp_skin::vector::FILE.to_string()])
+                    .collect(),
                 start,
             },
             // A message carries its own text: see `C::About`.
@@ -1124,6 +1129,14 @@ impl Model {
     }
 
     pub fn install_skin(&mut self, src: &Path) {
+        // A skin's own skin.toml: its folder is the skin, put on where it is,
+        // so a skin being made shows each change.
+        if src.file_name().is_some_and(|n| n.eq_ignore_ascii_case(popamp_skin::vector::FILE)) {
+            if let Some(folder) = src.parent() {
+                self.set_skin(Some(folder.to_path_buf()));
+            }
+            return;
+        }
         let dir = self.paths.skins_dir();
         let Some(name) = src.file_name() else { return };
         let dest = dir.join(name);
@@ -1390,6 +1403,11 @@ impl Model {
             C::TogglePlShade => {
                 let v = !self.settings().pe_ws;
                 self.settings_mut().pe_ws = v;
+                self.ui.push(UiReq::Layout);
+            }
+            C::ToggleLibraryShade => {
+                let v = !self.settings().ml_ws;
+                self.settings_mut().ml_ws = v;
                 self.ui.push(UiReq::Layout);
             }
             C::ToggleEqWindow => {
@@ -2010,6 +2028,18 @@ mod tests {
         assert_eq!(m.skin.name, "Mine");
         assert!(m.paths.skins_dir().join("Mine.psz").is_file());
         assert_eq!(m.playlist.len(), 0);
+    }
+
+    #[test]
+    fn a_skin_toml_picked_to_install_puts_on_its_folder_where_it_is() {
+        let mut m = Model::for_tests();
+        let dir = m.paths.config_dir.join("work").join("my-skin");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("skin.toml"), "[meta]\nname = \"Work\"\nformat_version = 1\n").unwrap();
+        m.install_skin(&dir.join("skin.toml"));
+        assert_eq!(m.skin.name, "Work");
+        assert!(!m.paths.skins_dir().join("skin.toml").exists(), "nothing copied");
+        assert_eq!(m.settings().skin, dir.to_string_lossy(), "the folder is remembered");
     }
 
     #[test]
