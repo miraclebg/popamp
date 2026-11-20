@@ -138,6 +138,8 @@ pub struct App {
     drop_time: Instant,
     seen_pl_dirty: u64,
     next_frame: Instant,
+    /// When a shaped window next looks where the cursor is (macOS).
+    next_poll: Instant,
     last_slow: Instant,
     start_minimized: bool,
     popup_focus_check: Option<Instant>,
@@ -190,6 +192,7 @@ impl App {
             drop_time: Instant::now(),
             seen_pl_dirty: u64::MAX,
             next_frame: Instant::now(),
+            next_poll: Instant::now(),
             last_slow: Instant::now(),
             start_minimized,
             popup_focus_check: None,
@@ -2003,7 +2006,17 @@ fn window_icon() -> Option<winit::window::Icon> {
 impl ApplicationHandler<AppEvent> for App {
     fn new_events(&mut self, el: &ActiveEventLoop, cause: StartCause) {
         self.pump_children(el);
-        if matches!(cause, StartCause::ResumeTimeReached { .. } | StartCause::Poll) || Instant::now() >= self.next_frame {
+        // A shaped window looks where the cursor is 30 times a second, on a
+        // clock of its own, so the windows are not drawn more often for it.
+        let tracking = self.platform.tracks_cursor();
+        if tracking && Instant::now() >= self.next_poll {
+            self.next_poll = Instant::now() + Duration::from_millis(33);
+            let windows: Vec<&Window> =
+                WindowKey::ALL.iter().filter_map(|&k| self.win(k)).filter_map(|w| w.window.top()).map(|t| &**t).collect();
+            self.platform.track_cursor(&windows, self.drag.is_some() || self.capture.is_some());
+        }
+        let frame_due = Instant::now() >= self.next_frame || (!tracking && matches!(cause, StartCause::ResumeTimeReached { .. }));
+        if matches!(cause, StartCause::Poll) || frame_due {
             let s = self.model.settings();
             let fps = if self.model.state() == PlayState::Playing && s.sa != 0 { s.vis_fps.max(1) } else { 6 };
             self.next_frame = Instant::now() + Duration::from_millis(1000 / fps as u64);
@@ -2040,7 +2053,8 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
         }
-        el.set_control_flow(ControlFlow::WaitUntil(self.next_frame));
+        let wake = if self.platform.tracks_cursor() { self.next_frame.min(self.next_poll) } else { self.next_frame };
+        el.set_control_flow(ControlFlow::WaitUntil(wake));
     }
 
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
