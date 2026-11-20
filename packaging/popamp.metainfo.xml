@@ -8,20 +8,26 @@
   <summary>Winamp-style skinnable audio player</summary>
   <description>
     <p>
-      Popamp is an audio player in the style of the classic Winamp 2: main
-      window, equalizer and playlist editor that dock together, with
-      support for classic .wsz skins.
+      Popamp is a desktop music player in the spirit of Winamp 2: a main
+      window, a 10-band equalizer and a playlist that snap together, and a
+      different look whenever you want one.
     </p>
-    <p>
-      It plays MP3, Ogg Vorbis, FLAC, WAV, AIFF, AAC/M4A and internet
-      radio streams.
-    </p>
+    <ul>
+      <li>Its own skins are drawn as vectors and stay sharp at any size, from x1 to x3.</li>
+      <li>Opens classic .wsz skins, and installs skins from the Winamp Skin Museum and the popamp.app gallery.</li>
+      <li>Gapless playback, ReplayGain, an equalizer with .eqf presets and internet radio.</li>
+      <li>Plays MP3, AAC, FLAC, Ogg Vorbis, Opus, WAV, ALAC, MIDI, tracker modules and more.</li>
+      <li>Media keys and the desktop's player controls through MPRIS.</li>
+      <li>Toolbar mode turns the player into a strip along the top or bottom of the screen.</li>
+      <li>No account, no cloud, no library to import.</li>
+    </ul>
   </description>
   <launchable type="desktop-id">popamp.desktop</launchable>
   <provides>
     <binary>popamp</binary>
   </provides>
-  <url type="homepage">https://github.com/popamp/popamp</url>
+  <url type="homepage">https://popamp.app</url>
+  <url type="vcs-browser">https://github.com/popamp/popamp</url>
   <url type="bugtracker">https://github.com/popamp/popamp/issues</url>
   <developer id="io.github.popamp">
     <name>Gunyakov</name>
@@ -31,8 +37,29 @@
     <category>Audio</category>
     <category>Player</category>
   </categories>
+  <screenshots>
+    <screenshot type="default">
+      <caption>The main window, equalizer and playlist with the default skin</caption>
+      <image>https://raw.githubusercontent.com/popamp/popamp/main/assets/screenshots/default.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The Steel skin</caption>
+      <image>https://raw.githubusercontent.com/popamp/popamp/main/assets/screenshots/steel.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The Modern skin</caption>
+      <image>https://raw.githubusercontent.com/popamp/popamp/main/assets/screenshots/modern.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Toolbar mode: the player as a strip along the bottom of the screen</caption>
+      <image>https://raw.githubusercontent.com/popamp/popamp/main/assets/screenshots/bar.png</image>
+    </screenshot>
+  </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.0.3" date="2026-11-19"/>
+    <release version="1.0.2" date="2026-11-18"/>
+    <release version="1.0.1" date="2026-11-16"/>
     <release version="1.0.0" date="2026-11-14"/>
     <release version="0.9.1" date="2026-11-13"/>
     <release version="0.9.0" date="2026-11-12"/>

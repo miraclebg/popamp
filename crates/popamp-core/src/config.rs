@@ -205,6 +205,9 @@ settings! {
     snap: bool = true,
     snaplen: i32 = 10,
     easymove: bool = true,
+    /// Dragging the equalizer or the playlist by its title bar, while docked
+    /// to the main window, moves all the docked windows together.
+    groupmove: bool = false,
     aot: bool = false,
     /// Windows drawn at `zoom` instead of 1x ("Double Size", Ctrl+D).
     dsize: bool = false,
@@ -213,7 +216,8 @@ settings! {
     wsz_scaling: Scaling = Scaling::Sharp,
     keeponscreen: bool = true,
     /// On a Wayland desktop, be a Wayland program even where X11 programs
-    /// run too (Xwayland). Where they do not, Popamp always is one.
+    /// run too (Xwayland). Where they do not, and on COSMIC, Popamp
+    /// always is one.
     wayland: bool = false,
     /// The main window is shown as a bar, in a skin that describes it both
     /// as a window and as a bar.
@@ -223,6 +227,10 @@ settings! {
     /// How big a bar skin's bar is, in percent, whatever size the other
     /// windows are: 200 makes it as thick as jetAudio's bar.
     bar_zoom: i32 = 200,
+    /// A bar spans its monitor's whole width, under the desktop's side
+    /// panels: Ubuntu's dock gives the corner up to a bar, but tells only of
+    /// the area beside its full height.
+    bar_under_side_panels: bool = false,
     dim_inactive: bool = true,
     // Main window.
     timeleftmode: bool = false,
@@ -386,8 +394,16 @@ impl Paths {
         Self { config_dir: dir.clone(), data_dir: dir, share_dirs: Vec::new() }
     }
 
+    /// `~/Library/Application Support/popamp`, and the app bundle's
+    /// resources for what comes with it.
+    #[cfg(target_os = "macos")]
+    fn system() -> Self {
+        let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        macos_paths(&home, std::env::current_exe().ok().as_deref())
+    }
+
     /// The XDG directories.
-    #[cfg(not(windows))]
+    #[cfg(all(not(windows), not(target_os = "macos")))]
     fn system() -> Self {
         let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("."));
         let xdg = |var: &str, fallback: &str| {
@@ -446,10 +462,22 @@ impl Paths {
     }
 }
 
+/// The folders on macOS for the home folder `home` and the program `exe`:
+/// settings and data in one folder, as on Windows; what a `Popamp.app`
+/// carries in its `Resources`, but only for a program inside a bundle.
+#[cfg(any(target_os = "macos", test))]
+fn macos_paths(home: &Path, exe: Option<&Path>) -> Paths {
+    let dir = home.join("Library").join("Application Support").join("popamp");
+    let named = |p: &Path, n: &str| p.file_name().is_some_and(|f| f == n);
+    let contents = exe.and_then(Path::parent).filter(|d| named(d, "MacOS")).and_then(Path::parent).filter(|d| named(d, "Contents"));
+    let share_dirs = contents.map(|c| c.join("Resources").join("popamp")).into_iter().collect();
+    Paths { config_dir: dir.clone(), data_dir: dir, share_dirs }
+}
+
 /// `popamp` in each of `$XDG_DATA_DIRS`, where packages put what they
 /// install. As the XDG spec says, relative entries are ignored, and unset
 /// or empty means `/usr/local/share:/usr/share`.
-#[cfg(not(windows))]
+#[cfg(all(not(windows), any(not(target_os = "macos"), test)))]
 fn share_dirs(var: Option<std::ffi::OsString>) -> Vec<PathBuf> {
     let var = var.filter(|v| !v.is_empty()).unwrap_or_else(|| "/usr/local/share:/usr/share".into());
     let mut dirs: Vec<PathBuf> = Vec::new();
@@ -563,6 +591,21 @@ pub fn write_atomic(path: &Path, data: &[u8]) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_mac_keeps_settings_in_application_support() {
+        let home = Path::new("/Users/u");
+        let p = macos_paths(home, Some(Path::new("/Users/u/bin/popamp")));
+        let support = PathBuf::from("/Users/u/Library/Application Support/popamp");
+        assert_eq!((p.config_dir.clone(), p.data_dir.clone()), (support.clone(), support));
+        assert!(p.share_dirs.is_empty());
+    }
+
+    #[test]
+    fn an_app_bundle_shares_its_resources() {
+        let p = macos_paths(Path::new("/Users/u"), Some(Path::new("/Applications/Popamp.app/Contents/MacOS/popamp")));
+        assert_eq!(p.share_dirs, [PathBuf::from("/Applications/Popamp.app/Contents/Resources/popamp")]);
+    }
 
     #[test]
     fn defaults_and_round_trip() {

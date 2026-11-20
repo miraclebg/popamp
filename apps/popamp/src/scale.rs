@@ -39,6 +39,15 @@ impl Scale {
         (p * 100 + self.pct - 1).div_euclid(self.pct)
     }
 
+    /// This scale on a screen with `factor` pixels to each unit the
+    /// desktop counts in (2 on a Retina Mac): what a window is drawn at.
+    pub fn on_screen(self, factor: f64) -> Scale {
+        if factor == 1.0 {
+            return self;
+        }
+        Scale::new((self.pct as f64 * factor).round() as i32, self.mode)
+    }
+
     /// Screen pixels per skin pixel.
     pub fn factor(self) -> f32 {
         self.pct as f32 / 100.0
@@ -182,5 +191,13 @@ mod tests {
         let src = strip(&[0x123456; 7]);
         let sharp = Scale::of(&settings(true, 175, Scaling::Sharp));
         assert!(present(sharp, &src, 12, 2).iter().all(|&p| p == 0x123456));
+    }
+
+    #[test]
+    fn a_window_draws_at_its_screens_density() {
+        let s = Scale::new(150, Scaling::Sharp);
+        assert_eq!(s.on_screen(2.0).px(100), 300, "x1.5 on a Retina screen");
+        assert_eq!(s.on_screen(1.0), s);
+        assert_eq!(Scale::new(150, Scaling::Integer).on_screen(2.0).px(10), 20, "whole multiples of what the zoom gives");
     }
 }

@@ -1,3 +1,5 @@
+<h1 align="center">Popamp</h1>
+
 <p align="center">
   <a href="#install"><img src="assets/readme/hero.png" alt="Popamp with three of its skins: Default, Steel and Modern" width="100%"></a>
 </p>
@@ -40,8 +42,9 @@ Linux and Windows.
 - **Plug-ins you allow.** Sandboxed WebAssembly plug-ins, each switched
   on by you: [YouTube](https://github.com/popamp/plugin-youtube) as a
   source, [Crossfeed](https://github.com/popamp/plugin-crossfeed) for
-  headphones, [Monkey's Audio](https://github.com/popamp/plugin-ape) for
-  `.ape` files.
+  headphones, [Monkey's Audio](https://github.com/popamp/plugin-ape) and
+  [WavPack](https://github.com/popamp/plugin-wavpack) for `.ape` and
+  `.wv` files.
 - **Your music stays yours.** No account, no cloud, no library to import:
   it plays files and the streams you open.
 
@@ -92,7 +95,7 @@ with [plug-ins](docs/plugins.md) such as YouTube and visualizers.
 |---|---|
 | Debian, Ubuntu | add the [apt repository](docs/building.md#debian-and-ubuntu), then `sudo apt install popamp`; or download `popamp-<version>-linux-amd64.deb` (ARM64: `-arm64.deb`) and `sudo apt install ./popamp-…deb` |
 | openSUSE, Fedora | add the [repository](docs/building.md#opensuse-and-fedora), then `sudo zypper install popamp` or `sudo dnf install popamp` |
-| Any other Linux | `Popamp-<version>-linux-x86_64.AppImage`: `chmod +x` it and run it |
+| Any other Linux | `Popamp-<version>-x86_64.AppImage`: `chmod +x` it and run it |
 | Windows 10 or 11 | `Popamp-<version>-windows-x86_64-setup.exe`, or the portable `…-portable.zip`: unpack it anywhere and run `popamp.exe` |
 
 Or build it yourself with Rust 1.96 or newer:
@@ -111,6 +114,16 @@ cargo build --release                      # add --features plus for popamp-plus
 - [Plug-ins](docs/plugins.md) and [the skin format](docs/skin-format.md), for making your own.
 - [Testing](docs/testing.md): what was tested, where and how.
 - [Contributing](CONTRIBUTING.md), [Changelog](CHANGELOG.md), [Roadmap](docs/ROADMAP.md).
+
+### Limits and desktop-specific behaviour
+
+Some desktops limit what a program may do with its windows, or behave in
+ways you might not expect. What that means for Popamp, and what to do
+about it:
+
+- [COSMIC (Pop!_OS) and Wayland](docs/wayland.md): what works as a Wayland program, and why some things cannot.
+- [Ubuntu](docs/ubuntu.md): toolbar mode beside Ubuntu's dock, and a bar smaller than the size you chose.
+- [KDE Plasma](docs/kde.md): toolbar mode at the top covers the desktop icons.
 
 ## License
 

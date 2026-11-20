@@ -6,6 +6,137 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **macOS:** the code takes the Mac's keys (⌘ first, and menus that show
+  them; the table is in [usage.md](docs/usage.md)), pastes copied links
+  and files into the playlist with ⌘V, and cuts classic skins to their
+  shape. There is still no macOS download from this project.
+
+## [1.0.3] - 2026-11-19
+
+### Added
+
+- **WavPack:** a new decoder plug-in,
+  [plugin-wavpack](https://github.com/popamp/plugin-wavpack), plays `.wv`
+  files, whole-album rips with their CUE sheets included.
+- **CUE sheets inside the album file:** a FLAC, APE or WavPack file that
+  keeps its sheet in a CUESHEET tag, or a FLAC file with a CUESHEET
+  block, is listed as its tracks.
+
+### Changed
+
+- **The default skin** shows Popamp's lightning bolt in the main window,
+  in place of the little spectrum in its well.
+
+### Fixed
+
+- **Decoder plug-ins that hand over seconds of audio at once (APE):** the
+  position bar and the visualizer move smoothly instead of jumping once a
+  second, and pause and seeking answer at once.
+- **Album rips with a CUE sheet:** an album file that a `.cue` beside it
+  cuts into tracks is listed as those tracks, not as one long file, when
+  it is added alone or with its folder, to the playlist or the library.
+  When a rip has two sheets of the same file (one for the WAV, one for the FLAC), its
+  tracks are listed once. A sheet that names a WAV file the album was
+  since converted from also finds it in a format a decoder plug-in adds,
+  such as APE.
+- **Cyrillic CUE sheets and playlists** saved in Windows-1251 read
+  correctly; before, their titles came out garbled and the sheet could
+  not find its audio file.
+
+## [1.0.2] - 2026-11-18
+
+### Added
+
+- **Toolbar mode as a Wayland program:** the bar is a layer of the
+  desktop where the compositor has wlr-layer-shell (COSMIC, KDE Plasma,
+  Sway, Hyprland), keeps maximized windows out of its strip and takes the
+  width the desktop's panels leave it. The equalizer and the playlist sit
+  against it as on X11. It takes no keys there.
+- **Snapping to the screen's edges on COSMIC:** the equalizer and the
+  playlist snap to the edges of the monitor as Popamp's windows do
+  elsewhere. COSMIC tells Popamp where its main window is
+  (cosmic-toplevel-info). The main window, which the compositor moves,
+  snaps with COSMIC's *Edge gravity* (Settings → Desktop → Window
+  management). They stop at the desktop's panels, not under them:
+  Popamp asks COSMIC how much room the panels leave on the monitor.
+- **Move docked windows together** (Options menu, off by default):
+  dragging the equalizer or the playlist by its title bar, while it is
+  docked to the main window, moves the whole docked group, which snaps
+  as one. On COSMIC the compositor moves the group, which then snaps
+  only with COSMIC's *Edge gravity*.
+- **COSMIC:** while the main window is dragged, the equalizer and the
+  playlist not docked to it are hidden, and come back where they were,
+  instead of going along with it.
+- **Toolbar mode > Full width, under side panels** (off by default, X11
+  and Xwayland): the bar spans the whole screen, under a side dock that
+  makes room for it. Ubuntu's dock does, but tells the system only of
+  its full height, so the bar used to leave an empty corner beside it.
+
+### Fixed
+
+- **Dragging at a screen edge under X11:** docked windows stay together
+  when the group reaches an edge. The window manager holds each window
+  inside the work area, so the windows further from the edge went on
+  and slid over the held one, and the next drag started with the held
+  window stuck at the edge. The group now stops as a whole.
+- **COSMIC:** Popamp runs there as a Wayland program, since COSMIC's
+  Xwayland does not let a program move its windows. The equalizer and
+  the playlist follow the mouse when dragged, even at the screen's edge,
+  and the main window changes size with the others (Ctrl+D). COSMIC
+  calls every floating window tiled, and winit then ignored the new
+  size; Popamp builds with a fork of winit that fixes this until the
+  fix ([winit#4847](https://github.com/rust-windowing/winit/pull/4847))
+  is released.
+- **COSMIC:** the main window dropped in a screen corner keeps its size
+  instead of being stretched to the quarter of the screen COSMIC tiles
+  it into.
+- **Toolbar mode on KDE Plasma (Wayland):** maximized windows no longer
+  go under the bar. KWin ignores the struts of programs that run
+  through Xwayland, so Popamp keeps the bar's strip with an invisible
+  layer of the desktop (wlr-layer-shell) under the bar.
+
+### Changed
+
+- **Software centres:** the AppStream data has screenshots and a
+  current description, so the AppImage catalog and the software centres
+  show the player with its skins instead of an empty playlist.
+- **Toolbar size:** a bar too wide for the screen takes the biggest
+  smaller size that fits, and *Toolbar mode > Size* offers only those;
+  the size chosen is kept for a wider screen.
+- **Documentation:** pages on Ubuntu and KDE Plasma
+  ([ubuntu.md](docs/ubuntu.md), [kde.md](docs/kde.md)), linked from the
+  README's new *Limits and desktop-specific behaviour*; checked from the
+  live images of Ubuntu 26.04.1, Kubuntu 26.04.1 and Linux Mint 22.3.
+
+## [1.0.1] - 2026-11-16
+
+### Fixed
+
+- **Dragging under X11:** a window and the windows docked to it follow
+  the mouse again. With window managers that report moves late, such as
+  Xfce's, they fell behind the mouse, jumped back, and could end up far
+  off the screen ([#46](https://github.com/popamp/popamp/issues/46)).
+- **Raising under X11:** a click on one of Popamp's windows brings up
+  the others with it, so another program's window no longer cuts the
+  docked group in two.
+- **Dialogs on Linux:** when neither zenity nor kdialog is installed,
+  the main window says *DIALOGS NEED ZENITY* instead of doing nothing;
+  when the dialog program fails, it says *DIALOG FAILED, SEE THE LOG*
+  and the log has the reason.
+
+### Changed
+
+- **macOS:** the code takes the Mac's own dialogs, fonts and Finder's
+  "Open with", and draws sharp on Retina screens. There is still no
+  macOS download from this project.
+
+- **AppImage:** it carries the libraries a desktop may lack (xkbcommon,
+  Xcursor, Xi, Opus, libopenmpt and what they need), so it starts on
+  systems without them; before, it quit at once where xkbcommon-x11 was
+  missing. Its file name drops `linux`: `Popamp-<version>-x86_64.AppImage`.
+
 ## [1.0.0] - 2026-11-14
 
 ### Added
@@ -494,7 +625,10 @@ First release.
 - **Packaging:** desktop entry, `.wsz` MIME type, icons and a per-user
   install script.
 
-[Unreleased]: https://github.com/popamp/popamp/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/popamp/popamp/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/popamp/popamp/compare/v1.0.2...v1.0.3
+[1.0.2]: https://github.com/popamp/popamp/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/popamp/popamp/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/popamp/popamp/compare/v0.9.1...v1.0.0
 [0.9.1]: https://github.com/popamp/popamp/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/popamp/popamp/compare/v0.8.0...v0.9.0

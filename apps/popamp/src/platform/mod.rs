@@ -2,26 +2,100 @@
 //! Linux, Win32 on Windows, AppKit on macOS. The rest of the program sees
 //! only this module.
 
+use crate::bar::Screen;
 use crate::scale::Scale;
 use std::num::NonZeroU32;
 use std::sync::Arc;
-use winit::dpi::PhysicalPosition;
+use winit::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Position, Size};
+use winit::monitor::MonitorHandle;
 use winit::window::{Window, WindowId};
 
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use windows::{attributes, use_parent_console, Platform, OWNED_FOLLOW_OWNER};
+pub use windows::{attributes, use_parent_console, Platform, MINIMIZE_HIDES_COMPANIONS, OWNED_FOLLOW_OWNER};
 #[cfg(linux_like)]
 pub mod wayland;
 #[cfg(linux_like)]
+mod wayland_strip;
+#[cfg(linux_like)]
 mod x11;
 #[cfg(linux_like)]
-pub use x11::{attributes, choose_window_system, Platform, OWNED_FOLLOW_OWNER};
+pub use x11::{attributes, choose_window_system, Platform, MINIMIZE_HIDES_COMPANIONS, OWNED_FOLLOW_OWNER};
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::{attributes, Platform, OWNED_FOLLOW_OWNER};
+pub use macos::{attributes, Platform, MINIMIZE_HIDES_COMPANIONS, OWNED_FOLLOW_OWNER};
+
+/// Whether the desktop counts in points rather than screen pixels. macOS
+/// lays its screens out in points, two pixels each on a Retina screen, so a
+/// pixel position means something else on each screen there; window
+/// positions and sizes go to it in points, and each window draws at its own
+/// screen's pixels per point. X11 and Windows have one grid of pixels.
+pub const DESKTOP_IN_POINTS: bool = cfg!(target_os = "macos");
+
+/// A window position in the desktop's units.
+pub fn position(x: i32, y: i32) -> Position {
+    if DESKTOP_IN_POINTS {
+        LogicalPosition::new(x as f64, y as f64).into()
+    } else {
+        PhysicalPosition::new(x, y).into()
+    }
+}
+
+/// A window size in the desktop's units.
+pub fn size(w: i32, h: i32) -> Size {
+    let (w, h) = (w.max(1) as u32, h.max(1) as u32);
+    if DESKTOP_IN_POINTS {
+        LogicalSize::new(w as f64, h as f64).into()
+    } else {
+        PhysicalSize::new(w, h).into()
+    }
+}
+
+/// The size of a window drawn `w` x `h` screen pixels big at `pct` (a menu,
+/// a tooltip, a dialog drawn at the display scaling), in the desktop's units.
+pub fn drawn_size(w: i32, h: i32, pct: i32) -> Size {
+    if DESKTOP_IN_POINTS {
+        let pt = |v: i32| (v * 100 + pct - 1) / pct.max(1);
+        size(pt(w), pt(h))
+    } else {
+        size(w, h)
+    }
+}
+
+/// A length of `px` screen pixels in something drawn at `pct` (a menu, a
+/// dialog), in the desktop's units: where a submenu opens, how wide a menu
+/// is when it is placed.
+pub fn from_drawn(px: i32, pct: i32) -> i32 {
+    if DESKTOP_IN_POINTS {
+        px * 100 / pct.max(1)
+    } else {
+        px
+    }
+}
+
+/// A point winit gives in screen pixels (a window's position, the cursor in
+/// it), in the desktop's units; `factor` is the window's pixels per point.
+pub fn from_screen(x: f64, y: f64, factor: f64) -> (i32, i32) {
+    from_screen_in(DESKTOP_IN_POINTS, x, y, factor)
+}
+
+fn from_screen_in(points: bool, x: f64, y: f64, factor: f64) -> (i32, i32) {
+    if points && factor > 0.0 {
+        ((x / factor).floor() as i32, (y / factor).floor() as i32)
+    } else {
+        (x as i32, y as i32)
+    }
+}
+
+/// A monitor's rectangle in the desktop's units.
+pub fn monitor(m: &MonitorHandle) -> Screen {
+    let (p, s) = (m.position(), m.size());
+    let f = if DESKTOP_IN_POINTS { m.scale_factor() } else { 1.0 };
+    let unit = |v: f64| (v / f).round() as i32;
+    Screen { x: unit(p.x as f64), y: unit(p.y as f64), w: unit(s.width as f64), h: unit(s.height as f64) }
+}
 
 /// What a window is for, which decides how the window manager treats it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,13 +147,20 @@ impl Win {
         }
     }
 
-    /// Puts the top-left corner at `pos`, in screen pixels.
+    /// Puts the top-left corner at `pos`, in the desktop's units: screen
+    /// pixels, or points on macOS.
     pub fn move_to(&self, pos: (i32, i32)) {
         match self {
-            Win::Top(w) => w.set_outer_position(PhysicalPosition::new(pos.0, pos.1)),
+            Win::Top(w) => w.set_outer_position(position(pos.0, pos.1)),
             #[cfg(linux_like)]
             Win::Sub(s) => s.move_to(pos),
         }
+    }
+
+    /// Screen pixels per desktop unit where the window is: 2 on a Retina
+    /// Mac. A part of a Wayland window counts in its parent's pixels.
+    pub fn scale_factor(&self) -> f64 {
+        self.top().map_or(1.0, |w| w.scale_factor())
     }
 
     pub fn request_redraw(&self) {
@@ -173,6 +254,30 @@ impl Platform {
         None
     }
 
+    pub fn can_bar(&self) -> bool {
+        true
+    }
+
+    pub fn joined(&self) -> bool {
+        false
+    }
+
+    pub fn bar_width(&self) -> Option<i32> {
+        None
+    }
+
+    pub fn bar(&mut self, _edge: popamp_core::config::BarEdge, _pos: (i32, i32), _size: (i32, i32)) -> Option<(Win, Surface)> {
+        None
+    }
+
+    pub fn wayland_monitors(&self) -> Vec<crate::bar::Screen> {
+        Vec::new()
+    }
+
+    pub fn drag_main(&self) -> bool {
+        false
+    }
+
     pub fn set_scale(&self, _scale: f64) {}
 
     pub fn set_cursor(&mut self, _cursor: Option<&popamp_skin::cursors::CursorImage>) {}
@@ -180,11 +285,22 @@ impl Platform {
 
 /// Which pixels of a window show: `w` x `h` of them, each `scale` times
 /// bigger on the screen.
+#[derive(Clone)]
 pub struct Mask {
     pub w: i32,
     pub h: i32,
     pub on: Vec<bool>,
     pub scale: Scale,
+}
+
+impl Mask {
+    /// Whether the window shows its pixel at `(x, y)`, counted in the
+    /// desktop's units from its top-left corner.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn covers(&self, x: i32, y: i32) -> bool {
+        let (mx, my) = (self.scale.skin(x), self.scale.skin(y));
+        x >= 0 && y >= 0 && mx < self.w && my < self.h && self.on.get((my * self.w + mx) as usize).copied().unwrap_or(false)
+    }
 }
 
 /// The visible part of a window as `(x, y, w, h)` rectangles in screen
@@ -221,6 +337,31 @@ fn shape_rects(mask: Option<&Mask>, size: (i32, i32)) -> Vec<(i16, i16, u16, u16
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cursor_position_is_kept_as_winit_gives_it_in_pixels() {
+        // As `position.x as i32` was: towards zero, so -0.5 is 0.
+        assert_eq!(from_screen_in(false, -0.5, 10.7, 2.0), (0, 10));
+        assert_eq!(from_screen_in(true, 301.0, -1.0, 2.0), (150, -1), "points: whole points below");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_mac_desktop_counts_in_points() {
+        assert_eq!(from_screen(301.0, 99.0, 2.0), (150, 49));
+        assert_eq!(from_drawn(600, 200), 300, "a menu drawn at 200%: 600 pixels are 300 points");
+        assert!(matches!(position(10, 20), Position::Logical(p) if (p.x, p.y) == (10.0, 20.0)));
+        assert!(matches!(size(275, 116), Size::Logical(s) if (s.width, s.height) == (275.0, 116.0)));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn elsewhere_the_desktop_counts_in_pixels() {
+        assert_eq!(from_screen(301.0, 99.0, 2.0), (301, 99));
+        assert_eq!(from_drawn(600, 200), 600);
+        assert!(matches!(position(10, 20), Position::Physical(p) if (p.x, p.y) == (10, 20)));
+        assert!(matches!(size(275, 116), Size::Physical(s) if (s.width, s.height) == (275, 116)));
+    }
     use popamp_core::config::Scaling;
 
     fn region(polys: &[Vec<(i32, i32)>], w: i32, h: i32, scale: Scale) -> Mask {
@@ -241,6 +382,17 @@ mod tests {
         // At x1.5 the runs meet without gaps: rows 0..2 and 2..3.
         let x15 = Scale::new(150, Scaling::Sharp);
         assert_eq!(shape_rects(Some(&region(&rect, 6, 3, x15)), (9, 5)), [(2, 0, 6, 2), (2, 2, 6, 1)]);
+    }
+
+    #[test]
+    fn the_cursor_is_over_a_shape_only_on_its_pixels() {
+        // A 4x2 rectangle at (1, 0) in a 6x3 window, shown at x2.
+        let rect = vec![vec![(1, 0), (5, 0), (5, 2), (1, 2)]];
+        let m = region(&rect, 6, 3, Scale::new(200, Scaling::Sharp));
+        assert!(m.covers(2, 0) && m.covers(9, 3));
+        assert!(!m.covers(1, 0), "left of the shape");
+        assert!(!m.covers(4, 5), "below it");
+        assert!(!m.covers(-1, 0) && !m.covers(100, 1), "outside the window");
     }
 
     #[test]

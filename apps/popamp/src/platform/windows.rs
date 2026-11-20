@@ -53,6 +53,9 @@ pub fn use_parent_console() {
 /// the main window is minimized or restored by hand.
 pub const OWNED_FOLLOW_OWNER: bool = true;
 
+/// Each window is minimized as the owner rule above says.
+pub const MINIMIZE_HIDES_COMPANIONS: bool = false;
+
 /// Nothing to connect to: the calls go straight to the system. Holds the
 /// window registered as an application desktop toolbar, if any.
 pub struct Platform {
@@ -117,6 +120,23 @@ impl Platform {
         // SAFETY: as above; the call only reads `data`.
         unsafe { SHAppBarMessage(ABM_SETPOS, &mut data) };
         Ok(())
+    }
+
+    /// Nothing to follow: the system cuts the window and passes clicks.
+    pub fn tracks_cursor(&self) -> bool {
+        false
+    }
+
+    /// Nothing to do: the system passes clicks through a shape.
+    pub fn track_cursor(&self, _windows: &[&Window], _button_down: bool) {}
+
+    /// Nothing to do: owned windows come up with their owner.
+    pub fn raise_together(&self, _windows: &[&Window]) {}
+
+    /// None: a window moves at once on Windows, so its own mouse position
+    /// is right.
+    pub fn pointer(&self) -> Option<(i32, i32)> {
+        None
     }
 
     /// Gives back the strip of `window`, a bar about to go.

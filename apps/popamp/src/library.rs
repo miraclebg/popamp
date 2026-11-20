@@ -1046,7 +1046,9 @@ fn scan(
                 return;
             }
             let path = item.location;
-            let Some(stamp) = Stamp::of(std::path::Path::new(&path)) else { continue };
+            // A track of a CUE sheet changes with its sheet.
+            let file = popamp_core::cue::split_location(&path).map_or(path.as_str(), |(sheet, _)| sheet);
+            let Some(stamp) = Stamp::of(std::path::Path::new(file)) else { continue };
             let track = match known.get(&path) {
                 Some(old) if old.stamp == stamp => old.clone(),
                 old => {
@@ -1455,6 +1457,34 @@ mod tests {
     }
 
     #[test]
+    fn a_scan_lists_the_tracks_of_a_cue_sheet() {
+        let dir = std::env::temp_dir().join(format!("popamp-libcue-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/popamp-audio/tests/fixtures/silence.wav");
+        std::fs::copy(fixture, dir.join("album.wav")).unwrap();
+        let sheet = "FILE \"album.flac\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"One\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"Two\"\n    INDEX 01 00:00:15\n";
+        std::fs::write(dir.join("album.cue"), sheet).unwrap();
+        let m = Model::for_tests();
+        let events = std::cell::RefCell::new(Vec::new());
+        scan(
+            1,
+            vec![dir.to_string_lossy().into_owned()],
+            HashMap::new(),
+            &m.sources,
+            &m.source_context(),
+            &AtomicBool::new(false),
+            &|ev| {
+                events.borrow_mut().push(ev);
+                true
+            },
+        );
+        let events = events.into_inner();
+        let [LibEvent::Folder(1, _, found), LibEvent::Done(1)] = events.as_slice() else { panic!("{events:?}") };
+        assert_eq!(found.iter().map(|t| t.title.as_str()).collect::<Vec<_>>(), ["One", "Two"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn a_scan_result_fills_the_library_and_is_saved() {
         let mut m = Model::for_tests();
         m.library.lib.add_folder("/music");
@@ -1477,7 +1507,9 @@ mod tests {
     fn enter_enqueues_by_default_and_shift_enter_plays() {
         let mut m = Model::for_tests();
         let keys = |m: &Model| m.library_menu().into_iter().take(2).map(|i| (i.label, i.accel)).collect::<Vec<_>>();
-        let pair = |a: &str, b: &str| vec![("Play".to_string(), a.to_string()), ("Enqueue".to_string(), b.to_string())];
+        // As the menu shows the keys: ⇧Enter on a Mac.
+        let shown = |k: &str| if cfg!(target_os = "macos") { crate::mac_keys::label(k) } else { k.to_string() };
+        let pair = |a: &str, b: &str| vec![("Play".to_string(), shown(a)), ("Enqueue".to_string(), shown(b))];
         assert_eq!((m.library_open(false), m.library_open(true)), (Command::LibraryEnqueue, Command::LibraryPlay));
         assert_eq!(keys(&m), pair("Shift+Enter", "Enter"), "the menu tells which key does what");
         m.settings_mut().enqueuedef = false;

@@ -261,12 +261,36 @@ pub fn resize(model: &mut Model, key: WindowKey, start: (i32, i32), dx: i32, dy:
 
 /// The scale a window is shown at: a bar's own size for a bar, the
 /// window size for the rest.
+/// In the desktop's units: screen pixels, or points on macOS.
 pub fn scale(model: &Model, key: WindowKey) -> Scale {
     let s = model.settings();
     match key {
-        WindowKey::Main if crate::bar::edge(model).is_some() => Scale::new(s.bar_zoom, s.wsz_scaling),
+        WindowKey::Main if crate::bar::edge(model).is_some() => Scale::new(bar_zoom(model), s.wsz_scaling),
         _ => Scale::of(s),
     }
+}
+
+/// Whether a bar `pct` percent big fits across its monitor at its
+/// narrowest; true while the monitor is not known.
+fn bar_fits(model: &Model, pct: i32) -> bool {
+    let (Some(screen), Some(def)) = (model.screen, model.skin.layout.window(WindowKey::Main)) else { return true };
+    let narrowest = match def.mode(View::Bar).width {
+        Dim::Fixed(n) | Dim::Free { min: n, .. } => n,
+    };
+    Scale::new(pct, model.settings().wsz_scaling).px(narrowest) <= screen.w
+}
+
+/// The bar sizes offered on its monitor: those that fit across it.
+pub fn bar_zooms(model: &Model) -> Vec<i32> {
+    popamp_core::config::ZOOMS.into_iter().filter(|&pct| bar_fits(model, pct)).collect()
+}
+
+/// The size a bar is shown at: the chosen one, or the biggest smaller one
+/// that fits across its monitor, or the smallest when none does.
+pub fn bar_zoom(model: &Model) -> i32 {
+    let chosen = model.settings().bar_zoom;
+    let smaller = popamp_core::config::ZOOMS.into_iter().rev().filter(|&pct| pct < chosen);
+    std::iter::once(chosen).chain(smaller).find(|&pct| bar_fits(model, pct)).unwrap_or(popamp_core::config::ZOOMS[0])
 }
 
 pub fn window_size(model: &Model, key: WindowKey) -> (i32, i32) {
@@ -311,6 +335,26 @@ mod tests {
         assert_eq!(window_size(&m, WindowKey::Main).0, 1280);
         m.settings_mut().bar_zoom = 175;
         assert_eq!(window_size(&m, WindowKey::Main).0, 1098, "covers the monitor: 1097 would leave a pixel");
+    }
+
+    #[test]
+    fn a_bar_too_wide_for_its_monitor_takes_the_biggest_size_that_fits() {
+        let mut m = Model::for_tests();
+        m.skin.layout.windows[0].bar = None;
+        m.skin.layout.windows[0].placement = Placement::Bar(BarEdge::Bottom);
+        m.skin.layout.windows[0].normal.width = Dim::Free { min: 400, step: 1 };
+        m.settings_mut().bar_zoom = 250;
+        assert_eq!(bar_zoom(&m), 250, "no monitor yet: the chosen size");
+        assert_eq!(bar_zooms(&m), popamp_core::config::ZOOMS);
+        m.screen = Some(crate::bar::Screen { x: 0, y: 0, w: 900, h: 600 });
+        assert_eq!(bar_zoom(&m), 200, "1000 pixels at x2.5, 800 at x2");
+        assert_eq!(scale(&m, WindowKey::Main).px(14), 28);
+        assert_eq!(window_size(&m, WindowKey::Main).0, 450, "the whole monitor");
+        assert_eq!(bar_zooms(&m), [100, 125, 150, 175, 200]);
+        m.settings_mut().bar_zoom = 150;
+        assert_eq!(bar_zoom(&m), 150, "a size that fits stays");
+        m.screen = Some(crate::bar::Screen { x: 0, y: 0, w: 300, h: 600 });
+        assert_eq!(bar_zoom(&m), 100, "nothing fits: the smallest");
     }
 
     #[test]
