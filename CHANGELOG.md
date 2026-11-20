@@ -30,6 +30,10 @@ by Thermoptic.
 - **A skin folder from Install from file:** picking a vector skin's
   `skin.toml` puts on the folder it is in, where it is, instead of copying
   the lone file; the skin reloads as its files change.
+- **macOS:** the code takes the Mac's keys (⌘ first, and menus that show
+  them; the table is in [usage.md](docs/usage.md)), pastes copied links
+  and files into the playlist with ⌘V, and cuts classic skins to their
+  shape. There is still no macOS download from this project.
 
 ## [1.0.3] - 2026-11-19
 
