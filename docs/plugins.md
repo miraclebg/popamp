@@ -97,8 +97,13 @@ the way to install one. A plug-in can also be installed by cloning its repositor
 `/usr/share/popamp/plugins/<id>/`; your own folder of the same name wins.
 A packaged plug-in, too, stays off until you allow what it asks for.
 The core ships no plug-ins.
-The menu "Plug-ins…" lists them, turns each on or off, and shows its
-settings and permissions.
+Preferences > Plug-ins (the menu "Plug-ins…" opens it) says how to turn
+one on, and lists every plug-in under it. A plug-in's page shows the Enabled
+tick, what it does and may do, what it may reach and its settings
+(greyed out while it is off), and the commands it runs, on request.
+Remove on that page deletes a plug-in in your own folder after asking,
+and takes back its permission; a packaged one is removed with the
+package manager.
 
 ### Manifest
 
@@ -225,15 +230,15 @@ version asks for more:
   profiles), `AppData` and `Library` in the home, and the player's own
   folders stay closed whatever was chosen.
 
-The Plug-ins window shows these above the plug-in's own settings. What
+A plug-in's page in Preferences shows these above its own settings. What
 the user unticks or chooses is kept apart from those settings, so no
 manifest can set or read it, and being refused is an answer to the
 plug-in, not a failure of it.
 
 Every request of these three kinds, allowed or refused, is written to
 `.journal/<id>.log` in the user's plug-ins folder with the values the
-plug-in gave, never the contents of a file. The Journal button in the
-Plug-ins window opens it.
+plug-in gave, never the contents of a file. The Journal button on the
+plug-in's page in Preferences opens it.
 
 Rejected alternative: plug-ins as separate processes speaking JSON over
 standard input and output. They wrap programs such as yt-dlp naturally,
@@ -400,14 +405,14 @@ disturb the whole screen for a moment.
   started through `exec` included (a program still running then is
   killed). A plug-in that traps or runs out of time or memory (64 MiB)
   fails that call; three such failures in a row switch it off until the
-  user presses OK in "Plug-ins…". The title display says so with the
-  last failure, and "Plug-ins…" shows it next to the plug-in. An error the plug-in returns itself
+  user presses OK in Preferences. The title display says so with the
+  last failure, and the plug-in's page in Preferences shows it. An error the plug-in returns itself
   ("video unavailable") is not a failure.
 - A `dsp` plug-in runs on the engine thread, which decodes and fills
   the output buffer (`buffer_ms`), never in a sound card callback. A
   block that fails, comes back with another length or takes longer
   than half its playing time plays unchanged; three in a row switch the
-  plug-in off until the user presses OK in "Plug-ins…". A call that
+  plug-in off until the user presses OK in Preferences. A call that
   hangs is stopped after 250 ms.
 - A `decoder` runs on the thread that asks: the engine's when it plays,
   a worker's when it reads tags. A call that hangs is stopped after 1 s;

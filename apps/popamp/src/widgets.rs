@@ -1,6 +1,6 @@
 //! A tiny set of controls for Popamp's own dialogs: labels, text fields,
-//! lists, buttons, check boxes, group frames and a list of pages. A
-//! [`Form`] holds them,
+//! lists, buttons, check boxes, group frames and a tree of pages. A
+//! [`Form`] holds them, scrolls a page taller than its view,
 //! turns mouse and keys into [`Event`]s and draws itself in the colours of
 //! the pop-up menus. Coordinates are dialog pixels, as at ×1; a [`Pen`]
 //! draws them at the size of the skin's windows.
@@ -82,10 +82,10 @@ pub enum Widget<A> {
         selected: usize,
         action: A,
     },
-    /// The pages of the form, one under another; picking one shows the
-    /// controls on it.
+    /// The pages of the form, one under another, some under others as in
+    /// a tree; picking one shows the controls on it.
     Pages {
-        labels: Vec<String>,
+        entries: Vec<PageEntry>,
         selected: usize,
         action: A,
     },
@@ -101,6 +101,42 @@ pub enum Widget<A> {
         note: String,
     },
 }
+
+/// One page listed in a [`Widget::Pages`].
+#[derive(Debug, Clone)]
+pub struct PageEntry {
+    pub label: String,
+    /// The page it is listed under, indented, while that one is open.
+    pub parent: Option<usize>,
+    /// Whether the pages under it are listed.
+    pub open: bool,
+}
+
+impl PageEntry {
+    pub fn top(label: impl Into<String>) -> PageEntry {
+        PageEntry { label: label.into(), parent: None, open: true }
+    }
+
+    #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
+    pub fn under(parent: usize, label: impl Into<String>) -> PageEntry {
+        PageEntry { label: label.into(), parent: Some(parent), open: false }
+    }
+}
+
+/// The pages listed, top to bottom.
+fn listed(entries: &[PageEntry]) -> Vec<usize> {
+    (0..entries.len()).filter(|&k| entries[k].parent.is_none_or(|p| entries[p].open)).collect()
+}
+
+/// Whether page `k` has pages listed under it, and so an arrow to close it.
+fn has_children(entries: &[PageEntry], k: usize) -> bool {
+    entries.iter().any(|e| e.parent == Some(k))
+}
+
+/// The width at the right end of a page row where the arrow opens and closes it.
+const ARROW_W: i32 = 18;
+/// How far a wheel notch scrolls a page.
+const WHEEL_STEP: i32 = 40;
 
 /// What happened to the form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -146,11 +182,63 @@ pub struct Form<A> {
     pressed: Option<usize>,
     /// The drop-down whose options are showing.
     open: Option<usize>,
+    /// Where the controls on pages are shown: they scroll inside it.
+    /// `None`: nothing scrolls.
+    view: Option<Rect>,
+    /// How far each page is scrolled, by page.
+    scrolled: Vec<i32>,
+    /// Controls put away for now, as the details of a plug-in.
+    hidden: Vec<bool>,
+    /// Controls shown greyed out, taking no clicks or keys.
+    disabled: Vec<bool>,
+    /// The scroll bar's thumb is being dragged: the mouse's distance from its top.
+    grip: Option<i32>,
 }
 
 impl<A: Copy + PartialEq> Form<A> {
     pub fn new(w: i32, h: i32) -> Form<A> {
-        Form { w, h, controls: Vec::new(), pages: Vec::new(), page: 0, focus: None, pressed: None, open: None }
+        Form {
+            w,
+            h,
+            controls: Vec::new(),
+            pages: Vec::new(),
+            page: 0,
+            focus: None,
+            pressed: None,
+            open: None,
+            view: None,
+            scrolled: Vec::new(),
+            hidden: Vec::new(),
+            disabled: Vec::new(),
+            grip: None,
+        }
+    }
+
+    /// Shows the controls on pages inside `view`, scrolled when a page is taller.
+    pub fn set_view(&mut self, view: Rect) {
+        self.view = Some(view);
+    }
+
+    /// Makes the form no taller than `max_h`, for a small screen: the view
+    /// gets shorter, and what is under it moves up with the form's bottom.
+    pub fn limit_height(&mut self, max_h: i32) {
+        let Some(view) = self.view.as_mut() else { return };
+        let cut = (self.h - max_h).min(view.h - 2 * WHEEL_STEP);
+        if cut <= 0 {
+            return;
+        }
+        let bottom = view.y + view.h;
+        for ((r, _), _) in self.controls.iter_mut().zip(&self.pages).filter(|(_, page)| page.is_none()) {
+            if r.y >= bottom {
+                r.y -= cut;
+            } else if r.y + r.h > bottom {
+                // Runs past the view, as the list of pages does.
+                r.h -= cut;
+            }
+        }
+        view.h -= cut;
+        self.h -= cut;
+        self.set_scroll(self.scroll());
     }
 
     /// Adds a control shown on every page and returns its index. The first
@@ -168,6 +256,8 @@ impl<A: Copy + PartialEq> Form<A> {
         let i = self.controls.len();
         self.controls.push((rect, widget));
         self.pages.push(page);
+        self.hidden.push(false);
+        self.disabled.push(false);
         if self.focus.is_none() && self.focusable(i) {
             self.focus = Some(i);
         }
@@ -176,12 +266,121 @@ impl<A: Copy + PartialEq> Form<A> {
 
     /// Whether control `i` is on the page shown.
     fn shown(&self, i: usize) -> bool {
-        self.pages[i].is_none_or(|p| p == self.page)
+        !self.hidden[i] && self.pages[i].is_none_or(|p| p == self.page)
+    }
+
+    /// Puts control `i` away, or back.
+    #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
+    pub fn set_hidden(&mut self, i: usize, hidden: bool) {
+        self.hidden[i] = hidden;
+        if hidden && self.focus == Some(i) {
+            self.focus = (0..self.controls.len()).find(|&i| self.focusable(i));
+        }
+        self.set_scroll(self.scroll());
+    }
+
+    /// Greys control `i` out, or brings it back.
+    #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
+    pub fn set_disabled(&mut self, i: usize, disabled: bool) {
+        self.disabled[i] = disabled;
+        if disabled && self.focus == Some(i) {
+            self.focus = (0..self.controls.len()).find(|&i| self.focusable(i));
+        }
+    }
+
+    /// Whether control `i` moves with its page.
+    fn scrolls(&self, i: usize) -> bool {
+        self.view.is_some() && self.pages[i].is_some()
+    }
+
+    /// How far the page shown is scrolled.
+    fn scroll(&self) -> i32 {
+        self.scrolled.get(self.page).copied().unwrap_or(0)
+    }
+
+    /// Where control `i` is in the window, its page scrolled.
+    pub fn screen_rect(&self, i: usize) -> Rect {
+        let r = self.controls[i].0;
+        if self.scrolls(i) {
+            Rect { y: r.y - self.scroll(), ..r }
+        } else {
+            r
+        }
+    }
+
+    /// Whether the mouse at `x`, `y` is on control `i`; one scrolled out of
+    /// the view is not.
+    fn under(&self, i: usize, x: i32, y: i32) -> bool {
+        self.shown(i) && self.screen_rect(i).contains(x, y) && (!self.scrolls(i) || self.view.is_some_and(|v| v.contains(x, y)))
+    }
+
+    /// How far the page shown scrolls: until its lowest control and a
+    /// margin are in view.
+    fn max_scroll(&self) -> i32 {
+        let Some(v) = self.view else { return 0 };
+        let lowest = (0..self.controls.len()).filter(|&i| self.shown(i) && self.scrolls(i)).map(|i| {
+            let r = self.controls[i].0;
+            r.y + r.h
+        });
+        lowest.max().map_or(0, |b| (b + 8 - (v.y + v.h)).max(0))
+    }
+
+    fn set_scroll(&mut self, s: i32) {
+        let s = s.clamp(0, self.max_scroll());
+        if self.scrolled.len() <= self.page {
+            self.scrolled.resize(self.page + 1, 0);
+        }
+        self.scrolled[self.page] = s;
+    }
+
+    /// Scrolls the page so control `i` is in view.
+    fn scroll_into_view(&mut self, i: usize) {
+        let Some(v) = self.view.filter(|_| self.scrolls(i)) else { return };
+        let (r, s) = (self.controls[i].0, self.scroll());
+        if r.y - s < v.y + 4 {
+            self.set_scroll(r.y - v.y - 4);
+        } else if r.y + r.h - s > v.y + v.h - 4 {
+            self.set_scroll(r.y + r.h - (v.y + v.h) + 4);
+        }
+    }
+
+    /// The scroll bar along the right of the view and its thumb, while
+    /// the page is taller than the view.
+    fn scroll_bar(&self) -> Option<(Rect, Rect)> {
+        let v = self.view?;
+        let max = self.max_scroll();
+        if max == 0 {
+            return None;
+        }
+        let track = Rect::new(v.x + v.w - 8, v.y + 2, 6, v.h - 4);
+        let thumb_h = (track.h * v.h / (v.h + max)).max(16);
+        let thumb_y = track.y + (track.h - thumb_h) * self.scroll() / max;
+        Some((track, Rect::new(track.x, thumb_y, track.w, thumb_h)))
+    }
+
+    /// A press on the scroll bar: the thumb is taken, or the page moves by
+    /// a view towards the press.
+    fn press_bar(&mut self, track: Rect, thumb: Rect, y: i32) {
+        if thumb.contains(thumb.x, y) {
+            self.grip = Some(y - thumb.y);
+        } else {
+            let step = track.h - WHEEL_STEP;
+            self.set_scroll(self.scroll() + if y < thumb.y { -step } else { step });
+        }
+    }
+
+    /// The mouse moved to height `y`. Returns whether the page scrolled:
+    /// it does while the thumb of the scroll bar is held.
+    pub fn mouse_move(&mut self, y: i32) -> bool {
+        let (Some(grip), Some((track, thumb))) = (self.grip, self.scroll_bar()) else { return false };
+        let room = (track.h - thumb.h).max(1);
+        self.set_scroll((y - grip - track.y) * self.max_scroll() / room);
+        true
     }
 
     /// A text field or list on the page shown.
     fn focusable(&self, i: usize) -> bool {
-        self.shown(i) && matches!(self.controls[i].1, Widget::Input { .. } | Widget::List { .. })
+        self.shown(i) && !self.disabled[i] && matches!(self.controls[i].1, Widget::Input { .. } | Widget::List { .. })
     }
 
     /// The page shown.
@@ -200,9 +399,44 @@ impl<A: Copy + PartialEq> Form<A> {
     /// was on another page.
     fn show_page(&mut self, page: usize) {
         self.page = page;
+        self.open = None;
         if !self.focus.is_some_and(|f| self.shown(f)) {
             self.focus = (0..self.controls.len()).find(|&i| self.focusable(i));
         }
+    }
+
+    /// Renames page `page` of pages `i`.
+    #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
+    pub fn set_page_label(&mut self, i: usize, page: usize, label: String) {
+        if let Widget::Pages { entries, .. } = &mut self.controls[i].1 {
+            entries[page].label = label;
+        }
+    }
+
+    /// Picks page `page` of pages `i`, opening the one it is under.
+    #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
+    pub fn select_page(&mut self, i: usize, page: usize) {
+        let Widget::Pages { entries, selected, .. } = &mut self.controls[i].1 else { return };
+        if let Some(p) = entries[page].parent {
+            entries[p].open = true;
+        }
+        *selected = page;
+        self.show_page(page);
+    }
+
+    /// Where the row of page `page` is in pages `i`, left of its arrow;
+    /// `None` while the page it is under is closed.
+    #[cfg(test)]
+    pub fn page_row(&self, i: usize, page: usize) -> Option<Rect> {
+        let (r, Widget::Pages { entries, .. }) = &self.controls[i] else { return None };
+        let n = listed(entries).iter().position(|&k| k == page)?;
+        Some(Rect::new(r.x + 2, r.y + 2 + n as i32 * PAGE_H, r.w - 4 - ARROW_W, PAGE_H))
+    }
+
+    /// Whether control `i` is on the page shown and not put away.
+    #[cfg(all(test, feature = "plugins"))]
+    pub fn visible(&self, i: usize) -> bool {
+        self.shown(i)
     }
 
     #[cfg(test)]
@@ -210,7 +444,8 @@ impl<A: Copy + PartialEq> Form<A> {
         &self.controls[i].1
     }
 
-    #[cfg(all(test, feature = "plugins"))]
+    /// How many controls there are: the index the next one gets.
+    #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
     pub fn count(&self) -> usize {
         self.controls.len()
     }
@@ -295,7 +530,7 @@ impl<A: Copy + PartialEq> Form<A> {
 
     /// Where the options of the open drop-down `i` are drawn: under it.
     fn dropdown(&self, i: usize) -> Rect {
-        let r = self.controls[i].0;
+        let r = self.screen_rect(i);
         let n = match &self.controls[i].1 {
             Widget::Choice { options, .. } => options.len() as i32,
             _ => 0,
@@ -361,7 +596,7 @@ impl<A: Copy + PartialEq> Form<A> {
 
     fn default_action(&self) -> Option<A> {
         self.controls.iter().enumerate().find_map(|(i, (_, w))| match w {
-            Widget::Button { action, default: true, .. } if self.shown(i) => Some(*action),
+            Widget::Button { action, default: true, .. } if self.shown(i) && !self.disabled[i] => Some(*action),
             _ => None,
         })
     }
@@ -393,13 +628,18 @@ impl<A: Copy + PartialEq> Form<A> {
         if let Some(open) = self.open {
             return self.press_in_open(open, x, y);
         }
+        if let Some((track, thumb)) = self.scroll_bar().filter(|(track, _)| track.contains(x, y)) {
+            self.press_bar(track, thumb, y);
+            return Event::None;
+        }
         let Some(i) = (0..self.controls.len()).find(|&i| {
-            let (r, w) = &self.controls[i];
-            self.shown(i) && r.contains(x, y) && !matches!(w, Widget::Label { .. } | Widget::Group { .. } | Widget::Image { .. })
+            self.under(i, x, y)
+                && !self.disabled[i]
+                && !matches!(self.controls[i].1, Widget::Label { .. } | Widget::Group { .. } | Widget::Image { .. })
         }) else {
             return Event::None;
         };
-        let rect = self.controls[i].0;
+        let rect = self.screen_rect(i);
         match &mut self.controls[i].1 {
             Widget::Input { text, cursor } => {
                 self.focus = Some(i);
@@ -436,7 +676,7 @@ impl<A: Copy + PartialEq> Form<A> {
                     Event::None
                 }
             }
-            Widget::Pages { .. } => self.pick_page(i, y),
+            Widget::Pages { .. } => self.pick_page(i, x, y),
             Widget::Choice { .. } => {
                 self.open = Some(i);
                 Event::None
@@ -445,31 +685,49 @@ impl<A: Copy + PartialEq> Form<A> {
         }
     }
 
-    /// A press at height `y` on pages `i` shows the page there.
-    fn pick_page(&mut self, i: usize, y: i32) -> Event<A> {
+    /// A press on pages `i` shows the page there; on the arrow of a page
+    /// with pages under it, it opens or closes that page.
+    fn pick_page(&mut self, i: usize, x: i32, y: i32) -> Event<A> {
         let (rect, widget) = &mut self.controls[i];
-        let Widget::Pages { labels, selected, action } = widget else { return Event::None };
-        let n = ((y - rect.y - 2) / PAGE_H) as usize;
-        if n >= labels.len() || n == *selected {
+        let Widget::Pages { entries, selected, action } = widget else { return Event::None };
+        let Some(&k) = listed(entries).get(((y - rect.y - 2) / PAGE_H).max(0) as usize) else { return Event::None };
+        if has_children(entries, k) && x >= rect.x + rect.w - ARROW_W {
+            entries[k].open = !entries[k].open;
+            // Closing a page over the one shown shows the closed one.
+            if entries[k].open || entries[*selected].parent != Some(k) {
+                return Event::None;
+            }
+        } else {
+            entries[k].open = true;
+        }
+        if k == *selected {
             return Event::None;
         }
-        *selected = n;
+        *selected = k;
         let action = *action;
-        self.show_page(n);
-        Event::Picked(action, n)
+        self.show_page(k);
+        Event::Picked(action, k)
     }
 
     /// A button fires when the mouse is released over it.
     pub fn mouse_up(&mut self, x: i32, y: i32) -> Event<A> {
+        self.grip = None;
         match self.pressed.take().map(|i| &self.controls[i]) {
             Some((r, Widget::Button { action, .. })) if r.contains(x, y) => Event::Clicked(*action),
             _ => Event::None,
         }
     }
 
-    /// Scrolls the list by `steps` wheel notches (positive = up).
-    pub fn wheel(&mut self, steps: i32) {
-        let Some(i) = self.list_index() else { return };
+    /// Scrolls by `steps` wheel notches (positive = up) what is under the
+    /// mouse at `x`, `y`: a list, or else the page. Elsewhere the list
+    /// with the keyboard scrolls.
+    pub fn wheel(&mut self, x: i32, y: i32, steps: i32) {
+        let list = (0..self.controls.len()).find(|&i| self.under(i, x, y) && matches!(self.controls[i].1, Widget::List { .. }));
+        if list.is_none() && self.view.is_some_and(|v| v.contains(x, y)) {
+            self.set_scroll(self.scroll() - steps * WHEEL_STEP);
+            return;
+        }
+        let Some(i) = list.or_else(|| self.list_index()) else { return };
         let page = self.page(i);
         if let Widget::List { rows, scroll, .. } = &mut self.controls[i].1 {
             let max = rows.len().saturating_sub(page) as i32;
@@ -486,6 +744,14 @@ impl<A: Copy + PartialEq> Form<A> {
             Key::Enter => return self.default_action().map_or(Event::Activated, Event::Clicked),
             Key::Tab => {
                 self.focus_next();
+                if let Some(f) = self.focus {
+                    self.scroll_into_view(f);
+                }
+                return Event::None;
+            }
+            Key::PageUp | Key::PageDown if self.list_index().is_none() => {
+                let step = self.view.map_or(0, |v| v.h - WHEEL_STEP);
+                self.set_scroll(self.scroll() + if key == Key::PageUp { -step } else { step });
                 return Event::None;
             }
             // The arrows move the list even while typing in a search field.
@@ -531,30 +797,53 @@ impl<A: Copy + PartialEq> Form<A> {
 
     pub fn draw(&self, pen: &mut Pen) {
         pen.fill(0, 0, self.w, self.h, BG);
-        for (i, (r, w)) in self.controls.iter().enumerate().filter(|&(i, _)| self.shown(i)) {
-            let focused = self.focus == Some(i);
-            match w {
-                Widget::Label { text, dim } => {
-                    let t = pen.fit(text, r.w);
-                    pen.text(r.x, r.y + (r.h - FONT_PX as i32) / 2 - 1, &t, if *dim { DIM } else { TEXT }, r.x, r.w);
-                }
-                Widget::Input { text, cursor } => draw_input(pen, *r, text, *cursor, focused),
-                Widget::List { rows, selected, scroll } => draw_list(pen, *r, rows, *selected, *scroll, focused),
-                Widget::Button { label, default, .. } => draw_button(pen, *r, label, self.pressed == Some(i), *default),
-                Widget::Check { label, checked, .. } => draw_check(pen, *r, label, *checked),
-                Widget::Group { label } => draw_group(pen, *r, label),
-                Widget::Image { image, note } => draw_image(pen, *r, image.as_ref(), note),
-                Widget::Tabs { labels, selected, .. } => draw_tabs(pen, *r, labels, *selected),
-                Widget::Pages { labels, selected, .. } => draw_pages(pen, *r, labels, *selected),
-                Widget::Choice { options, selected } => {
-                    draw_choice(pen, *r, options.get(*selected).map_or("", |s| s), self.open == Some(i))
-                }
-            }
+        // The page first, scrolled; then what scrolled out of the view is
+        // covered, and the controls on every page go on top.
+        pen.set_offset(-self.scroll());
+        for i in (0..self.controls.len()).filter(|&i| self.shown(i) && self.scrolls(i)) {
+            self.draw_control(pen, i);
+        }
+        pen.set_offset(0);
+        if let Some(v) = self.view {
+            pen.fill(v.x, 0, v.w, v.y, BG);
+            pen.fill(v.x, v.y + v.h, v.w, self.h - v.y - v.h, BG);
+        }
+        for i in (0..self.controls.len()).filter(|&i| self.shown(i) && !self.scrolls(i)) {
+            self.draw_control(pen, i);
+        }
+        if let Some((track, thumb)) = self.scroll_bar() {
+            pen.fill(track.x, track.y, track.w, track.h, FIELD_BG);
+            pen.fill(thumb.x + 1, thumb.y, thumb.w - 2, thumb.h, DIM);
         }
         // The options of an open drop-down go over what is below it.
         if let Some(i) = self.open.filter(|&i| self.shown(i)) {
             if let Widget::Choice { options, selected } = &self.controls[i].1 {
                 draw_options(pen, self.dropdown(i), options, *selected);
+            }
+        }
+    }
+
+    fn draw_control(&self, pen: &mut Pen, i: usize) {
+        let (r, w) = &self.controls[i];
+        {
+            let focused = self.focus == Some(i);
+            let ink = if self.disabled[i] { DIM } else { TEXT };
+            match w {
+                Widget::Label { text, dim } => {
+                    let t = pen.fit(text, r.w);
+                    pen.text(r.x, r.y + (r.h - FONT_PX as i32) / 2 - 1, &t, if *dim { DIM } else { ink }, r.x, r.w);
+                }
+                Widget::Input { text, cursor } => draw_input(pen, *r, text, *cursor, focused, ink),
+                Widget::List { rows, selected, scroll } => draw_list(pen, *r, rows, *selected, *scroll, focused),
+                Widget::Button { label, default, .. } => draw_button(pen, *r, label, self.pressed == Some(i), *default, ink),
+                Widget::Check { label, checked, .. } => draw_check(pen, *r, label, *checked, ink),
+                Widget::Group { label } => draw_group(pen, *r, label),
+                Widget::Image { image, note } => draw_image(pen, *r, image.as_ref(), note),
+                Widget::Tabs { labels, selected, .. } => draw_tabs(pen, *r, labels, *selected),
+                Widget::Pages { entries, selected, .. } => draw_pages(pen, *r, entries, *selected),
+                Widget::Choice { options, selected } => {
+                    draw_choice(pen, *r, options.get(*selected).map_or("", |s| s), self.open == Some(i))
+                }
             }
         }
     }
@@ -627,7 +916,7 @@ fn text_y(r: Rect) -> i32 {
     r.y + (r.h - FONT_PX as i32) / 2 - 1
 }
 
-fn draw_input(pen: &mut Pen, r: Rect, text: &str, cursor: usize, focused: bool) {
+fn draw_input(pen: &mut Pen, r: Rect, text: &str, cursor: usize, focused: bool, ink: u32) {
     sunken(pen, r, focused);
     let (clip_x, clip_w) = (r.x + 2, r.w - 4);
     // Scroll the text left when the caret would leave the field.
@@ -635,7 +924,7 @@ fn draw_input(pen: &mut Pen, r: Rect, text: &str, cursor: usize, focused: bool) 
     let caret = pen.width(&before);
     let shift = (caret - (clip_w - 8)).max(0);
     let x = r.x + 4 - shift;
-    pen.text(x, text_y(r), text, TEXT, clip_x, clip_w);
+    pen.text(x, text_y(r), text, ink, clip_x, clip_w);
     if focused {
         pen.vline(x + caret, r.y + 4, r.h - 8, TEXT);
     }
@@ -672,11 +961,22 @@ fn draw_choice(pen: &mut Pen, r: Rect, text: &str, open: bool) {
     sunken(pen, r, open);
     let t = pen.fit(text, r.w - 24);
     pen.text(r.x + 5, text_y(r), &t, TEXT, r.x + 2, r.w - 18);
-    // A small arrow, pointing down.
-    let (ax, ay) = (r.x + r.w - 13, r.y + r.h / 2 - 1);
+    arrow_down(pen, r.x + r.w - 13, r.y + r.h / 2 - 1);
+}
+
+/// A small arrow pointing down, its top left at `x`, `y`.
+fn arrow_down(pen: &mut Pen, x: i32, y: i32) {
     for k in 0..4 {
-        pen.vline(ax + k, ay + k, 1, TEXT);
-        pen.vline(ax + 7 - k, ay + k, 1, TEXT);
+        pen.set(x + k, y + k, TEXT);
+        pen.set(x + 7 - k, y + k, TEXT);
+    }
+}
+
+/// A small arrow pointing right, its top left at `x`, `y`.
+fn arrow_right(pen: &mut Pen, x: i32, y: i32) {
+    for k in 0..4 {
+        pen.set(x + k, y + k, TEXT);
+        pen.set(x + k, y + 7 - k, TEXT);
     }
 }
 
@@ -692,13 +992,13 @@ fn draw_options(pen: &mut Pen, r: Rect, options: &[String], selected: usize) {
     }
 }
 
-fn draw_button(pen: &mut Pen, r: Rect, label: &str, down: bool, default: bool) {
+fn draw_button(pen: &mut Pen, r: Rect, label: &str, down: bool, default: bool, ink: u32) {
     let face = if down { HILITE } else { mix(BG, BORDER, 0.35) };
     pen.fill(r.x, r.y, r.w, r.h, face);
     let edge = if default { mix(HILITE, TEXT, 0.3) } else { BORDER };
     pen.bevel(r.x, r.y, r.w, r.h, edge, edge);
     let tw = pen.width(label);
-    pen.text(r.x + (r.w - tw) / 2, text_y(r), label, TEXT, r.x + 2, r.w - 4);
+    pen.text(r.x + (r.w - tw) / 2, text_y(r), label, ink, r.x + 2, r.w - 4);
 }
 
 fn draw_tabs(pen: &mut Pen, r: Rect, labels: &[String], selected: usize) {
@@ -715,30 +1015,43 @@ fn draw_tabs(pen: &mut Pen, r: Rect, labels: &[String], selected: usize) {
     }
 }
 
-fn draw_pages(pen: &mut Pen, r: Rect, labels: &[String], selected: usize) {
+fn draw_pages(pen: &mut Pen, r: Rect, entries: &[PageEntry], selected: usize) {
     sunken(pen, r, false);
-    for (k, label) in labels.iter().enumerate() {
-        let row = Rect::new(r.x + 2, r.y + 2 + k as i32 * PAGE_H, r.w - 4, PAGE_H);
+    for (n, k) in listed(entries).into_iter().enumerate() {
+        let row = Rect::new(r.x + 2, r.y + 2 + n as i32 * PAGE_H, r.w - 4, PAGE_H);
+        if row.y + row.h > r.y + r.h - 2 {
+            break;
+        }
         if k == selected {
             pen.fill(row.x, row.y, row.w, row.h, HILITE);
         }
-        let t = pen.fit(label, row.w - 12);
-        pen.text(row.x + 6, text_y(row), &t, TEXT, row.x, row.w);
+        let indent = if entries[k].parent.is_some() { 14 } else { 0 };
+        let arrow = has_children(entries, k);
+        let t = pen.fit(&entries[k].label, row.w - 12 - indent - if arrow { ARROW_W } else { 0 });
+        pen.text(row.x + 6 + indent, text_y(row), &t, TEXT, row.x, row.w);
+        if arrow {
+            let (ax, ay) = (row.x + row.w - 13, row.y + PAGE_H / 2);
+            if entries[k].open {
+                arrow_down(pen, ax, ay - 2);
+            } else {
+                arrow_right(pen, ax + 2, ay - 4);
+            }
+        }
     }
 }
 
-fn draw_check(pen: &mut Pen, r: Rect, label: &str, checked: bool) {
+fn draw_check(pen: &mut Pen, r: Rect, label: &str, checked: bool, ink: u32) {
     let (bx, by) = (r.x, r.y + (r.h - 13) / 2);
     sunken(pen, Rect::new(bx, by, 13, 13), false);
     if checked {
         for k in 0..3 {
-            pen.vline(bx + 3 + k, by + 5 + k, 2, TEXT);
+            pen.vline(bx + 3 + k, by + 5 + k, 2, ink);
         }
         for k in 0..4 {
-            pen.vline(bx + 6 + k, by + 6 - k, 2, TEXT);
+            pen.vline(bx + 6 + k, by + 6 - k, 2, ink);
         }
     }
-    pen.text(r.x + 20, text_y(r), label, TEXT, r.x, r.w);
+    pen.text(r.x + 20, text_y(r), label, ink, r.x, r.w);
 }
 
 fn draw_group(pen: &mut Pen, r: Rect, label: &str) {
@@ -926,11 +1239,11 @@ mod tests {
     #[test]
     fn wheel_scrolls_within_bounds() {
         let (mut f, _, list) = form();
-        f.wheel(-100);
+        f.wheel(0, 0, -100);
         // 20 rows, 5 visible: the last page starts at row 15.
         assert_eq!(f.mouse_down(15, 40 + 2, false), Event::Selected);
         assert_eq!(f.selected(list), Some(15));
-        f.wheel(100);
+        f.wheel(0, 0, 100);
         f.mouse_down(15, 40 + 2, false);
         assert_eq!(f.selected(list), Some(0));
     }
@@ -972,8 +1285,8 @@ mod tests {
     #[test]
     fn pages_show_their_own_controls() {
         let mut f = Form::new(300, 200);
-        let labels = vec!["One".to_string(), "Two".to_string()];
-        f.add(Rect::new(0, 0, 80, 4 + 2 * PAGE_H), Widget::Pages { labels, selected: 0, action: Act::Cancel });
+        let entries = vec![PageEntry::top("One"), PageEntry::top("Two")];
+        f.add(Rect::new(0, 0, 80, 4 + 2 * PAGE_H), Widget::Pages { entries, selected: 0, action: Act::Cancel });
         let field = f.add_on(0, Rect::new(100, 10, 100, 22), Widget::Input { text: String::new(), cursor: 0 });
         f.add_on(1, Rect::new(100, 10, 100, 22), Widget::Check { label: "x".into(), checked: false, action: Act::Flag });
         f.add_on(1, Rect::new(100, 40, 100, 4 + 3 * ROW_H), Widget::List { rows: rows(3), selected: None, scroll: 0 });
@@ -988,5 +1301,153 @@ mod tests {
         assert_eq!(f.text(field), "a", "the hidden field lost the keyboard");
         assert_eq!(f.key(Key::Down), Event::Selected, "the arrows move the list of the page shown");
         assert_eq!(f.key(Key::Enter), Event::Clicked(Act::Ok), "controls on every page stay");
+    }
+
+    /// A page row of the pages at the top left, `row` places down.
+    fn page_row(row: i32) -> (i32, i32) {
+        (10, 2 + row * PAGE_H + 5)
+    }
+
+    /// Pages One and Plug-ins, with Crossfeed under Plug-ins.
+    fn tree() -> (Form<Act>, usize) {
+        let mut f = Form::new(300, 200);
+        let entries = vec![PageEntry::top("One"), PageEntry::top("Plug-ins"), PageEntry::under(1, "Crossfeed")];
+        let pages = f.add(Rect::new(0, 0, 100, 4 + 4 * PAGE_H), Widget::Pages { entries, selected: 0, action: Act::Cancel });
+        (f, pages)
+    }
+
+    #[test]
+    fn a_page_under_another_is_listed_while_its_parent_is_open() {
+        let (mut f, _) = tree();
+        let (x, y) = page_row(2);
+        assert_eq!(f.mouse_down(x, y, false), Event::Picked(Act::Cancel, 2));
+        // The arrow at the right end of Plug-ins closes it: Crossfeed goes, and the page shown with it.
+        let (_, y1) = page_row(1);
+        assert_eq!(f.mouse_down(95, y1, false), Event::Picked(Act::Cancel, 1));
+        assert_eq!(f.shown_page(), 1);
+        assert_eq!(f.mouse_down(x, y, false), Event::None, "closed");
+        assert_eq!(f.mouse_down(95, y1, false), Event::None, "opened again, Plug-ins stays picked");
+        assert_eq!(f.mouse_down(x, y, false), Event::Picked(Act::Cancel, 2));
+        f.mouse_down(95, y1, false);
+        assert_eq!(f.mouse_down(x, y1, false), Event::None, "picked already");
+        assert_eq!(f.mouse_down(x, y, false), Event::Picked(Act::Cancel, 2), "picking a closed page opens it");
+    }
+
+    #[test]
+    fn a_page_can_be_picked_from_the_code() {
+        let (mut f, pages) = tree();
+        f.select_page(pages, 2);
+        assert_eq!(f.shown_page(), 2);
+        let (x, y) = page_row(2);
+        assert_eq!(f.mouse_down(x, y, false), Event::None, "picked already");
+    }
+
+    /// A page 200 wide at the right whose view is 150 high, a check box at
+    /// its top and a field far below; an OK button under the view.
+    fn tall() -> (Form<Act>, usize, usize, usize) {
+        let mut f = Form::new(300, 200);
+        f.set_view(Rect::new(100, 0, 200, 150));
+        let check = f.add_on(0, Rect::new(110, 10, 150, 20), Widget::Check { label: "x".into(), checked: false, action: Act::Flag });
+        let field = f.add_on(0, Rect::new(110, 300, 150, 22), Widget::Input { text: String::new(), cursor: 0 });
+        let ok = f.add(Rect::new(200, 160, 80, 24), Widget::Button { label: "OK".into(), action: Act::Ok, default: true });
+        (f, check, field, ok)
+    }
+
+    #[test]
+    fn the_wheel_scrolls_a_page_taller_than_its_view_and_no_further() {
+        let (mut f, check, field, _) = tall();
+        assert_eq!(f.mouse_down(115, 305, false), Event::None, "below the view the field is out of reach");
+        f.wheel(150, 50, -100);
+        // The field's bottom (322) and a margin of 8 reach the view's bottom (150).
+        assert_eq!(f.screen_rect(field).y, 300 - 180);
+        assert_eq!(f.screen_rect(check).y, 10 - 180, "scrolled out at the top");
+        assert_eq!(f.mouse_down(115, 15, false), Event::None, "the check box is out of reach too");
+        f.mouse_down(115, 125, false);
+        type_text(&mut f, "a");
+        assert_eq!(f.text(field), "a");
+        assert_eq!(f.mouse_down(205, 165, false), Event::None, "the button below the view stays where it is");
+        assert_eq!(f.mouse_up(205, 165), Event::Clicked(Act::Ok));
+        f.wheel(150, 50, 100);
+        assert_eq!(f.mouse_down(115, 15, false), Event::Toggled(Act::Flag, true));
+    }
+
+    #[test]
+    fn tab_scrolls_the_field_with_the_keyboard_into_view() {
+        let (mut f, _, field, _) = tall();
+        f.mouse_down(115, 15, false);
+        f.key(Key::Tab);
+        let r = f.screen_rect(field);
+        assert!(r.y >= 0 && r.y + r.h <= 150, "{r:?}");
+    }
+
+    #[test]
+    fn page_down_scrolls_a_page_without_a_list() {
+        let (mut f, _, field, _) = tall();
+        f.key(Key::PageDown);
+        assert!(f.screen_rect(field).y < 300, "scrolled");
+        f.key(Key::PageUp);
+        assert_eq!(f.screen_rect(field).y, 300);
+    }
+
+    #[test]
+    fn the_scroll_bar_thumb_drags_the_page() {
+        let (mut f, _, field, _) = tall();
+        // The thumb is at the top of the bar, at the view's right edge.
+        f.mouse_down(296, 10, false);
+        assert!(f.mouse_move(1000), "dragged");
+        f.mouse_up(296, 1000);
+        assert_eq!(f.screen_rect(field).y, 300 - 180, "to the end");
+        assert!(!f.mouse_move(10), "let go");
+    }
+
+    #[test]
+    fn a_disabled_control_takes_no_clicks_or_keys() {
+        let (mut f, check, field, ok) = tall();
+        f.wheel(150, 50, -100);
+        f.mouse_down(115, 125, false);
+        f.set_disabled(field, true);
+        type_text(&mut f, "a");
+        assert_eq!(f.text(field), "", "it lost the keyboard");
+        assert_eq!(f.mouse_down(115, 125, false), Event::None);
+        type_text(&mut f, "a");
+        assert_eq!(f.text(field), "", "a click does not give it back");
+        f.wheel(150, 50, 100);
+        f.set_disabled(check, true);
+        assert_eq!(f.mouse_down(115, 15, false), Event::None);
+        f.set_disabled(ok, true);
+        assert_eq!(f.key(Key::Enter), Event::Activated, "Enter skips a disabled default button");
+        f.set_disabled(field, false);
+        f.mouse_down(115, 305, false);
+        f.wheel(150, 50, -100);
+        f.mouse_down(115, 125, false);
+        type_text(&mut f, "b");
+        assert_eq!(f.text(field), "b");
+    }
+
+    #[test]
+    fn hidden_controls_are_out_of_reach_and_take_no_room() {
+        let (mut f, check, field, _) = tall();
+        f.set_hidden(field, true);
+        f.wheel(150, 50, -100);
+        assert_eq!(f.screen_rect(check).y, 10, "nothing to scroll");
+        f.set_hidden(check, true);
+        assert_eq!(f.mouse_down(115, 15, false), Event::None);
+    }
+
+    #[test]
+    fn a_form_too_tall_for_the_screen_shortens_its_view_and_keeps_the_buttons() {
+        let (mut f, _, field, ok) = tall();
+        f.limit_height(140);
+        assert_eq!(f.h, 140);
+        let r = f.screen_rect(ok);
+        assert_eq!(r.y, 160 - 60, "moved up with the bottom");
+        f.wheel(150, 20, -100);
+        assert_eq!(f.screen_rect(field).y, 300 - (300 + 22 + 8 - 90), "the view now ends at 90");
+        let mut tiny = tall().0;
+        tiny.limit_height(10);
+        assert_eq!(tiny.h, 200 - 70, "the view keeps two wheel steps");
+        let mut low = tall().0;
+        low.limit_height(500);
+        assert_eq!(low.h, 200, "a form that fits stays");
     }
 }

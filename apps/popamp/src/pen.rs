@@ -38,11 +38,13 @@ pub struct Pen<'a> {
     b: &'a mut Bitmap,
     font: &'a mut Font,
     pct: i32,
+    /// Added to every `y`, in dialog pixels: what a scrolled page moves by.
+    dy: i32,
 }
 
 impl<'a> Pen<'a> {
     pub fn new(b: &'a mut Bitmap, font: &'a mut Font, pct: i32) -> Pen<'a> {
-        Pen { b, font, pct: pct.max(100) }
+        Pen { b, font, pct: pct.max(100), dy: 0 }
     }
 
     fn at(&self, n: i32) -> i32 {
@@ -55,8 +57,13 @@ impl<'a> Pen<'a> {
         (x0, self.at(x + w) - x0)
     }
 
+    /// Moves what is drawn next down by `dy` dialog pixels (up when negative).
+    pub fn set_offset(&mut self, dy: i32) {
+        self.dy = dy;
+    }
+
     pub fn fill(&mut self, x: i32, y: i32, w: i32, h: i32, c: u32) {
-        let ((sx, sw), (sy, sh)) = (self.span(x, w), self.span(y, h));
+        let ((sx, sw), (sy, sh)) = (self.span(x, w), self.span(y + self.dy, h));
         self.b.fill(sx, sy, sw, sh, c);
     }
 
@@ -93,14 +100,14 @@ impl<'a> Pen<'a> {
     /// Draws `text` with its top at `y`, clipped to `clip_x..clip_x + clip_w`.
     pub fn text(&mut self, x: i32, y: i32, text: &str, color: u32, clip_x: i32, clip_w: i32) {
         let (cx, cw) = self.span(clip_x, clip_w);
-        let (sx, sy) = (self.at(x), self.at(y));
+        let (sx, sy) = (self.at(x), self.at(y + self.dy));
         self.font.draw(self.b, sx, sy, text, text_px(self.pct), color, cx, cw);
     }
 
     /// Draws `img` centred in `r`, a pixel of it to a dialog pixel, or
     /// shrunk to fit when it is larger than `r` on the screen.
     pub fn image(&mut self, img: &Bitmap, r: Rect) {
-        let ((rx, rw), (ry, rh)) = (self.span(r.x, r.w), self.span(r.y, r.h));
+        let ((rx, rw), (ry, rh)) = (self.span(r.x, r.w), self.span(r.y + self.dy, r.h));
         let (nw, nh) = (self.at(img.w), self.at(img.h));
         let shown = if nw > rw || nh > rh {
             fit(img, rw, rh)

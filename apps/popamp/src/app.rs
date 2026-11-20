@@ -816,15 +816,20 @@ impl App {
     }
 
     fn open_panel(&mut self, el: &ActiveEventLoop, kind: PanelKind) {
-        if let Some(p) = self.panels.iter().find(|p| p.panel.kind() == kind) {
-            p.window.focus_window();
+        if let Some(i) = self.panels.iter().position(|p| p.panel.kind() == kind.window()) {
+            self.panels[i].panel.show(kind);
+            self.panels[i].window.focus_window();
+            self.render_panel(i);
             return;
         }
-        let panel = Panel::open(kind, &self.model);
+        let mut panel = Panel::open(kind, &self.model);
         let pct = self.dialog_pct();
-        let (w, h) = (crate::pen::screen(pct, panel.form().w), crate::pen::screen(pct, panel.form().h));
         // Centred on the main window's monitor, so the title bar is on screen.
         let monitor = self.main_monitor().map(|m| platform::monitor(&m));
+        if let Some(room) = self.dialog_room(el, monitor, pct) {
+            panel.form_mut().limit_height(room);
+        }
+        let (w, h) = (crate::pen::screen(pct, panel.form().w), crate::pen::screen(pct, panel.form().h));
         let (cx, cy) = monitor.map_or((640, 400), |m| (m.x + m.w / 2, m.y + m.h / 2));
         let (uw, uh) = (platform::from_drawn(w, pct), platform::from_drawn(h, pct));
         let attrs = platform::attributes(WindowRole::Dialog)
@@ -836,6 +841,20 @@ impl App {
         let frame = Bitmap::new(w, h, 0);
         self.panels.push(PanelWindow { window, surface, panel, frame, pct, cursor: (0, 0), last_click: None });
         self.panel_changed(self.panels.len() - 1);
+    }
+
+    /// How tall a dialog drawn at `pct` may be, in dialog pixels: what the
+    /// desktop's panels leave of the main window's monitor, less room for
+    /// the title bar. Under Wayland, where that monitor is not known, the
+    /// lowest monitor.
+    fn dialog_room(&self, el: &ActiveEventLoop, monitor: Option<Screen>, pct: i32) -> Option<i32> {
+        let lowest = || el.available_monitors().map(|m| platform::monitor(&m)).min_by_key(|m| m.h);
+        let area = bar::usable(monitor.or_else(lowest)?, &self.platform.work_areas(), None);
+        // The title bar and a margin, in the desktop's units.
+        const FRAME: i32 = 80;
+        let units = area.h - FRAME;
+        let px = if platform::DESKTOP_IN_POINTS { units * pct / 100 } else { units };
+        Some(crate::pen::dialog(pct, px))
     }
 
     /// Starts the network work panel `i` asked for and redraws it.
@@ -889,6 +908,10 @@ impl App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 p.cursor = (crate::pen::dialog(p.pct, position.x as i32), crate::pen::dialog(p.pct, position.y as i32));
+                // Dragging the scroll bar scrolls.
+                if form.mouse_move(p.cursor.1) {
+                    self.render_panel(i);
+                }
                 return;
             }
             WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
@@ -899,10 +922,14 @@ impl App {
             }
             WindowEvent::MouseInput { state: ElementState::Released, button: MouseButton::Left, .. } => form.mouse_up(x, y),
             WindowEvent::MouseWheel { delta, .. } => {
-                form.wheel(match delta {
-                    MouseScrollDelta::LineDelta(_, y) => y.round() as i32,
-                    MouseScrollDelta::PixelDelta(p) => (p.y / 20.0).round() as i32,
-                });
+                form.wheel(
+                    x,
+                    y,
+                    match delta {
+                        MouseScrollDelta::LineDelta(_, y) => y.round() as i32,
+                        MouseScrollDelta::PixelDelta(p) => (p.y / 20.0).round() as i32,
+                    },
+                );
                 Event::None
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
