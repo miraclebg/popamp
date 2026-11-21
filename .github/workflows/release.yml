@@ -135,6 +135,9 @@ jobs:
     env:
       # Every binary in Popamp.app starts on macOS 12 and newer.
       MACOSX_DEPLOYMENT_TARGET: "12.0"
+      # The runner's sound device plays slower than real time: the
+      # CoreAudio tests that time it are skipped (the others still run).
+      POPAMP_NO_DEVICE_TIMING: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
